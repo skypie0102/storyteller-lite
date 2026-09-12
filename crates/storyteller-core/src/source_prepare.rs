@@ -61,14 +61,7 @@ pub fn prepare_job_sources(
         let epub = stage_dir.join("source.epub");
         copy_cancellable(&job.inputs.epub_path, &epub, cancellation)?;
 
-        let extension = job
-            .inputs
-            .audiobook_path
-            .extension()
-            .and_then(|value| value.to_str())
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or("audio");
-        let audiobook = stage_dir.join(format!("audiobook.{extension}"));
+        let audiobook = prepared_audiobook_path(job, &stage_dir);
         if cancellation.is_requested() {
             return Err("Source preparation was cancelled.".into());
         }
@@ -84,6 +77,29 @@ pub fn prepare_job_sources(
         let _ = fs::remove_dir_all(&stage_dir);
     }
     result
+}
+
+pub fn prepared_job_sources(
+    job: &Job,
+    workspace: &JobWorkspace,
+) -> Result<PreparedSources, String> {
+    let stage_dir = workspace.stage_dir(PipelineStage::Prepare);
+    let epub = stage_dir.join("source.epub");
+    let audiobook = prepared_audiobook_path(job, &stage_dir);
+    validate_source_file(&epub, "Prepared EPUB")?;
+    validate_source_file(&audiobook, "Prepared audiobook")?;
+    Ok(PreparedSources { epub, audiobook })
+}
+
+fn prepared_audiobook_path(job: &Job, stage_dir: &Path) -> PathBuf {
+    let extension = job
+        .inputs
+        .audiobook_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("audio");
+    stage_dir.join(format!("audiobook.{extension}"))
 }
 
 fn validate_source_file(path: &Path, label: &str) -> Result<(), String> {
@@ -166,6 +182,7 @@ mod tests {
         assert_eq!(prepared.epub().file_name().unwrap(), "source.epub");
         assert_eq!(prepared.audiobook().file_name().unwrap(), "audiobook.m4b");
         assert_eq!(fs::read(prepared.audiobook()).unwrap(), b"audio-data");
+        assert_eq!(prepared_job_sources(&job, &workspace).unwrap(), prepared);
         let _ = fs::remove_dir_all(root);
     }
 
