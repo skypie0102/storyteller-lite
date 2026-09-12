@@ -25,8 +25,10 @@ Primary references:
 7. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend state machine, exact allocator invariants, backend defaults, and persistence/concurrency behavior.
 8. `docs/recovery/WORKER_SEMANTICS.md` — focused evidence for what old Parallel Whisper jobs meant and the preferred Lite worker architecture.
 9. `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` — recovered Smart classification, automatic edge handling, lazy OCR, and reduced allocator scope.
-10. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
-11. `tools/recovery/extract_tauri_assets.py` — reproducible recovery/verification of the old embedded Tauri frontend assets.
+10. `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md` — recovered downstream EPUB rendering semantics for Introduction/Credits/Graphic Readout decisions.
+11. `docs/recovery/QUEUE_FAILURE_RECOVERY.md` — recovered auto-advance behavior after a book fails.
+12. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
+13. `tools/recovery/extract_tauri_assets.py` — reproducible recovery/verification of the old embedded Tauri frontend assets.
 
 ## User decisions recovered in this chat
 
@@ -43,6 +45,7 @@ Primary references:
 - **Lazy/on-demand OCR** of bounded EPUB image candidates; no permanent OCR toggle.
 - **Manual allocation for unresolved/unaligned audio** in a reduced Lite-specific review screen.
 - Limited useful classifications such as Introduction, Credits, Graphic Readout, and Extra Audio when they materially affect destination/build behavior.
+- Failed books remain failed/retryable but **do not stall the queue**; the next waiting book starts unless the queue was explicitly paused or Pause-after-current was requested.
 - Old installer only as a behavioral reference when needed.
 - The supplied mockups as current UI layout guides.
 
@@ -75,6 +78,7 @@ As of the recovered branch inspected during this chat:
 - `AudioReviewReport` has a global `accepted_unmatched_exclusion` flag; there is no durable per-segment manual assignment model yet.
 - Smart edge handling, lazy OCR/image classification, and ReviewAll are not implemented in the current recovered code.
 - Alignment is conservative/monotonic and accepted segments map to single XHTML block ranges.
+- Queue failure behavior already matches the recovered old app: terminal worker results are followed by `start_next_worker()`, while `JobQueue` only pauses on a requested pause-after-current terminal transition.
 
 Inspect the current source before implementation because the branch may have advanced since this snapshot.
 
@@ -94,6 +98,8 @@ Important recovered clues:
 - The installer contains the old finishing helper's **plain Python source**. Its manual allocation code enforces complete time coverage, no gaps/overlaps, explicit targets, and final output auditing.
 - The old helper's unmatched discovery was primarily edge-focused (Introduction/Credits), while its automatic-player path also used bounded image candidates and OCR/text hints to detect Graphic Readouts.
 - Historical OCR was already bounded/lazy in implementation: candidate documents/images were narrowed first, embedded text hints were used first where possible, and OCR ran only on relevant candidates. See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md`.
+- Recovered output semantics show that Introduction/Credits could become native XHTML+SMIL supplemental pages, while Graphic Readout narration could be attached to the existing image page. See `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md`.
+- The old executable explicitly reports `Queue continuing after this failure; <N> pending book(s) remain.` The old UI's `Stop After` command was the mechanism to suppress auto-advance after the current book. See `docs/recovery/QUEUE_FAILURE_RECOVERY.md`.
 - The helper is GPLv3-or-later/Sigil-derived. Treat it as a behavioral/test-vector reference unless licensing for direct code reuse is deliberately resolved.
 
 ## Immediate implementation order
@@ -129,7 +135,7 @@ Prefer an app/runtime settings model separate from output-affecting `JobSettings
 
 ### P2 — Smart unmatched-audio pipeline and reduced manual allocator
 
-Replace the current all-or-nothing unmatched-audio review with the recovered Lite model. See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md`.
+Replace the current all-or-nothing unmatched-audio review with the recovered Lite model. See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` and `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md`.
 
 Required behavior:
 
@@ -144,9 +150,10 @@ Required behavior:
 - previous/next unresolved navigation, audio preview/seek, transcript/timing/silence context, Smart suggestion, EPUB candidate context, explicit assignment/exclusion/override, Apply & Next;
 - monotonic EPUB ordering and real block/image candidate validation;
 - retain automatic alignment and decision provenance for audit/debugging while materializing an effective downstream allocation/alignment result;
+- Build EPUB must understand more than plain text-block assignment: it needs a path for synchronized supplemental Introduction/Credits pages and validated image-bound Graphic Readout narration where those dispositions are used;
 - validate/audit output after automatic/manual decisions.
 
-A base decision model should support Pending, Assigned, and Excluded, but preserve optional classification/suggestion/provenance rather than collapsing useful Smart information.
+A base decision model should support Pending, Assigned, and Excluded, but preserve optional classification/suggestion/provenance and destination/rendering semantics rather than collapsing useful Smart information.
 
 Do **not** initially implement arbitrary split/merge, a general waveform trim editor, permanent OCR controls, broad Apply-to-similar rules, or an unrestricted old-app category/destination editor.
 
