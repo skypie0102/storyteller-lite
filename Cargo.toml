@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "crates/storyteller-core",
+    "crates/storyteller-ui",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[workspace.dependencies]
+rfd = "0.15"
+sha2 = "0.10"
+slint = "1.17.1"
+slint-build = "1.17.1"
+uuid = { version = "1", features = ["v4"] }
