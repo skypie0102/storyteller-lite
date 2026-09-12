@@ -10,6 +10,7 @@ pub enum PipelineRunState {
     Cancelled,
     Failed(String),
     WaitingForResources(PipelineStage),
+    NeedsReview(PipelineStage),
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +39,7 @@ pub struct StageRunOutput {
     artifacts: Vec<PathBuf>,
     elapsed_seconds: u64,
     completed_at_millis: u64,
+    requires_review: bool,
 }
 
 impl StageRunOutput {
@@ -46,7 +48,13 @@ impl StageRunOutput {
             artifacts,
             elapsed_seconds,
             completed_at_millis,
+            requires_review: false,
         }
+    }
+
+    pub fn requiring_review(mut self) -> Self {
+        self.requires_review = true;
+        self
     }
 }
 
@@ -227,6 +235,12 @@ pub fn run_pipeline<B: PipelineBackend>(
                 context
                     .job
                     .checkpoint_completed_stage(stage, resume_context)?;
+                if output.requires_review {
+                    context.job.require_review()?;
+                    context.job.progress.set_activity("Waiting for review")?;
+                    context.observer.observe(context.job);
+                    return Ok(PipelineRunState::NeedsReview(stage));
+                }
                 context.observer.observe(context.job);
             }
             Err(error)
