@@ -23,7 +23,7 @@ The archive starts at file offset 52,736. It uses a solid raw-LZMA stream with a
 - App identifier: `cloud.shadowmonarchbooks.storyteller-oneclick`
 - Framework evidence: Rust + Tauri 2.11.5
 
-The executable still contains Rust source-path strings and serde field names, which reveal substantial behavior even without source code.
+The executable still contains Rust source-path strings, serde field names, command builders, and embedded Brotli-compressed Tauri frontend assets. `tools/recovery/extract_tauri_assets.py` reproducibly extracts/validates the known web assets from this exact executable.
 
 ### Blocks 753–758 — Sigil-derived finishing helper bundle
 
@@ -56,13 +56,15 @@ Recovered validation messages establish these old limits:
 - Parallel FFmpeg transcodes: 1–8
 - Accepted bitrates: 16K / 32K / 64K / 96K
 
+Machine-code recovery later established old backend defaults including `threads=6`, `parallelTranscribes=3`, and `parallelTranscodes=6`. See `FRONTEND_AND_CONCURRENCY_RECOVERY.md` for the full recovered default/state details.
+
 ### Lite interpretation
 
-Do **not** restore the old 17-field settings surface. The relevant clue is that the old product distinguished CPU threads from parallel transcription jobs. The current Lite requirement is only a simple **Whisper worker count** while keeping automatic CPU-thread selection.
+Do **not** restore the old 17-field settings surface. The important concurrency clue is that the old product distinguished CPU threads from parallel transcription jobs and from Whisper processors. See `WORKER_SEMANTICS.md`: current evidence favors Lite worker count meaning concurrent ordered audio chunks/tracks, not `whisper.cpp -p`.
 
-## Manual allocator APIs recovered from the desktop executable
+## Manual allocator APIs recovered from the desktop executable/frontend
 
-Tauri command names include:
+Exact frontend Tauri command names include:
 
 - `get_pending_manual_request`
 - `get_manual_allocation_draft`
@@ -70,9 +72,9 @@ Tauri command names include:
 - `manual_audio_preview_path`
 - `manual_image_preview`
 - `submit_manual_allocations`
-- `cancel_manual_allocations`
+- `cancel_manual_allocation`
 
-The persisted state included `manualDrafts`. Runtime messages explicitly say that if Storyteller closes while allocation is active/paused, retrying restores the autosaved allocation draft. This is strong evidence that **durable draft decisions** were part of the intended UX.
+The persisted state included `manualDrafts`. Runtime/frontend behavior explicitly shows that if Storyteller closes while allocation is active/paused, retrying can rebuild the disposable inspection workspace and restore the autosaved allocation draft. This is strong evidence that **durable draft decisions** were part of the intended UX.
 
 Recovered manual-allocation payload fields include:
 
@@ -92,15 +94,15 @@ And these output targets:
 - `image`
 - `discard`
 
-Old validation required each reviewed segment to be covered completely and continuously: no gaps or overlaps (with ~0.05 s tolerance). `discard` was legal only for `silence`/noise. Image targets had to be from the helper-generated eligible candidate set.
+Old backend validation required each reviewed segment to be covered completely and continuously: no gaps or overlaps (with a defensive ~0.05 s tolerance). The recovered frontend was stricter at ~0.002 s. `discard` was legal only for `silence`/noise. Image targets had to come from the helper-generated eligible candidate set.
 
 ## Important scope finding: the old allocator was edge-focused
 
 The recovered `_discover_unmatched_audio` logic did **not** treat every arbitrary internal alignment miss as a manual allocation candidate. It mainly discovered unmatched audio before the first safe matched range and after the last safe matched range, classifying those regions as introduction/credits candidates. Very short edge regions under roughly 2 seconds were ignored.
 
-The helper also tried to determine whether the first/last boundary was safe from SMIL coverage or chapter sentence coverage before exposing it for preservation.
+The helper also tried to determine whether the first/last boundary was safe from SMIL coverage or chapter sentence coverage before exposing it for preservation and refined some boundaries using transcript/silence evidence.
 
-This matters for Lite: the current Rust alignment review is segment-based and may surface arbitrary unmatched transcript segments. We should preserve the **good old invariants** (explicit durable decisions, bounded candidates, complete accounting, monotonic ordering) without blindly copying the old edge-only discovery model.
+This matters for Lite: the current Rust alignment review is segment-based and may surface arbitrary unmatched transcript segments. Preserve the **good old invariants** (explicit durable decisions, bounded candidates, complete accounting, monotonic ordering) without blindly copying the old edge-only discovery model.
 
 ## Old manual inspection payload
 
@@ -120,6 +122,12 @@ If FFmpeg was available, it physically rendered a preview clip and ran silence d
 
 The inspector also returned candidate EPUB image/document pairs near the first/last aligned spine anchors for graphic-readout placement.
 
+## Deeper unmatched-audio/OCR findings
+
+Further static analysis recovered the old edge-mode command mapping, exact boundary-refinement constants, bounded/lazy OCR candidate behavior, Graphic Readout matching thresholds, and an old desktop wiring mismatch in which `--graphics-ocr` was forwarded only for `automatic_transcript` even though the helper supported OCR in player mode.
+
+These details are intentionally centralized in `UNMATCHED_AUDIO_RECOVERY.md`. That document also reconciles them with the **actual Lite plan**, which retains Smart classification, automatic edge handling, lazy OCR, and a streamlined allocator while removing the permanent OCR toggle and full old editor surface.
+
 ## Old application pipeline clues
 
 Recovered stage/runtime messages show this broad path:
@@ -133,7 +141,7 @@ Recovered stage/runtime messages show this broad path:
 7. final EPUB audit;
 8. atomic publication.
 
-The old app used `%LOCALAPPDATA%/Storyteller-OneClick/workspaces` for retry-safe workspaces. It explicitly distinguished `waiting_for_allocation` from `allocation_paused`, and Retry could reopen the same allocation session.
+The old app used `%LOCALAPPDATA%/Storyteller-OneClick/workspaces` for rebuildable processing workspaces. Persisted application state separately contained `manualDrafts`, and the UI distinguished `waiting_for_allocation` from `allocation_paused`.
 
 ## What should influence the rebuilt Lite allocator
 
@@ -144,24 +152,28 @@ Keep these recovered principles:
 3. **Preview support** with transcript/timing context.
 4. **Constrained destinations** derived from valid EPUB ordering/context, not arbitrary unsafe jumps.
 5. **Complete accounting**: reviewed audio should not silently disappear; assignment/exclusion must cover the intended segment.
-6. **Validation before publication**.
+6. **Smart but conservative automation**: high-confidence edge/image/silence cases may be handled automatically, weak cases remain reviewable.
+7. **Lazy OCR** as an internal bounded capability rather than a permanent settings toggle.
+8. **Validation before publication**.
 
 Do not automatically restore:
 
-- the full Introduction/Credits/Graphic Readout taxonomy;
-- OCR dependency stack;
-- old split/merge/trim editor complexity;
+- arbitrary split/merge/general waveform editing;
+- the old broad rule/configuration UI;
+- permanent OCR controls;
 - manual CPU/thread controls;
 - Node/npx alignment launcher;
 - Sigil-derived finishing path.
 
-Those are historical implementation/product details and conflict with the intentionally reduced Rust + Slint Lite scope unless a new requirement explicitly calls for them.
+Limited classifications such as Introduction, Credits, Graphic Readout, and Extra Audio remain useful when they materially drive Smart/manual destination behavior; the goal is to avoid recreating the *full editor surface*, not to erase useful semantics.
 
-## Next reverse-engineering targets
+## Completed recovery follow-ups
 
-If additional detail is needed, prioritize:
+The initial reverse-engineering targets from the first pass have now been substantially completed:
 
-1. disassembling/recovering default values and scheduling semantics for `parallelTranscribes` versus `threads`;
-2. extracting enough Tauri asset metadata to identify allocator UI state transitions (the supplied Lite mockup remains the preferred visual specification);
-3. comparing old `manualDrafts` persistence behavior against the new Rust checkpoint/review artifact model;
-4. mining the helper source for narrow test vectors/invariants rather than porting implementation code.
+- real old defaults and `parallelTranscribes`/threads/processors semantics → `FRONTEND_AND_CONCURRENCY_RECOVERY.md` and `WORKER_SEMANTICS.md`;
+- embedded Tauri frontend extraction/state transitions → `tools/recovery/extract_tauri_assets.py` and `FRONTEND_AND_CONCURRENCY_RECOVERY.md`;
+- `manualDrafts` persistence/retry behavior → `FRONTEND_AND_CONCURRENCY_RECOVERY.md`;
+- narrow helper invariants/test vectors, Smart/edge/OCR findings → `UNMATCHED_AUDIO_RECOVERY.md`.
+
+Further archaeology should now be demand-driven: inspect the installer only when a current Lite behavior remains ambiguous.
