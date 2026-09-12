@@ -11,8 +11,8 @@ The repository copies are downscaled WebP reference images so they remain lightw
 
 | Source | Original SHA-256 | Repo reference SHA-256 |
 | --- | --- | --- |
-| Main UI mockup | `bb79350c2404cdb10480cba1f0e4d38136f318a12b61e8437f619c2b690794e3` | `7e410907af2b8d4668d8b8edff93cf12522a0e86b67a289939f4106406a36294` |
-| Manual allocation mockup | `71007501f381dc5ba25ec9f70660dc4c8818dd643d49652da6b14cb8911cba3b` | `0b6f37302fa34710c50336155d3a77a54aca9a2c2ec2143769531f440fa26348` |
+| Main UI mockup | `bb79350c2404cdb10480cba1f0e4d38136f318a12b61e8437f619c2b690794e3` | `ad25e75ff3b0d5c759d8c2e5a20ffb2c344b34197f49e42dee6218e739c9931b` |
+| Manual allocation mockup | `71007501f381dc5ba25ec9f70660dc4c8818dd643d49652da6b14cb8911cba3b` | `35425949ffcbecbf1935304ed07c66fb6ed908873dbbe4631a3bc5b16f01eaa5` |
 
 ## Main UI intent
 
