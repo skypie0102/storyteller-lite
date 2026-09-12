@@ -411,8 +411,8 @@ export component AppWindow inherits Window {
                         Text { text: row.status; vertical-alignment: center; opacity: 0.68; }
                         if row.waiting : Button { text: "↑"; enabled: row.can-move-up; clicked => { root.move-waiting(row.id, true); } }
                         if row.waiting : Button { text: "↓"; enabled: row.can-move-down; clicked => { root.move-waiting(row.id, false); } }
-                        if row.retryable : Button { text: "Retry from start"; clicked => { root.retry_from_start(row.id); } }
-                        Button { text: "Remove"; clicked => { root.remove_job(row.id); } }
+                        if row.retryable : Button { text: "Retry from start"; clicked => { root.retry-from-start(row.id); } }
+                        Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
                     }
                 }
             }
