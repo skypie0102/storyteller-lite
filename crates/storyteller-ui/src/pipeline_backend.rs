@@ -5,12 +5,14 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    align_transcript_to_corpus, create_audio_review_report, encode_audiobook, extract_epub_corpus,
-    prepare_job_sources, prepared_job_sources, read_audio_review_report, run_cancellable_command,
-    spawn_pipeline_worker_with_preflight, AudioCodec, CommandOutput, CommandRunError, CommandStream,
-    HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
-    PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
-    StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report,
+    encode_audiobook, extract_epub_corpus, prepare_job_sources, prepared_job_sources,
+    publish_validated_epub, read_audio_review_report, run_cancellable_command,
+    spawn_pipeline_worker_with_preflight, validate_readaloud_epub, write_validation_report,
+    AudioCodec, CommandOutput, CommandRunError, CommandStream, HardwareProfile, Job,
+    JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment, PipelineStage,
+    PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator, StagePlan,
+    StageRunContext, StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -409,6 +411,136 @@ impl LitePipelineBackend {
             self.elapsed_millis(),
         ))
     }
+
+    fn run_build_epub(
+        &mut self,
+        context: &mut StageRunContext<'_>,
+    ) -> Result<StageRunOutput, StageRunError> {
+        let stage_started = Instant::now();
+        let prepared = prepared_job_sources(context.job(), context.workspace())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let analyze_dir = context.workspace().stage_dir(PipelineStage::Analyze);
+        let align_dir = context.workspace().stage_dir(PipelineStage::Align);
+        let review_dir = context.workspace().stage_dir(PipelineStage::ReviewAudio);
+        let encode_dir = context.workspace().stage_dir(PipelineStage::Encode);
+        let stage_dir = context.workspace().stage_dir(PipelineStage::BuildEpub);
+        reset_stage_dir(&stage_dir, PipelineStage::BuildEpub)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let candidate = stage_dir.join("readaloud.epub");
+        let cancellation = context.cancellation_token();
+
+        context.set_metrics(
+            LiveMetrics {
+                backend: Some("Storyteller EPUB Media Overlay builder".into()),
+                ..LiveMetrics::default()
+            },
+            self.elapsed_millis(),
+        );
+        context
+            .set_activity("Building synchronized EPUB Media Overlays", self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let summary = build_readaloud_epub(
+            prepared.epub(),
+            &analyze_dir.join("book-corpus.json"),
+            &align_dir.join("alignment.json"),
+            &review_dir.join("review.json"),
+            &encode_dir.join("encoded-audio.json"),
+            &encode_dir,
+            &candidate,
+            &cancellation,
+        );
+        let summary = match summary {
+            Ok(summary) => summary,
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+            }
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        };
+        context.set_metrics(
+            LiveMetrics {
+                current_item: Some(summary.synchronized_segments as u64),
+                total_items: Some(summary.synchronized_segments as u64),
+                backend: Some("Storyteller EPUB Media Overlay builder".into()),
+                ..LiveMetrics::default()
+            },
+            self.elapsed_millis(),
+        );
+        context
+            .set_stage_percent(100, self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        Ok(StageRunOutput::new(
+            vec![PathBuf::from("readaloud.epub")],
+            stage_started.elapsed().as_secs(),
+            self.elapsed_millis(),
+        ))
+    }
+
+    fn run_validate(
+        &mut self,
+        context: &mut StageRunContext<'_>,
+    ) -> Result<StageRunOutput, StageRunError> {
+        let stage_started = Instant::now();
+        let candidate = context
+            .workspace()
+            .stage_dir(PipelineStage::BuildEpub)
+            .join("readaloud.epub");
+        let stage_dir = context.workspace().stage_dir(PipelineStage::Validate);
+        reset_stage_dir(&stage_dir, PipelineStage::Validate)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let report_path = stage_dir.join("validation.json");
+        let output_path = context.job().inputs.output_path.clone();
+        let cancellation = context.cancellation_token();
+
+        context.set_metrics(
+            LiveMetrics {
+                backend: Some("Storyteller EPUB structural validator".into()),
+                ..LiveMetrics::default()
+            },
+            self.elapsed_millis(),
+        );
+        context
+            .set_activity("Auditing EPUB container and Media Overlays", self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let summary = validate_readaloud_epub(&candidate, &cancellation);
+        let summary = match summary {
+            Ok(summary) => summary,
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+            }
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        };
+        write_validation_report(&report_path, summary)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        context.set_metrics(
+            LiveMetrics {
+                current_item: Some(summary.synchronized_segments as u64),
+                total_items: Some(summary.synchronized_segments as u64),
+                backend: Some("Storyteller EPUB structural validator".into()),
+                ..LiveMetrics::default()
+            },
+            self.elapsed_millis(),
+        );
+        context
+            .set_activity("Publishing validated read-aloud EPUB", self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        match publish_validated_epub(&candidate, &output_path, &cancellation) {
+            Ok(()) => {}
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+            }
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        }
+        context
+            .set_stage_percent(100, self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        Ok(StageRunOutput::new(
+            vec![PathBuf::from("validation.json")],
+            stage_started.elapsed().as_secs(),
+            self.elapsed_millis(),
+        ))
+    }
 }
 
 impl PipelineBackend for LitePipelineBackend {
@@ -438,13 +570,21 @@ impl PipelineBackend for LitePipelineBackend {
                 "Preparing output audiobook",
                 match job.settings.audio.codec {
                     AudioCodec::Copy => ResourceRequest::io_heavy(1),
-                    AudioCodec::Opus | AudioCodec::Aac => ResourceRequest::cpu_heavy(self.cpu_threads),
+                    AudioCodec::Opus | AudioCodec::Aac => {
+                        ResourceRequest::cpu_heavy(self.cpu_threads)
+                    }
                 },
                 self.elapsed_millis(),
             )),
-            _ => Err(format!(
-                "{} backend is not implemented in Storyteller Lite yet.",
-                stage.label()
+            PipelineStage::BuildEpub => Ok(StagePlan::run(
+                "Building read-aloud EPUB",
+                ResourceRequest::io_heavy(1),
+                self.elapsed_millis(),
+            )),
+            PipelineStage::Validate => Ok(StagePlan::run(
+                "Validating read-aloud EPUB",
+                ResourceRequest::io_heavy(1),
+                self.elapsed_millis(),
             )),
         }
     }
@@ -459,13 +599,8 @@ impl PipelineBackend for LitePipelineBackend {
             PipelineStage::Align => self.run_align(context),
             PipelineStage::ReviewAudio => self.run_review_audio(context),
             PipelineStage::Encode => self.run_encode(context),
-            stage => Err(StageRunError::failed(
-                format!(
-                    "{} backend is not implemented in Storyteller Lite yet.",
-                    stage.label()
-                ),
-                self.elapsed_millis(),
-            )),
+            PipelineStage::BuildEpub => self.run_build_epub(context),
+            PipelineStage::Validate => self.run_validate(context),
         }
     }
 }
@@ -542,10 +677,10 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
 
     PipelineEnvironment {
         whisper_backend: file_identity("whisper.cpp-cli", &whisper_cli),
-        alignment_backend: "storyteller:monotonic-ngram-edit-v1".into(),
+        alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
-        ocr_backend: "unimplemented:ocr".into(),
-        epub_backend: "unimplemented:epub".into(),
+        ocr_backend: "not-used:ocr".into(),
+        epub_backend: "storyteller:epub-media-overlay-v1-block".into(),
         effective_language: effective_language(job),
         effective_whisper_model,
     }
