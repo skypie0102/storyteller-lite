@@ -145,7 +145,8 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
             };
-            let whisper_workers = match whisper_workers(&ui.get_whisper_workers_text().to_string()) {
+            let workers_text = ui.get_whisper_workers_text().to_string();
+            let whisper_workers = match parse_whisper_workers(&workers_text) {
                 Ok(workers) => workers,
                 Err(error) => {
                     ui.set_status_text(error.into());
@@ -514,7 +515,7 @@ fn audio_encoding(codec: &str, bitrate: &str) -> Result<AudioEncoding, String> {
     AudioEncoding::new(codec, Some(bitrate))
 }
 
-fn whisper_workers(value: &str) -> Result<usize, String> {
+fn parse_whisper_workers(value: &str) -> Result<usize, String> {
     let workers = value
         .trim()
         .parse::<usize>()
@@ -877,10 +878,10 @@ mod tests {
 
     #[test]
     fn whisper_worker_values_are_bounded() {
-        assert_eq!(whisper_workers("1").unwrap(), 1);
-        assert_eq!(whisper_workers("16").unwrap(), 16);
-        assert!(whisper_workers("0").is_err());
-        assert!(whisper_workers("17").is_err());
+        assert_eq!(parse_whisper_workers("1").unwrap(), 1);
+        assert_eq!(parse_whisper_workers("16").unwrap(), 16);
+        assert!(parse_whisper_workers("0").is_err());
+        assert!(parse_whisper_workers("17").is_err());
     }
 
     #[test]
