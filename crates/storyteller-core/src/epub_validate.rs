@@ -29,7 +29,6 @@ pub struct EpubValidationSummary {
 
 #[derive(Debug, Clone)]
 struct ManifestItem {
-    id: String,
     archive_path: String,
     media_type: String,
     media_overlay: Option<String>,
@@ -59,11 +58,8 @@ pub fn validate_readaloud_epub(
     validate_first_mimetype(&mut archive)?;
     validate_unique_entries(&mut archive)?;
 
-    let container_xml = read_archive_text(
-        &mut archive,
-        "META-INF/container.xml",
-        cancellation,
-    )?;
+    let container_xml =
+        read_archive_text(&mut archive, "META-INF/container.xml", cancellation)?;
     let package_path = parse_container_package_path(&container_xml)?;
     let package_xml = read_archive_text(&mut archive, &package_path, cancellation)?;
     let package = audit_package(&package_xml, &package_path)?;
@@ -76,6 +72,15 @@ pub fn validate_readaloud_epub(
         .collect::<Vec<_>>();
     if overlay_items.is_empty() {
         return Err("Built EPUB package has no synchronized XHTML manifest items.".into());
+    }
+    let audio_manifest_paths = package
+        .items
+        .values()
+        .filter(|item| item.media_type.starts_with("audio/"))
+        .map(|item| item.archive_path.clone())
+        .collect::<HashSet<_>>();
+    if audio_manifest_paths.is_empty() {
+        return Err("Built EPUB package has no audio manifest item.".into());
     }
 
     let mut xhtml_ids = HashMap::<String, HashSet<String>>::new();
@@ -92,7 +97,9 @@ pub fn validate_readaloud_epub(
             .as_deref()
             .ok_or("Synchronized XHTML item is missing media-overlay.")?;
         if !seen_overlay_ids.insert(overlay_id.to_string()) {
-            return Err(format!("Media Overlay item {overlay_id} is associated more than once."));
+            return Err(format!(
+                "Media Overlay item {overlay_id} is associated more than once."
+            ));
         }
         let smil_item = package.items.get(overlay_id).ok_or_else(|| {
             format!("Media Overlay manifest item {overlay_id} does not exist.")
@@ -111,16 +118,27 @@ pub fn validate_readaloud_epub(
         let audit = audit_smil(
             &smil_xml,
             &smil_dir,
+            &xhtml_item.archive_path,
+            &audio_manifest_paths,
             &mut archive,
             &mut xhtml_ids,
             cancellation,
         )?;
         if audit.segment_count == 0 {
-            return Err(format!("Media Overlay {} contains no synchronized par elements.", smil_item.archive_path));
+            return Err(format!(
+                "Media Overlay {} contains no synchronized par elements.",
+                smil_item.archive_path
+            ));
         }
-        let declared = package.refined_duration_ms.get(overlay_id).copied().ok_or_else(|| {
-            format!("Media Overlay item {overlay_id} is missing refined media:duration metadata.")
-        })?;
+        let declared = package
+            .refined_duration_ms
+            .get(overlay_id)
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "Media Overlay item {overlay_id} is missing refined media:duration metadata."
+                )
+            })?;
         if declared != audit.duration_ms {
             return Err(format!(
                 "Media Overlay {overlay_id} duration metadata ({declared} ms) does not match its clips ({} ms).",
@@ -155,13 +173,20 @@ pub fn write_validation_report(
 ) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            format!("Could not create validation report directory {}: {error}", parent.display())
+            format!(
+                "Could not create validation report directory {}: {error}",
+                parent.display()
+            )
         })?;
     }
     let json = serde_json::to_vec_pretty(&summary)
         .map_err(|error| format!("Could not serialize EPUB validation report: {error}"))?;
-    fs::write(path, json)
-        .map_err(|error| format!("Could not write EPUB validation report {}: {error}", path.display()))
+    fs::write(path, json).map_err(|error| {
+        format!(
+            "Could not write EPUB validation report {}: {error}",
+            path.display()
+        )
+    })
 }
 
 pub fn publish_validated_epub(
@@ -182,12 +207,18 @@ pub fn publish_validated_epub(
         .parent()
         .ok_or("Output EPUB path has no parent directory.")?;
     fs::create_dir_all(parent).map_err(|error| {
-        format!("Could not create output directory {}: {error}", parent.display())
+        format!(
+            "Could not create output directory {}: {error}",
+            parent.display()
+        )
     })?;
     let temp = publication_temp_path(destination)?;
     if temp.exists() {
         fs::remove_file(&temp).map_err(|error| {
-            format!("Could not remove stale publication temporary file {}: {error}", temp.display())
+            format!(
+                "Could not remove stale publication temporary file {}: {error}",
+                temp.display()
+            )
         })?;
     }
     let result = (|| {
@@ -218,6 +249,8 @@ struct SmilAudit {
 fn audit_smil<R: Read + Seek>(
     xml: &str,
     smil_dir: &str,
+    expected_xhtml_path: &str,
+    audio_manifest_paths: &HashSet<String>,
     archive: &mut ZipArchive<R>,
     xhtml_ids: &mut HashMap<String, HashSet<String>>,
     cancellation: &CancellationToken,
@@ -286,15 +319,35 @@ fn audit_smil<R: Read + Seek>(
                     if !in_par {
                         return Err("Media Overlay par nesting is invalid.".into());
                     }
-                    let text_src = text_src.take().ok_or("Media Overlay par is missing text src.")?;
-                    let audio_src = audio_src.take().ok_or("Media Overlay par is missing audio src.")?;
-                    let begin = clip_begin.take().ok_or("Media Overlay par is missing clipBegin.")?;
-                    let end = clip_end.take().ok_or("Media Overlay par is missing clipEnd.")?;
+                    let text_src = text_src
+                        .take()
+                        .ok_or("Media Overlay par is missing text src.")?;
+                    let audio_src = audio_src
+                        .take()
+                        .ok_or("Media Overlay par is missing audio src.")?;
+                    let begin = clip_begin
+                        .take()
+                        .ok_or("Media Overlay par is missing clipBegin.")?;
+                    let end = clip_end
+                        .take()
+                        .ok_or("Media Overlay par is missing clipEnd.")?;
                     if end <= begin {
                         return Err("Media Overlay par has an invalid audio clip range.".into());
                     }
-                    validate_text_target(&text_src, smil_dir, archive, xhtml_ids, cancellation)?;
-                    validate_audio_target(&audio_src, smil_dir, archive)?;
+                    validate_text_target(
+                        &text_src,
+                        smil_dir,
+                        expected_xhtml_path,
+                        archive,
+                        xhtml_ids,
+                        cancellation,
+                    )?;
+                    validate_audio_target(
+                        &audio_src,
+                        smil_dir,
+                        audio_manifest_paths,
+                        archive,
+                    )?;
                     duration_ms = duration_ms
                         .checked_add(end - begin)
                         .ok_or("Media Overlay duration overflowed.")?;
@@ -321,6 +374,7 @@ fn audit_smil<R: Read + Seek>(
 fn validate_text_target<R: Read + Seek>(
     src: &str,
     smil_dir: &str,
+    expected_xhtml_path: &str,
     archive: &mut ZipArchive<R>,
     cache: &mut HashMap<String, HashSet<String>>,
     cancellation: &CancellationToken,
@@ -329,6 +383,11 @@ fn validate_text_target<R: Read + Seek>(
         .split_once('#')
         .ok_or("Media Overlay text src is missing a fragment identifier.")?;
     let archive_path = resolve_archive_href(smil_dir, path_part)?;
+    if archive_path != expected_xhtml_path {
+        return Err(format!(
+            "Media Overlay text target {archive_path} does not match its associated XHTML item {expected_xhtml_path}."
+        ));
+    }
     let fragment = percent_decode(fragment)?;
     if fragment.trim().is_empty() {
         return Err("Media Overlay text src has an empty fragment identifier.".into());
@@ -351,9 +410,15 @@ fn validate_text_target<R: Read + Seek>(
 fn validate_audio_target<R: Read + Seek>(
     src: &str,
     smil_dir: &str,
+    audio_manifest_paths: &HashSet<String>,
     archive: &mut ZipArchive<R>,
 ) -> Result<(), String> {
     let archive_path = resolve_archive_href(smil_dir, src)?;
+    if !audio_manifest_paths.contains(&archive_path) {
+        return Err(format!(
+            "Media Overlay audio target {archive_path} is not declared as audio in the package manifest."
+        ));
+    }
     ensure_nonempty_archive_entry(archive, &archive_path)
 }
 
@@ -364,7 +429,9 @@ fn collect_ids(xml: &str) -> Result<HashSet<String>, String> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
-                if let Some(id) = attribute_value(&element, b"id")?.filter(|id| !id.trim().is_empty()) {
+                if let Some(id) =
+                    attribute_value(&element, b"id")?.filter(|id| !id.trim().is_empty())
+                {
                     if !ids.insert(id.clone()) {
                         return Err(format!("Synchronized XHTML contains duplicate id {id}."));
                     }
@@ -396,7 +463,8 @@ fn audit_package(xml: &str, package_path: &str) -> Result<PackageAudit, String> 
                 if name == b"item" {
                     insert_manifest_item(&element, &package_dir, &mut items)?;
                 } else if name == b"meta"
-                    && attribute_value(&element, b"property")?.as_deref() == Some("media:duration")
+                    && attribute_value(&element, b"property")?.as_deref()
+                        == Some("media:duration")
                 {
                     let refines = attribute_value(&element, b"refines")?
                         .map(|value| value.trim_start_matches('#').to_string());
@@ -423,10 +491,15 @@ fn audit_package(xml: &str, package_path: &str) -> Result<PackageAudit, String> 
                         let duration = parse_clock(duration_text.trim())?;
                         if let Some(id) = refines {
                             if refined_duration_ms.insert(id.clone(), duration).is_some() {
-                                return Err(format!("Duplicate media:duration metadata for #{id}."));
+                                return Err(format!(
+                                    "Duplicate media:duration metadata for #{id}."
+                                ));
                             }
                         } else if total_duration_ms.replace(duration).is_some() {
-                            return Err("EPUB package contains duplicate total media:duration metadata.".into());
+                            return Err(
+                                "EPUB package contains duplicate total media:duration metadata."
+                                    .into(),
+                            );
                         }
                     }
                 }
@@ -453,12 +526,12 @@ fn insert_manifest_item(
     items: &mut HashMap<String, ManifestItem>,
 ) -> Result<(), String> {
     let id = attribute_value(element, b"id")?.ok_or("EPUB manifest item is missing id.")?;
-    let href = attribute_value(element, b"href")?.ok_or("EPUB manifest item is missing href.")?;
+    let href =
+        attribute_value(element, b"href")?.ok_or("EPUB manifest item is missing href.")?;
     let media_type = attribute_value(element, b"media-type")?
         .ok_or("EPUB manifest item is missing media-type.")?;
     let archive_path = resolve_archive_href(package_dir, &href)?;
     let item = ManifestItem {
-        id: id.clone(),
         archive_path,
         media_type,
         media_overlay: attribute_value(element, b"media-overlay")?,
@@ -532,7 +605,9 @@ fn ensure_nonempty_archive_entry<R: Read + Seek>(
         .by_name(name)
         .map_err(|error| format!("EPUB resource {name} is unavailable: {error}"))?;
     if !entry.is_file() || entry.size() == 0 {
-        return Err(format!("EPUB resource {name} is not a non-empty regular file."));
+        return Err(format!(
+            "EPUB resource {name} is not a non-empty regular file."
+        ));
     }
     Ok(())
 }
@@ -546,10 +621,14 @@ fn read_archive_text<R: Read + Seek>(
         .by_name(name)
         .map_err(|error| format!("EPUB XML resource {name} is unavailable: {error}"))?;
     if !entry.is_file() || entry.size() == 0 {
-        return Err(format!("EPUB XML resource {name} is not a non-empty regular file."));
+        return Err(format!(
+            "EPUB XML resource {name} is not a non-empty regular file."
+        ));
     }
     if entry.size() > MAX_XML_BYTES as u64 {
-        return Err(format!("EPUB XML resource {name} exceeds the 32 MiB validation limit."));
+        return Err(format!(
+            "EPUB XML resource {name} exceeds the 32 MiB validation limit."
+        ));
     }
     let mut bytes = Vec::with_capacity(entry.size() as usize);
     let mut buffer = vec![0u8; READ_BUFFER_BYTES];
@@ -564,11 +643,14 @@ fn read_archive_text<R: Read + Seek>(
             break;
         }
         if bytes.len().saturating_add(count) > MAX_XML_BYTES {
-            return Err(format!("EPUB XML resource {name} expanded beyond the validation limit."));
+            return Err(format!(
+                "EPUB XML resource {name} expanded beyond the validation limit."
+            ));
         }
         bytes.extend_from_slice(&buffer[..count]);
     }
-    String::from_utf8(bytes).map_err(|error| format!("EPUB XML resource {name} is not UTF-8: {error}"))
+    String::from_utf8(bytes)
+        .map_err(|error| format!("EPUB XML resource {name} is not UTF-8: {error}"))
 }
 
 fn parse_clock(value: &str) -> Result<u64, String> {
@@ -591,10 +673,13 @@ fn parse_clock(value: &str) -> Result<u64, String> {
         return Err(format!("Invalid Media Overlay clock value: {value}"));
     }
     let (seconds, millis) = if let Some((seconds, fraction)) = seconds_part.split_once('.') {
+        if fraction.is_empty() || fraction.len() > 3 || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(format!("Invalid Media Overlay clock value: {value}"));
+        }
         let seconds = seconds
             .parse::<u64>()
             .map_err(|_| format!("Invalid Media Overlay clock value: {value}"))?;
-        let mut fraction = fraction.chars().take(3).collect::<String>();
+        let mut fraction = fraction.to_string();
         while fraction.len() < 3 {
             fraction.push('0');
         }
@@ -613,9 +698,9 @@ fn parse_clock(value: &str) -> Result<u64, String> {
     }
     hours
         .checked_mul(3_600_000)
-        .and_then(|value| value.checked_add(minutes * 60_000))
-        .and_then(|value| value.checked_add(seconds * 1000))
-        .and_then(|value| value.checked_add(millis))
+        .and_then(|result| result.checked_add(minutes * 60_000))
+        .and_then(|result| result.checked_add(seconds * 1000))
+        .and_then(|result| result.checked_add(millis))
         .ok_or_else(|| format!("Media Overlay clock value is too large: {value}"))
 }
 
@@ -661,7 +746,8 @@ fn publication_temp_path(destination: &Path) -> Result<PathBuf, String> {
 
 fn attribute_value(element: &BytesStart<'_>, wanted: &[u8]) -> Result<Option<String>, String> {
     for attribute in element.attributes().with_checks(false) {
-        let attribute = attribute.map_err(|error| format!("Invalid EPUB XML attribute: {error}"))?;
+        let attribute =
+            attribute.map_err(|error| format!("Invalid EPUB XML attribute: {error}"))?;
         if local_name(attribute.key.as_ref()) != wanted {
             continue;
         }
@@ -687,6 +773,7 @@ mod tests {
         assert_eq!(parse_clock("1:02:03.045").unwrap(), 3_723_045);
         assert_eq!(parse_clock("0:00:00.250").unwrap(), 250);
         assert!(parse_clock("0:61:00.000").is_err());
+        assert!(parse_clock("0:00:01.1234").is_err());
     }
 
     #[test]
