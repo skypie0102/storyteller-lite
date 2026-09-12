@@ -18,6 +18,7 @@ The recovery packet is stored in the repository so another agent can continue wi
 - `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend/state/persistence behavior.
 - `docs/recovery/WORKER_SEMANTICS.md` — recovered meaning of Parallel Whisper jobs and preferred Lite direction.
 - `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` — recovered Smart/edge/lazy-OCR behavior and allocator scope.
+- `docs/recovery/QUEUE_FAILURE_RECOVERY.md` — recovered queue auto-advance behavior after failures.
 - `docs/recovery/README.md` — authority order and provenance index.
 
 The planning transcript references a historical `refactor/rust-slint` branch and commit SHAs. The recovered live code branch is `recovery/rust-slint`; never assume a historical transcript claim is present without checking the repository.
@@ -26,6 +27,7 @@ The planning transcript references a historical `refactor/rust-slint` branch and
 
 - Queue-first workflow. The first waiting book starts automatically; later books wait their turn.
 - Exactly one pipeline worker may own foreground book processing at a time.
+- A failed book does not stall the whole queue: mark it failed, preserve retry/diagnostic state, and continue to the next waiting book unless the queue was explicitly paused or `Pause after book` was requested.
 - `Pause after book` takes effect on the current job's terminal transition and prevents the next waiting job from starting until the queue is resumed.
 - Long-running work never runs on the Slint UI thread.
 - Exactly one weighted overall progress bar is shown.
@@ -94,7 +96,7 @@ The user-facing stage order is fixed:
 - Per-job and per-stage workspaces plus artifact manifests.
 - Worker snapshot reconciliation through the queue.
 - 100 ms Slint worker bridge.
-- Queue auto-advance after the previous worker has been joined.
+- Queue auto-advance after terminal workers, including failed jobs, unless pause-after-current paused the queue. This matches the recovered v0.39.0 behavior.
 - Pause-after-current, queue resume, and active worker cancellation controls.
 - Queue-another-book flow while a job is active.
 - Waiting/recent job management with reorder, remove, safe retry-from-start, and visible terminal errors.
@@ -233,6 +235,14 @@ Do not begin with broad legacy deletion. Preserve old material until the replace
 
 > **Replace → regression-test → delete. Never delete → hope we remembered everything.**
 
-## Failure policy still to finalize
+## Queue failure policy — recovered and resolved
 
-The historical v1 behavior for whether a failed book should automatically advance to the next waiting book could not be recovered after the original repositories became unavailable. The current bridge advances after a terminal worker unless the queue is paused. Revisit this policy only when a trustworthy behavioral reference or an explicit product decision is available.
+The user-supplied v0.39.0 installer resolves the historical failure-policy question. Its compiled backend explicitly reports that the **queue continues after a processing failure when pending books remain**. The old frontend separately exposes `Stop After` as the user action that prevents automatic continuation after the current book.
+
+The current Rust + Slint implementation already matches this: `WorkerBridge` attempts `start_next_worker()` after a terminal worker result, and `JobQueue` remains running across terminal transitions unless pause-after-current moves it to `Paused`.
+
+Keep this behavior:
+
+> **Failed book → preserve Failed/retry state → continue to the next waiting book.** Only an explicit queue pause / Pause-after-current prevents the next book from starting.
+
+See `docs/recovery/QUEUE_FAILURE_RECOVERY.md` for the recovered evidence and regression-test expectations.
