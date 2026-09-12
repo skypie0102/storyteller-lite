@@ -6,7 +6,6 @@ Read this file before making substantial changes.
 
 - Repository: `skypie0102/storyteller-lite`
 - Active recovered code branch: `recovery/rust-slint`
-- Head when this recovery packet was created: `56a48b4142caa89f49cd9020bc537c698932d57c`
 - Default branch `main` is not the code branch to use for the Rust + Slint implementation.
 
 The recovered planning transcript mentions a historical `refactor/rust-slint` branch and several commit SHAs. Those are useful clues but are **not authoritative current repository state**. Inspect the live branch before relying on them.
@@ -23,7 +22,8 @@ Primary references:
 4. `docs/recovery/LITE_PLANNING_HISTORY.txt` — recovered historical planning transcript.
 5. `docs/recovery/LEGACY_INSTALLER_REFERENCE.md` — old installer provenance and usage rules.
 6. `docs/recovery/INSTALLER_DISSECTION.md` — facts recovered by static analysis of the v0.39.0 installer.
-7. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
+7. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend state machine, exact allocator invariants, backend defaults, and concurrency semantics.
+8. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
 
 ## User decisions recovered in this chat
 
@@ -33,7 +33,7 @@ Primary references:
 - Fixed seven-stage pipeline: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate.
 - Exactly one overall progress bar with real structured metrics.
 - Existing automatic CPU-thread selection for Whisper.
-- **A simple user-facing Whisper worker-count setting**, default `1`.
+- **A simple user-facing Whisper worker-count setting**, default `1` for Lite unless benchmarking/product evidence changes it.
 - **Manual allocation for unresolved/unaligned audio** in a reduced Lite-specific review screen.
 - Old installer only as a behavioral reference when needed.
 - The supplied mockups as current UI layout guides.
@@ -71,13 +71,15 @@ Inspect the current source before implementation because the branch may have adv
 
 ## Installer recovery status
 
-Static analysis of the user-provided v0.39.0 installer is now reproducible and documented in `docs/recovery/INSTALLER_DISSECTION.md`.
+Static analysis of the user-provided v0.39.0 installer is reproducible and documented under `docs/recovery/`.
 
 Important recovered clues:
 
-- The old Tauri/Rust app had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings. Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs. This supports keeping Lite's automatic CPU thread selection while exposing only the newly requested worker count.
-- Old manual-allocation IPC included draft save/restore, pending request retrieval, audio preview, image preview, submit, and cancel operations.
-- Old persisted state contained `manualDrafts`; retry after interruption could reopen/restored allocations. Durable review drafts are therefore a real historical behavior worth preserving in reduced Lite form.
+- The old Tauri/Rust app had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings. Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs.
+- Machine-code recovery confirms the old backend defaults were `threads=6`, `parallelTranscribes=3`, and `parallelTranscodes=6`, with `npx`, `large-v3-turbo`, `en-US`, and `64K`. These are historical defaults only, not Lite defaults.
+- **Critical:** the old alignment launcher passed `--processors 1` separately from `--parallel-transcribes <parallelTranscribes>`. Therefore historical `parallelTranscribes` was higher-level job concurrency and was **not** whisper.cpp processor count / `-p`.
+- Old manual-allocation IPC included draft save/restore, pending request retrieval, audio preview, image preview, submit, and pause/cancel operations.
+- Old persisted state contained `manualDrafts`; retry after interruption could reopen/restore allocations. The recovered frontend autosaved after a 450 ms debounce and also kept a local fallback copy.
 - The installer contains the old finishing helper's **plain Python source**. Its manual allocation code enforces complete time coverage, no gaps/overlaps, explicit targets, and final output auditing.
 - The old helper's discovery logic was primarily edge-focused (Introduction/Credits) rather than a generic internal-segment allocator. Do not blindly copy that discovery policy into Lite's current arbitrary unmatched-segment review model.
 - The helper is GPLv3-or-later/Sigil-derived. Treat it as a behavioral/test-vector reference unless licensing for direct code reuse is deliberately resolved.
@@ -90,19 +92,20 @@ Before feature changes, establish that the current branch builds/tests on the in
 
 ### P1 — Whisper workers setting
 
-Implement one simple setting for the number of whisper.cpp processors/workers.
+Implement one simple user-facing worker-count setting while retaining automatic CPU-thread selection.
 
 Requirements:
 
-- default `1`;
+- Lite default `1` unless deliberate benchmarking changes it;
 - user-adjustable from Settings;
 - validate/clamp to a sensible positive range;
-- pass the value through to whisper.cpp as the appropriate current `-p`/processor option after confirming the bundled/current whisper.cpp CLI semantics;
+- **do not automatically equate this setting with the old `parallelTranscribes` or with whisper.cpp `-p`;** those are proven to be different historical concepts;
+- before wiring it, verify the exact current whisper.cpp build's `-p` semantics and decide whether the desired Lite behavior is whisper.cpp internal processor parallelism or Lite-managed chunk/job concurrency;
+- avoid obvious CPU/GPU/VRAM oversubscription;
 - keep automatic CPU-thread selection — do not add manual CPU allocation;
-- avoid obvious CPU/GPU oversubscription after verifying how `-t` and `-p` interact in the exact whisper.cpp build being shipped;
 - treat worker count as **execution/performance configuration**, not semantic output configuration. Do not make changing worker count invalidate otherwise reusable Analyze/Align checkpoints unless the backend actually produces semantically different results.
 
-Prefer an app/runtime settings model separate from output-affecting `JobSettings` fingerprints. If implementation constraints require storing it on a queued job for determinism, exclude it from semantic stage fingerprints.
+Prefer an app/runtime settings model separate from output-affecting `JobSettings` fingerprints. If implementation constraints require storing it on a queued job for deterministic execution, exclude it from semantic stage fingerprints.
 
 ### P2 — reduced manual audio allocator
 
@@ -126,6 +129,8 @@ Minimum UI should support:
 - durable decisions that survive resume/review transitions and application restart/retry where practical.
 
 Preserve monotonic EPUB order. Candidate assignments should normally be constrained between the nearest accepted matched neighbors, with validation rejecting backwards/cross-block-invalid results. Also preserve the old allocator's strong accounting rule: a reviewed segment must not silently develop uncovered gaps or overlaps.
+
+Historical frontend details useful as test/reference evidence are in `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md`, including durable autosave, pause/retry semantics, exact old gap/overlap tolerances, and output auditing.
 
 Do **not** initially implement the mockup’s split/merge/trim editor, permanent OCR controls, automatic apply-to-similar, or full historical classification system unless a concrete Lite requirement emerges.
 
