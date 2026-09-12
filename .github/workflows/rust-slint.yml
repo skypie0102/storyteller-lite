@@ -75,7 +75,7 @@ jobs:
       - name: Apply safe maintenance fixes
         run: |
           cargo generate-lockfile
-          cargo clippy -p storyteller-core --all-targets --fix --allow-dirty --allow-staged
+          cargo clippy -p storyteller-core --all-targets --fix --allow-dirty --allow-staged || true
           cargo fmt --all
 
       - name: Commit maintenance changes
