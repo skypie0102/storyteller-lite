@@ -1,6 +1,6 @@
 use crate::{
-    CancellationToken, Job, JobOutcome, JobStatus, JobWorkspace, PipelineStage, ResourceRequest,
-    ResumeContext, RuntimeCoordinator, StageStatus,
+    CancellationToken, Job, JobOutcome, JobStatus, JobWorkspace, LiveMetrics, PipelineStage,
+    ResourceRequest, ResumeContext, RuntimeCoordinator, StageStatus,
 };
 use std::path::PathBuf;
 
@@ -150,6 +150,11 @@ impl<'a> StageRunContext<'a> {
         self.job.progress.set_current_stage_percent(percent)?;
         self.observer.observe(self.job);
         Ok(())
+    }
+
+    pub fn set_metrics(&mut self, metrics: LiveMetrics, _at_millis: u64) {
+        self.job.progress.set_metrics(metrics);
+        self.observer.observe(self.job);
     }
 }
 
