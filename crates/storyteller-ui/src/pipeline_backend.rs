@@ -164,7 +164,9 @@ impl LitePipelineBackend {
             .arg(&output_prefix)
             .arg("-pp")
             .arg("-t")
-            .arg(self.cpu_threads.to_string());
+            .arg(self.cpu_threads.to_string())
+            .arg("-p")
+            .arg(context.job().settings.whisper_workers.to_string());
 
         let mut progress_error = None;
         let transcription = run_cancellable_command(&mut whisper, &cancellation, |stream, line| {
