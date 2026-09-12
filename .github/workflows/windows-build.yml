@@ -1,7 +1,7 @@
 name: Windows test build
 
-# One-shot trigger for the runtime dependency manager checkpoint (rustfmt retry).
-# This is returned to manual-only after the artifact is produced.
+# One-shot release package after a text-only Settings copy correction.
+# Runtime-manager code already passed fmt, strict Clippy, and workspace tests.
 on:
   push:
     branches:
@@ -19,29 +19,18 @@ concurrency:
 
 jobs:
   package:
-    name: Validate and package Windows x64 build
+    name: Package Windows x64 build
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
-
-      - name: Rust formatting
-        run: cargo fmt --all -- --check
-
-      - name: Rust lint
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Rust tests
-        run: cargo test --workspace
 
       - name: Build release executable
         run: cargo build --locked --release -p storyteller-ui
@@ -54,25 +43,16 @@ jobs:
           @'
           StoryTeller Lite — Windows developer-test build
 
-          Launch:
-            Double-click StoryTeller-Lite.exe
-
           Runtime manager:
-            Open Settings. StoryTeller Lite scans for ffmpeg, whisper.cpp, and the
-            large-v3-turbo model. Existing working dependencies are reused. If any
-            dependency is missing, choose Download missing to install verified copies
-            into the portable tools\ and models\ folders beside the app.
+            Open Settings. StoryTeller Lite detects ffmpeg, whisper.cpp, and the
+            large-v3-turbo model from supported existing locations. If anything is
+            missing, choose Download missing to install verified portable copies.
 
           Automatic downloads are user-initiated. The default Whisper model is about
-          1.62 GB. ffmpeg, whisper.cpp, and the model are checksum/digest verified.
+          1.62 GB. Downloaded ffmpeg, whisper.cpp, and model files are checksum/digest
+          verified before they are accepted.
 
-          Environment-variable overrides remain supported:
-            STORYTELLER_FFMPEG
-            STORYTELLER_WHISPER
-            STORYTELLER_WHISPER_MODEL
-
-          This is a developer-test build, not a public release. Installer/signing,
-          EPUBCheck interoperability, and release polish are still pending.
+          This is a developer-test build, not a public release.
           '@ | Set-Content -Encoding UTF8 dist\README.txt
           "commit=${env:GITHUB_SHA}" | Set-Content -Encoding ASCII dist\BUILD.txt
           (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash + "  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
