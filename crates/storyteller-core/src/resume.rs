@@ -7,6 +7,7 @@ pub struct ResumeContext {
     pub audiobook_source: String,
     pub whisper_backend: String,
     pub alignment_backend: String,
+    pub audio_backend: String,
     pub ocr_backend: String,
     pub epub_backend: String,
     pub effective_language: String,
@@ -24,6 +25,7 @@ impl ResumeContext {
             ),
             ("Whisper backend", self.whisper_backend.as_str()),
             ("Alignment backend", self.alignment_backend.as_str()),
+            ("Audio backend", self.audio_backend.as_str()),
             ("OCR backend", self.ocr_backend.as_str()),
             ("EPUB backend", self.epub_backend.as_str()),
             ("Effective language", self.effective_language.as_str()),
@@ -60,9 +62,11 @@ impl ResumeContext {
             }
             PipelineStage::Encode => {
                 hasher.update(self.alignment_backend.as_bytes());
+                hasher.update(self.audio_backend.as_bytes());
             }
             PipelineStage::BuildEpub | PipelineStage::Validate => {
                 hasher.update(self.alignment_backend.as_bytes());
+                hasher.update(self.audio_backend.as_bytes());
                 hasher.update(self.ocr_backend.as_bytes());
                 hasher.update(self.epub_backend.as_bytes());
             }
