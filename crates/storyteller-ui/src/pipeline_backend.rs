@@ -5,11 +5,12 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    align_transcript_to_corpus, extract_epub_corpus, prepare_job_sources, prepared_job_sources,
-    run_cancellable_command, spawn_pipeline_worker_with_preflight, CommandOutput, CommandRunError,
-    CommandStream, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
-    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
-    RuntimeCoordinator, StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    align_transcript_to_corpus, create_audio_review_report, extract_epub_corpus,
+    prepare_job_sources, prepared_job_sources, run_cancellable_command,
+    spawn_pipeline_worker_with_preflight, CommandOutput, CommandRunError, CommandStream,
+    HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
+    PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
+    StagePlan, StageRunContext, StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -279,6 +280,62 @@ impl LitePipelineBackend {
             self.elapsed_millis(),
         ))
     }
+
+    fn run_review_audio(
+        &mut self,
+        context: &mut StageRunContext<'_>,
+    ) -> Result<StageRunOutput, StageRunError> {
+        let stage_started = Instant::now();
+        let alignment_path = context
+            .workspace()
+            .stage_dir(PipelineStage::Align)
+            .join("alignment.json");
+        let stage_dir = context.workspace().stage_dir(PipelineStage::ReviewAudio);
+        reset_stage_dir(&stage_dir, PipelineStage::ReviewAudio)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let report_path = stage_dir.join("review.json");
+
+        context
+            .set_activity("Checking alignment for unmatched audio", self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let summary = create_audio_review_report(&alignment_path, &report_path)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        context.set_metrics(
+            LiveMetrics {
+                match_percent: Some(summary.match_percent),
+                backend: Some("Storyteller audio review gate".into()),
+                ..LiveMetrics::default()
+            },
+            self.elapsed_millis(),
+        );
+        context
+            .set_stage_percent(100, self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        let output = StageRunOutput::new(
+            vec![PathBuf::from("review.json")],
+            stage_started.elapsed().as_secs(),
+            self.elapsed_millis(),
+        );
+        if summary.unmatched_segments == 0 {
+            context
+                .set_activity("No unmatched audio segments require review", self.elapsed_millis())
+                .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+            Ok(output)
+        } else {
+            context
+                .set_activity(
+                    format!(
+                        "{} unmatched audio segment{} need review",
+                        summary.unmatched_segments,
+                        if summary.unmatched_segments == 1 { "" } else { "s" }
+                    ),
+                    self.elapsed_millis(),
+                )
+                .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+            Ok(output.requiring_review())
+        }
+    }
 }
 
 impl PipelineBackend for LitePipelineBackend {
@@ -299,6 +356,11 @@ impl PipelineBackend for LitePipelineBackend {
                 ResourceRequest::cpu_heavy(self.cpu_threads),
                 self.elapsed_millis(),
             )),
+            PipelineStage::ReviewAudio => Ok(StagePlan::run(
+                "Reviewing unmatched audio",
+                ResourceRequest::io_heavy(1),
+                self.elapsed_millis(),
+            )),
             _ => Err(format!(
                 "{} backend is not implemented in Storyteller Lite yet.",
                 stage.label()
@@ -314,6 +376,7 @@ impl PipelineBackend for LitePipelineBackend {
             PipelineStage::Prepare => self.run_prepare(context),
             PipelineStage::Analyze => self.run_analyze(context),
             PipelineStage::Align => self.run_align(context),
+            PipelineStage::ReviewAudio => self.run_review_audio(context),
             stage => Err(StageRunError::failed(
                 format!(
                     "{} backend is not implemented in Storyteller Lite yet.",
@@ -372,6 +435,10 @@ pub(crate) fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String>
         environment,
         LitePipelineBackend::new(logical_cpu_threads),
     )
+}
+
+pub(crate) fn job_workspace(job: &Job) -> JobWorkspace {
+    JobWorkspace::for_job(workspace_base(), job.id)
 }
 
 fn pipeline_environment(job: &Job) -> PipelineEnvironment {
