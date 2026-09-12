@@ -9,10 +9,10 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobQueue, JobSettings,
-    JobStatus, QueueMove, QueueState, StageStatus,
+    AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobQueue,
+    JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
 };
-use worker_bridge::WorkerBridge;
+use worker_bridge::{accept_audio_review_exclusion, load_audio_review_report, WorkerBridge};
 
 slint::include_modules!();
 
@@ -179,6 +179,10 @@ fn main() -> Result<(), slint::PlatformError> {
 
     {
         let worker_bridge = Rc::clone(&worker_bridge);
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
         let ui_weak = ui.as_weak();
         ui.on_cancel_current(move || {
             let Some(ui) = ui_weak.upgrade() else {
@@ -186,9 +190,78 @@ fn main() -> Result<(), slint::PlatformError> {
             };
             if worker_bridge.borrow().request_cancellation() {
                 ui.set_status_text("Cancellation requested".into());
-            } else {
-                ui.set_status_text("Active worker is not ready to cancel".into());
+                return;
             }
+
+            let review_job = {
+                queue
+                    .borrow()
+                    .active_job()
+                    .filter(|job| job.status == JobStatus::NeedsReview)
+                    .map(|job| (job.id, elapsed_stage_seconds(job)))
+            };
+            let Some((job_id, runtime_seconds)) = review_job else {
+                ui.set_status_text("Active worker is not ready to cancel".into());
+                return;
+            };
+            let result = {
+                let mut queue = queue.borrow_mut();
+                queue
+                    .finish(job_id, JobOutcome::Cancelled, runtime_seconds)
+                    .and_then(|()| queue.start_next().map(|_| ()))
+            };
+            if let Err(error) = result {
+                ui.set_status_text(error.into());
+                return;
+            }
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+            ui.set_status_text("Cancelled".into());
+        });
+    }
+
+    {
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_continue_after_review(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let review_job = {
+                queue
+                    .borrow()
+                    .active_job()
+                    .filter(|job| job.status == JobStatus::NeedsReview)
+                    .cloned()
+            };
+            let Some(job) = review_job else {
+                ui.set_status_text("No book is waiting for audio review".into());
+                return;
+            };
+            if let Err(error) = accept_audio_review_exclusion(&job) {
+                ui.set_status_text(error.into());
+                return;
+            }
+            if let Err(error) = queue.borrow_mut().resume_after_review(job.id) {
+                ui.set_status_text(error.into());
+                return;
+            }
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+            ui.set_status_text("Review accepted; continuing".into());
         });
     }
 
@@ -421,6 +494,9 @@ pub(crate) fn refresh_main_view(
         ui.set_active_timing_text("".into());
         ui.set_active_metrics_text("".into());
         ui.set_pause_action_text("Pause after book".into());
+        ui.set_needs_review(false);
+        ui.set_review_summary_text("".into());
+        ui.set_review_preview_text("".into());
         return;
     };
 
@@ -442,6 +518,17 @@ pub(crate) fn refresh_main_view(
         }
         .into(),
     );
+
+    let needs_review = job.status == JobStatus::NeedsReview;
+    ui.set_needs_review(needs_review);
+    if needs_review {
+        let (summary, preview) = review_text(job);
+        ui.set_review_summary_text(summary.into());
+        ui.set_review_preview_text(preview.into());
+    } else {
+        ui.set_review_summary_text("".into());
+        ui.set_review_preview_text("".into());
+    }
     ui.set_status_text(
         match job.status {
             JobStatus::NeedsReview => "Needs Review",
@@ -449,6 +536,40 @@ pub(crate) fn refresh_main_view(
         }
         .into(),
     );
+}
+
+fn review_text(job: &Job) -> (String, String) {
+    match load_audio_review_report(job) {
+        Ok(report) => {
+            let count = report.unmatched.len();
+            let summary = format!(
+                "{count} unmatched audio segment{} will be excluded from synchronization if you continue. Match {:.1}%.",
+                if count == 1 { "" } else { "s" },
+                report.match_percent
+            );
+            let mut previews = report
+                .unmatched
+                .iter()
+                .take(4)
+                .map(|item| {
+                    format!(
+                        "{}–{}  {}",
+                        format_millis(item.audio_start_ms),
+                        format_millis(item.audio_end_ms),
+                        item.transcript_text
+                    )
+                })
+                .collect::<Vec<_>>();
+            if count > previews.len() {
+                previews.push(format!("…and {} more", count - previews.len()));
+            }
+            (summary, previews.join("\n"))
+        }
+        Err(error) => (
+            format!("Review data could not be loaded: {error}"),
+            String::new(),
+        ),
+    }
 }
 
 fn build_queue_rows(queue: &JobQueue) -> Vec<QueueRow> {
@@ -599,12 +720,7 @@ fn active_context(job: &Job) -> String {
 fn active_timing(job: &Job) -> String {
     let metrics = job.progress.metrics();
     let mut parts = Vec::new();
-    let elapsed_seconds = job
-        .progress
-        .stages()
-        .iter()
-        .filter_map(|stage| stage.elapsed_seconds)
-        .sum::<u64>();
+    let elapsed_seconds = elapsed_stage_seconds(job);
 
     if elapsed_seconds > 0 {
         parts.push(format!("Elapsed {}", format_duration(elapsed_seconds)));
@@ -650,6 +766,14 @@ fn active_metrics(job: &Job) -> String {
     parts.join("  •  ")
 }
 
+fn elapsed_stage_seconds(job: &Job) -> u64 {
+    job.progress
+        .stages()
+        .iter()
+        .filter_map(|stage| stage.elapsed_seconds)
+        .sum()
+}
+
 fn format_duration(total_seconds: u64) -> String {
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
@@ -659,6 +783,12 @@ fn format_duration(total_seconds: u64) -> String {
     } else {
         format!("{minutes}:{seconds:02}")
     }
+}
+
+fn format_millis(total_millis: u64) -> String {
+    let total_seconds = total_millis / 1000;
+    let millis = total_millis % 1000;
+    format!("{}.{millis:03}", format_duration(total_seconds))
 }
 
 #[cfg(test)]
@@ -749,7 +879,7 @@ mod tests {
         let id = queue.enqueue(sample_job("Recent"));
         queue.start_next().unwrap();
         queue
-            .finish(id, storyteller_core::JobOutcome::Failed("boom".into()), 4)
+            .finish(id, JobOutcome::Failed("boom".into()), 4)
             .unwrap();
         let rows = build_queue_rows(&queue);
         assert_eq!(rows.len(), 1);
@@ -757,5 +887,10 @@ mod tests {
         assert!(rows[0].retryable);
         assert_eq!(rows[0].status.as_str(), "Failed");
         assert_eq!(rows[0].detail.as_str(), "boom");
+    }
+
+    #[test]
+    fn millisecond_review_ranges_are_not_rounded_to_fake_seconds() {
+        assert_eq!(format_millis(65_432), "1:05.432");
     }
 }
