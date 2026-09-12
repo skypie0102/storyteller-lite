@@ -225,16 +225,41 @@ pub fn run_pipeline<B: PipelineBackend>(
         match backend.run_stage(&mut context) {
             Ok(output) => {
                 let _ = output.completed_at_millis.max(plan.planned_at_millis);
+                if let Err(error) = context
+                    .workspace
+                    .capture_stage_artifacts(stage, &output.artifacts)
+                {
+                    context.job.progress.mark_failed(stage)?;
+                    context
+                        .job
+                        .progress
+                        .set_activity(format!("{} artifact finalization failed", stage.label()))?;
+                    context.job.finish(
+                        JobOutcome::Failed(error.clone()),
+                        elapsed_seconds(context.job),
+                    )?;
+                    context.observer.observe(context.job);
+                    return Ok(PipelineRunState::Failed(error));
+                }
                 context
                     .job
                     .progress
                     .complete_stage(stage, output.elapsed_seconds)?;
-                context
-                    .workspace
-                    .capture_stage_artifacts(stage, &output.artifacts)?;
-                context
+                if let Err(error) = context
                     .job
-                    .checkpoint_completed_stage(stage, resume_context)?;
+                    .checkpoint_completed_stage(stage, resume_context)
+                {
+                    context
+                        .job
+                        .progress
+                        .set_activity(format!("{} checkpoint failed", stage.label()))?;
+                    context.job.finish(
+                        JobOutcome::Failed(error.clone()),
+                        elapsed_seconds(context.job),
+                    )?;
+                    context.observer.observe(context.job);
+                    return Ok(PipelineRunState::Failed(error));
+                }
                 if output.requires_review {
                     context.job.require_review()?;
                     context.job.progress.set_activity("Waiting for review")?;
