@@ -59,6 +59,7 @@ pub struct JobSettings {
     pub audio: AudioEncoding,
     pub language: Option<String>,
     pub whisper_model: String,
+    pub whisper_workers: usize,
 }
 
 impl Default for JobSettings {
@@ -70,6 +71,7 @@ impl Default for JobSettings {
             },
             language: None,
             whisper_model: "large-v3-turbo".into(),
+            whisper_workers: 1,
         }
     }
 }
@@ -140,6 +142,9 @@ impl Job {
         }
         if inputs.output_path == inputs.epub_path {
             return Err("Output path must not replace the source EPUB.".into());
+        }
+        if !(1..=64).contains(&settings.whisper_workers) {
+            return Err("Whisper workers must be between 1 and 64.".into());
         }
         Ok(Self {
             id: Uuid::new_v4(),
