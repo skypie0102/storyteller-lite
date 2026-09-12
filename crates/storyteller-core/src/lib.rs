@@ -1,3 +1,4 @@
+mod alignment;
 mod cancellation;
 mod command;
 mod epub_corpus;
@@ -13,6 +14,10 @@ mod whisper_transcript;
 mod worker;
 mod workspace;
 
+pub use alignment::{
+    align_transcript_to_corpus, AlignmentDocument, AlignmentProgress, AlignmentSegment,
+    AlignmentStatus, AlignmentSummary, CorpusPosition,
+};
 pub use cancellation::CancellationToken;
 pub use command::{
     run_cancellable_command, CommandOutput, CommandRunError, CommandStream,
