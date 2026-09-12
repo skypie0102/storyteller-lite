@@ -117,6 +117,14 @@ pub trait PipelineBackend: Send + 'static {
         &mut self,
         context: &mut StageRunContext<'_>,
     ) -> Result<StageRunOutput, StageRunError>;
+
+    fn finalize_stage(
+        &mut self,
+        _context: &mut StageRunContext<'_>,
+        _output: &StageRunOutput,
+    ) -> Result<(), StageRunError> {
+        Ok(())
+    }
 }
 
 pub struct StageRunContext<'a> {
@@ -222,85 +230,94 @@ pub fn run_pipeline<B: PipelineBackend>(
             observer,
         };
 
-        match backend.run_stage(&mut context) {
-            Ok(output) => {
-                let _ = output.completed_at_millis.max(plan.planned_at_millis);
-                if let Err(error) = context
-                    .workspace
-                    .capture_stage_artifacts(stage, &output.artifacts)
-                {
-                    context.job.progress.mark_failed(stage)?;
-                    context
-                        .job
-                        .progress
-                        .set_activity(format!("{} artifact finalization failed", stage.label()))?;
-                    context.job.finish(
-                        JobOutcome::Failed(error.clone()),
-                        elapsed_seconds(context.job),
-                    )?;
-                    context.observer.observe(context.job);
-                    return Ok(PipelineRunState::Failed(error));
-                }
-                context
-                    .job
-                    .progress
-                    .complete_stage(stage, output.elapsed_seconds)?;
-                if let Err(error) = context
-                    .job
-                    .checkpoint_completed_stage(stage, resume_context)
-                {
-                    context
-                        .job
-                        .progress
-                        .set_activity(format!("{} checkpoint failed", stage.label()))?;
-                    context.job.finish(
-                        JobOutcome::Failed(error.clone()),
-                        elapsed_seconds(context.job),
-                    )?;
-                    context.observer.observe(context.job);
-                    return Ok(PipelineRunState::Failed(error));
-                }
-                if output.requires_review {
-                    context.job.require_review()?;
-                    context.job.progress.set_activity("Waiting for review")?;
-                    context.observer.observe(context.job);
-                    return Ok(PipelineRunState::NeedsReview(stage));
-                }
-                context.observer.observe(context.job);
-            }
-            Err(error)
-                if error.kind == StageRunErrorKind::Cancelled || cancellation.is_requested() =>
-            {
-                let _ = error.at_millis;
-                context.job.progress.reset_stage(stage);
-                context.job.progress.set_activity("Processing cancelled")?;
-                context
-                    .job
-                    .finish(JobOutcome::Cancelled, elapsed_seconds(context.job))?;
-                context.observer.observe(context.job);
-                return Ok(PipelineRunState::Cancelled);
-            }
-            Err(error) => {
-                let _ = error.at_millis;
-                context.job.progress.mark_failed(stage)?;
-                context
-                    .job
-                    .progress
-                    .set_activity(format!("{} failed", stage.label()))?;
-                context.job.finish(
-                    JobOutcome::Failed(error.message.clone()),
-                    elapsed_seconds(context.job),
-                )?;
-                context.observer.observe(context.job);
-                return Ok(PipelineRunState::Failed(error.message));
-            }
+        let output = match backend.run_stage(&mut context) {
+            Ok(output) => output,
+            Err(error) => return finish_stage_error(&mut context, error, cancellation),
+        };
+        let _ = output.completed_at_millis.max(plan.planned_at_millis);
+
+        if let Err(error) = context
+            .workspace
+            .capture_stage_artifacts(stage, &output.artifacts)
+        {
+            context.job.progress.mark_failed(stage)?;
+            context
+                .job
+                .progress
+                .set_activity(format!("{} artifact finalization failed", stage.label()))?;
+            context.job.finish(
+                JobOutcome::Failed(error.clone()),
+                elapsed_seconds(context.job),
+            )?;
+            context.observer.observe(context.job);
+            return Ok(PipelineRunState::Failed(error));
         }
+
+        if let Err(error) = backend.finalize_stage(&mut context, &output) {
+            return finish_stage_error(&mut context, error, cancellation);
+        }
+
+        context
+            .job
+            .progress
+            .complete_stage(stage, output.elapsed_seconds)?;
+        if let Err(error) = context
+            .job
+            .checkpoint_completed_stage(stage, resume_context)
+        {
+            context
+                .job
+                .progress
+                .set_activity(format!("{} checkpoint failed", stage.label()))?;
+            context.job.finish(
+                JobOutcome::Failed(error.clone()),
+                elapsed_seconds(context.job),
+            )?;
+            context.observer.observe(context.job);
+            return Ok(PipelineRunState::Failed(error));
+        }
+        if output.requires_review {
+            context.job.require_review()?;
+            context.job.progress.set_activity("Waiting for review")?;
+            context.observer.observe(context.job);
+            return Ok(PipelineRunState::NeedsReview(stage));
+        }
+        context.observer.observe(context.job);
     }
 
     job.progress.set_activity("Finished")?;
     job.finish(JobOutcome::Completed, elapsed_seconds(job))?;
     observer.observe(job);
     Ok(PipelineRunState::Completed)
+}
+
+fn finish_stage_error(
+    context: &mut StageRunContext<'_>,
+    error: StageRunError,
+    cancellation: &CancellationToken,
+) -> Result<PipelineRunState, String> {
+    let _ = error.at_millis;
+    if error.kind == StageRunErrorKind::Cancelled || cancellation.is_requested() {
+        context.job.progress.reset_stage(context.stage);
+        context.job.progress.set_activity("Processing cancelled")?;
+        context
+            .job
+            .finish(JobOutcome::Cancelled, elapsed_seconds(context.job))?;
+        context.observer.observe(context.job);
+        return Ok(PipelineRunState::Cancelled);
+    }
+
+    context.job.progress.mark_failed(context.stage)?;
+    context
+        .job
+        .progress
+        .set_activity(format!("{} failed", context.stage.label()))?;
+    context.job.finish(
+        JobOutcome::Failed(error.message.clone()),
+        elapsed_seconds(context.job),
+    )?;
+    context.observer.observe(context.job);
+    Ok(PipelineRunState::Failed(error.message))
 }
 
 fn elapsed_seconds(job: &Job) -> u64 {
