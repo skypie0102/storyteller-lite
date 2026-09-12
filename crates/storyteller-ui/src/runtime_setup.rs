@@ -301,7 +301,10 @@ fn find_whisper_executable() -> Option<PathBuf> {
             candidate.path.to_string_lossy().len(),
         )
     });
-    candidates.into_iter().next().map(|candidate| candidate.path)
+    candidates
+        .into_iter()
+        .next()
+        .map(|candidate| candidate.path)
 }
 
 fn whisper_executable_names() -> Vec<String> {
@@ -317,13 +320,7 @@ fn persistent_whisper_executables() -> Vec<PathBuf> {
     let mut archives = Vec::new();
     let mut budget = LEGACY_SCAN_ENTRY_LIMIT;
     for root in legacy_search_roots() {
-        scan_legacy_tree(
-            &root,
-            0,
-            &mut budget,
-            &mut executables,
-            &mut archives,
-        );
+        scan_legacy_tree(&root, 0, &mut budget, &mut executables, &mut archives);
         if budget == 0 {
             break;
         }
@@ -336,13 +333,7 @@ fn find_legacy_cuda_archive() -> Option<PathBuf> {
     let mut archives = Vec::new();
     let mut budget = LEGACY_SCAN_ENTRY_LIMIT;
     for root in legacy_search_roots() {
-        scan_legacy_tree(
-            &root,
-            0,
-            &mut budget,
-            &mut executables,
-            &mut archives,
-        );
+        scan_legacy_tree(&root, 0, &mut budget, &mut executables, &mut archives);
         if budget == 0 {
             break;
         }
@@ -367,9 +358,7 @@ fn legacy_search_roots() -> Vec<PathBuf> {
     }
 
     let mut seen = HashSet::new();
-    roots.retain(|root| {
-        root.is_dir() && seen.insert(root.to_string_lossy().to_lowercase())
-    });
+    roots.retain(|root| root.is_dir() && seen.insert(root.to_string_lossy().to_lowercase()));
     roots
 }
 
@@ -704,7 +693,11 @@ fn nvidia_gpu_available() -> bool {
     }
     let mut candidates = Vec::new();
     if let Some(windir) = env::var_os("WINDIR") {
-        candidates.push(PathBuf::from(windir).join("System32").join("nvidia-smi.exe"));
+        candidates.push(
+            PathBuf::from(windir)
+                .join("System32")
+                .join("nvidia-smi.exe"),
+        );
     }
     if let Some(program_files) = env::var_os("ProgramFiles") {
         candidates.push(
@@ -719,10 +712,7 @@ fn nvidia_gpu_available() -> bool {
     }
     candidates.into_iter().any(|candidate| {
         candidate.is_file()
-            && probe_executable(
-                &candidate,
-                &["--query-gpu=name", "--format=csv,noheader"],
-            )
+            && probe_executable(&candidate, &["--query-gpu=name", "--format=csv,noheader"])
     })
 }
 
