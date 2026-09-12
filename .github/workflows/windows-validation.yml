@@ -1,0 +1,41 @@
+name: Manual Windows validation
+
+# Full workspace validation is intentionally manual-only to conserve hosted runner usage.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-windows-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-windows:
+    name: Full Windows validation
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build native Slint shell
+        run: cargo build -p storyteller-ui
