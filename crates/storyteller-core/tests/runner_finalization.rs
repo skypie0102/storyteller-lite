@@ -110,6 +110,8 @@ fn runtime(job: &Job) -> RuntimeCoordinator {
     runtime
 }
 
+fn ignore_job(_job: &Job) {}
+
 #[test]
 fn finalization_runs_after_artifact_capture_for_every_stage() {
     let root = std::env::temp_dir().join(format!("storyteller-finalize-{}", Uuid::new_v4()));
@@ -124,6 +126,7 @@ fn finalization_runs_after_artifact_capture_for_every_stage() {
         fail_validate: false,
     };
     let workspace = JobWorkspace::new(root.join("workspace"));
+    let mut observer = ignore_job;
     let result = run_pipeline(
         &mut job,
         &workspace,
@@ -131,7 +134,7 @@ fn finalization_runs_after_artifact_capture_for_every_stage() {
         &resume_context(settings),
         &CancellationToken::default(),
         &mut backend,
-        &mut |_| {},
+        &mut observer,
     )
     .unwrap();
 
@@ -160,6 +163,7 @@ fn failed_validate_finalization_keeps_validate_failed() {
         fail_validate: true,
     };
     let workspace = JobWorkspace::new(root.join("workspace"));
+    let mut observer = ignore_job;
     let result = run_pipeline(
         &mut job,
         &workspace,
@@ -167,7 +171,7 @@ fn failed_validate_finalization_keeps_validate_failed() {
         &resume_context(settings),
         &CancellationToken::default(),
         &mut backend,
-        &mut |_| {},
+        &mut observer,
     )
     .unwrap();
 
