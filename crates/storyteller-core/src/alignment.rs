@@ -45,6 +45,7 @@ pub enum AlignmentStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CorpusPosition {
     pub href: String,
+    pub line_index: usize,
     pub char_offset: usize,
 }
 
@@ -134,10 +135,12 @@ fn align_loaded(
                 match_percent: Some(found.score * 100.0),
                 book_start: Some(CorpusPosition {
                     href: corpus.sections[first.section_index].href.clone(),
+                    line_index: first.line_index,
                     char_offset: first.start_char,
                 }),
                 book_end: Some(CorpusPosition {
                     href: corpus.sections[last.section_index].href.clone(),
+                    line_index: last.line_index,
                     char_offset: last.end_char,
                 }),
             });
@@ -163,7 +166,7 @@ fn align_loaded(
     }
 
     Ok(AlignmentDocument {
-        algorithm: "monotonic-ngram-edit-v1".into(),
+        algorithm: "monotonic-ngram-edit-v2-block-safe".into(),
         language: transcript.language.clone(),
         total_segments: transcript.segments.len(),
         matched_segments,
@@ -176,6 +179,7 @@ fn align_loaded(
 struct BookToken {
     normalized: String,
     section_index: usize,
+    line_index: usize,
     start_char: usize,
     end_char: usize,
 }
@@ -196,6 +200,29 @@ fn tokenize_corpus(
 
 fn tokenize_section(text: &str, section_index: usize) -> Vec<BookToken> {
     let mut tokens = Vec::new();
+    let mut base_char = 0usize;
+    for (line_index, line) in text.split('\n').enumerate() {
+        tokens.extend(tokenize_fragment(
+            line,
+            section_index,
+            line_index,
+            base_char,
+        ));
+        base_char = base_char.saturating_add(line.chars().count());
+        if base_char < text.chars().count() {
+            base_char = base_char.saturating_add(1);
+        }
+    }
+    tokens
+}
+
+fn tokenize_fragment(
+    text: &str,
+    section_index: usize,
+    line_index: usize,
+    base_char: usize,
+) -> Vec<BookToken> {
+    let mut tokens = Vec::new();
     let mut normalized = String::new();
     let mut start_char = None;
     let mut end_char = 0usize;
@@ -213,8 +240,9 @@ fn tokenize_section(text: &str, section_index: usize) -> Vec<BookToken> {
             tokens.push(BookToken {
                 normalized: std::mem::take(&mut normalized),
                 section_index,
-                start_char,
-                end_char,
+                line_index,
+                start_char: base_char + start_char,
+                end_char: base_char + end_char,
             });
         }
     }
@@ -222,15 +250,16 @@ fn tokenize_section(text: &str, section_index: usize) -> Vec<BookToken> {
         tokens.push(BookToken {
             normalized,
             section_index,
-            start_char,
-            end_char,
+            line_index,
+            start_char: base_char + start_char,
+            end_char: base_char + end_char,
         });
     }
     tokens
 }
 
 fn tokenize_text(text: &str) -> Vec<String> {
-    tokenize_section(text, 0)
+    tokenize_fragment(text, 0, 0, 0)
         .into_iter()
         .map(|token| token.normalized)
         .collect()
@@ -263,14 +292,14 @@ impl NgramIndexes {
                 .entry(hash_ngram_book(tokens, index, 1))
                 .or_default()
                 .push(index);
-            if same_section_window(tokens, index, 2) {
+            if same_block_window(tokens, index, 2) {
                 indexes
                     .bigram
                     .entry(hash_ngram_book(tokens, index, 2))
                     .or_default()
                     .push(index);
             }
-            if same_section_window(tokens, index, 3) {
+            if same_block_window(tokens, index, 3) {
                 indexes
                     .trigram
                     .entry(hash_ngram_book(tokens, index, 3))
@@ -292,14 +321,16 @@ impl NgramIndexes {
     }
 }
 
-fn same_section_window(tokens: &[BookToken], start: usize, size: usize) -> bool {
+fn same_block_window(tokens: &[BookToken], start: usize, size: usize) -> bool {
     let Some(end) = start.checked_add(size) else {
         return false;
     };
     if end > tokens.len() {
         return false;
     }
-    tokens[start].section_index == tokens[end - 1].section_index
+    let first = &tokens[start];
+    let last = &tokens[end - 1];
+    first.section_index == last.section_index && first.line_index == last.line_index
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -344,19 +375,23 @@ fn find_segment_match(
 
     let mut best = None;
     for (candidate, _) in ranked {
-        let lower = candidate.saturating_sub(CANDIDATE_START_FUZZ).max(min_position);
+        let lower = candidate
+            .saturating_sub(CANDIDATE_START_FUZZ)
+            .max(min_position);
         let upper = candidate
             .saturating_add(CANDIDATE_START_FUZZ)
             .min(max_position);
         for start in lower..=upper {
-            let candidate_match = best_flexible_window(book, transcript, start)?;
+            let Some(candidate_match) = best_flexible_window(book, transcript, start) else {
+                continue;
+            };
             if candidate_match.start_token < min_position || candidate_match.start_token > max_position
             {
                 continue;
             }
             if best
                 .as_ref()
-                .is_none_or(|current: &SegmentMatch| candidate_match.score > current.score)
+                .map_or(true, |current: &SegmentMatch| candidate_match.score > current.score)
             {
                 best = Some(candidate_match);
             }
@@ -422,6 +457,9 @@ fn best_flexible_window(
         if end > book.len() {
             break;
         }
+        if !same_block_window(book, start, length) {
+            continue;
+        }
         let score = token_similarity(book, start, end, transcript);
         let candidate = SegmentMatch {
             start_token: start,
@@ -430,7 +468,7 @@ fn best_flexible_window(
         };
         if best
             .as_ref()
-            .is_none_or(|current: &SegmentMatch| candidate.score > current.score)
+            .map_or(true, |current: &SegmentMatch| candidate.score > current.score)
         {
             best = Some(candidate);
         }
@@ -456,7 +494,11 @@ fn levenshtein_distance(book: &[BookToken], transcript: &[String]) -> usize {
         current[0] = book_index + 1;
         for (transcript_index, transcript_token) in transcript.iter().enumerate() {
             let substitution = previous[transcript_index]
-                + usize::from(book_token.normalized != *transcript_token);
+                + if book_token.normalized != *transcript_token {
+                    1
+                } else {
+                    0
+                };
             let insertion = current[transcript_index] + 1;
             let deletion = previous[transcript_index + 1] + 1;
             current[transcript_index + 1] = substitution.min(insertion.min(deletion));
@@ -585,5 +627,19 @@ mod tests {
         assert_eq!(result.matched_segments, 0);
         assert_eq!(result.segments[0].status, AlignmentStatus::Unmatched);
         assert!(result.segments[0].book_start.is_none());
+    }
+
+    #[test]
+    fn match_cannot_cross_corpus_block_boundary() {
+        let book = corpus("first paragraph words\nsecond paragraph words");
+        let spoken = transcript(&["paragraph words second paragraph"]);
+        let result = align_loaded(
+            &book,
+            &spoken,
+            &CancellationToken::default(),
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(result.matched_segments, 0);
     }
 }
