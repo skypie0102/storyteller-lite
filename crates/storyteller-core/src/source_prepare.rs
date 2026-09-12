@@ -59,14 +59,14 @@ pub fn prepare_job_sources(
 
     let result = (|| {
         let epub = stage_dir.join("source.epub");
-        copy_cancellable(&job.inputs.epub_path, &epub, cancellation)?;
+        copy_file_cancellable(&job.inputs.epub_path, &epub, cancellation)?;
 
         let audiobook = prepared_audiobook_path(job, &stage_dir);
         if cancellation.is_requested() {
             return Err("Source preparation was cancelled.".into());
         }
         if fs::hard_link(&job.inputs.audiobook_path, &audiobook).is_err() {
-            copy_cancellable(&job.inputs.audiobook_path, &audiobook, cancellation)?;
+            copy_file_cancellable(&job.inputs.audiobook_path, &audiobook, cancellation)?;
         }
         validate_source_file(&epub, "Prepared EPUB")?;
         validate_source_file(&audiobook, "Prepared audiobook")?;
@@ -91,6 +91,39 @@ pub fn prepared_job_sources(
     Ok(PreparedSources { epub, audiobook })
 }
 
+pub fn copy_file_cancellable(
+    source: &Path,
+    destination: &Path,
+    cancellation: &CancellationToken,
+) -> Result<(), String> {
+    if cancellation.is_requested() {
+        return Err("File copy was cancelled.".into());
+    }
+    let mut input = fs::File::open(source)
+        .map_err(|error| format!("Could not open {}: {error}", source.display()))?;
+    let mut output = fs::File::create(destination)
+        .map_err(|error| format!("Could not create {}: {error}", destination.display()))?;
+    let mut buffer = vec![0_u8; COPY_BUFFER_BYTES];
+    loop {
+        if cancellation.is_requested() {
+            return Err("File copy was cancelled.".into());
+        }
+        let count = input
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+        if count == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..count])
+            .map_err(|error| format!("Could not write {}: {error}", destination.display()))?;
+    }
+    output
+        .sync_all()
+        .map_err(|error| format!("Could not finish {}: {error}", destination.display()))?;
+    Ok(())
+}
+
 fn prepared_audiobook_path(job: &Job, stage_dir: &Path) -> PathBuf {
     let extension = job
         .inputs
@@ -111,39 +144,6 @@ fn validate_source_file(path: &Path, label: &str) -> Result<(), String> {
     if metadata.len() == 0 {
         return Err(format!("{label} is empty: {}", path.display()));
     }
-    Ok(())
-}
-
-fn copy_cancellable(
-    source: &Path,
-    destination: &Path,
-    cancellation: &CancellationToken,
-) -> Result<(), String> {
-    if cancellation.is_requested() {
-        return Err("Source preparation was cancelled.".into());
-    }
-    let mut input = fs::File::open(source)
-        .map_err(|error| format!("Could not open {}: {error}", source.display()))?;
-    let mut output = fs::File::create(destination)
-        .map_err(|error| format!("Could not create {}: {error}", destination.display()))?;
-    let mut buffer = vec![0_u8; COPY_BUFFER_BYTES];
-    loop {
-        if cancellation.is_requested() {
-            return Err("Source preparation was cancelled.".into());
-        }
-        let count = input
-            .read(&mut buffer)
-            .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
-        if count == 0 {
-            break;
-        }
-        output
-            .write_all(&buffer[..count])
-            .map_err(|error| format!("Could not write {}: {error}", destination.display()))?;
-    }
-    output
-        .sync_all()
-        .map_err(|error| format!("Could not finish {}: {error}", destination.display()))?;
     Ok(())
 }
 
