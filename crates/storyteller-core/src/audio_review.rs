@@ -149,10 +149,12 @@ mod tests {
                     match_percent: Some(100.0),
                     book_start: Some(CorpusPosition {
                         href: "chapter.xhtml".into(),
+                        line_index: 0,
                         char_offset: 0,
                     }),
                     book_end: Some(CorpusPosition {
                         href: "chapter.xhtml".into(),
+                        line_index: 0,
                         char_offset: 7,
                     }),
                 },
