@@ -19,7 +19,7 @@ The original Lite repository (`shadowmonarchbooks-cloud/storyteller-oneclick-lit
 - Truthful live activity/metrics only when supplied by the core or processing backend; no fabricated ETA, speed, backend, model, match, or completion.
 - Job execution occurs on a worker thread; the Slint event loop polls snapshots every 100 ms.
 - SHA-256 content fingerprints for EPUB and audiobook sources, with cancellation checks between streamed reads.
-- Resume fingerprints include source identities, settings, backend identities, effective language, and effective Whisper model/runtime identity.
+- Resume fingerprints include source identities, settings, Whisper/alignment/audio/EPUB backend identities, effective language, and effective Whisper model/runtime identity.
 - Prepare always copies the EPUB; audiobook staging prefers a hard link and falls back to a cancellable copy.
 - Per-stage artifact manifests are validated before cached stages are restored.
 - Cancellation returns an interrupted running stage to Pending.
@@ -28,14 +28,22 @@ The original Lite repository (`shadowmonarchbooks-cloud/storyteller-oneclick-lit
 - Worker-thread panics terminalize the active job instead of leaving it Running and eligible for accidental restart.
 - Failed/cancelled jobs support an explicit safe retry-from-start path that clears progress and checkpoints.
 - Waiting jobs can be queued while processing is active, reordered, or removed; recent terminal jobs remain visible in the native shell.
+- Human review is a first-class `NeedsReview` state rather than a fake failure or completion.
+- Final publication is separated from backend computation: Validate artifacts are captured before the publication finalizer runs.
 
-## Current processing boundary
+## Current processing implementation
 
-Prepare is implemented and stages real source files into a per-job workspace.
+All seven development stages have concrete backends on the recovery branch:
 
-Analyze is implemented using external `ffmpeg` plus the `whisper.cpp` CLI. It converts the staged audiobook to 16 kHz mono PCM, produces JSON-full Whisper output, publishes only Whisper's real progress callbacks, and checkpoints `audio.wav` plus `transcript.json`. Tool/model setup is documented in `docs/RUNTIME.md`.
+- **Prepare** stages validated source files in an isolated job workspace.
+- **Analyze** extracts bounded EPUB reading-order text, converts audio to 16 kHz mono PCM with ffmpeg, and produces timestamped `whisper.cpp` JSON-full output. Segment timing must be positive and non-overlapping.
+- **Align** uses the conservative `monotonic-ngram-edit-v2-block-safe` engine. Accepted matches retain real Whisper segment timing and cannot cross normalized XHTML block boundaries; weak segments stay unmatched.
+- **Review Audio** writes durable unmatched ranges/text to `review.json` and pauses only when a real user decision is required. Continuing records explicit acceptance to exclude unmatched audio from synchronization.
+- **Encode** supports cancellable Copy for safely identifiable EPUB core audio, plus ffmpeg Opus/AAC. Generated Opus uses `audio/ogg; codecs=opus`; AAC uses `audio/mp4`. The stage writes `encoded-audio.json` alongside the audio artifact.
+- **Build EPUB** targets EPUB 3 source packages without pre-existing Media Overlays. It creates deterministic XHTML block anchors, SMIL Media Overlays using real segment clips, embeds encoded audio, updates package associations and duration metadata, and writes a workspace candidate without modifying the source EPUB.
+- **Validate** independently reopens that candidate and audits container/package/SMIL/text/audio relationships and durations. It writes `validation.json`; only after artifact capture does the finalizer publish beside the source. Existing output files are never overwritten.
 
-Align, Review Audio, Encode, Build EPUB, and Validate remain intentionally unimplemented and must fail explicitly until real backends exist.
+An end-to-end core fixture now exercises build -> structural validation -> publish on a minimal EPUB and verifies no-overwrite behavior.
 
 ## Recovery provenance
 
@@ -45,7 +53,7 @@ Do not treat commit hashes in this new repository as equivalent to the original 
 
 ## Validation status
 
-The last fully validated checkpoint in the new repository is:
+The last fully validated checkpoint in the new repository remains:
 
 `55d2c262e327151a07cbffccdb8d0e398b2807c2`
 
@@ -56,4 +64,4 @@ Its Windows run passed:
 3. `cargo test --workspace`
 4. `cargo build -p storyteller-ui`
 
-Later recovery/development commits intentionally have not launched GitHub-hosted Actions. Hosted validation is manual-only under `docs/CI_POLICY.md` to minimize public runner use. Therefore newer heads must not be called fully green until an exact-head validation is deliberately performed.
+The complete seven-stage development head is newer than that checkpoint. Later development commits intentionally have not launched GitHub-hosted Actions. Hosted validation is manual-only under `docs/CI_POLICY.md` to minimize public runner use. Therefore the current branch must not be called fully green until an exact-head validation is deliberately performed.
