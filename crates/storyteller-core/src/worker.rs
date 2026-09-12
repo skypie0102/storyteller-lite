@@ -121,14 +121,12 @@ pub fn spawn_pipeline_worker_with_preflight<B: PipelineBackend>(
 ) -> Result<PipelineWorkerHandle, String> {
     environment.validate()?;
     spawn_worker(job, move |job, cancellation, sender| {
-        if let Err(error) = job.progress.set_activity("Fingerprinting sources") {
-            return Err(error);
-        }
+        job.progress.set_activity("Fingerprinting sources")?;
         let _ = sender.send(job.clone());
 
         let sources = match fingerprint_job_sources(job, cancellation) {
             Ok(sources) => sources,
-            Err(error) if cancellation.is_requested() => {
+            Err(_) if cancellation.is_requested() => {
                 let _ = job.progress.set_activity("Processing cancelled");
                 let _ = job.finish(JobOutcome::Cancelled, 0);
                 let _ = sender.send(job.clone());
