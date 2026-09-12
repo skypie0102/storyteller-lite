@@ -287,7 +287,9 @@ mod tests {
     #[test]
     fn overall_progress_is_weighted_without_fractional_claims() {
         let mut progress = PipelineProgress::default();
-        progress.start_stage(PipelineStage::Prepare, "Preparing").unwrap();
+        progress
+            .start_stage(PipelineStage::Prepare, "Preparing")
+            .unwrap();
         progress.set_current_stage_percent(50).unwrap();
         assert_eq!(progress.overall_percent(), 2);
         progress.complete_stage(PipelineStage::Prepare, 1).unwrap();

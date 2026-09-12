@@ -1,5 +1,9 @@
 use crate::{CancellationToken, Job, JobWorkspace, PipelineStage};
-use std::{fs, io::{Read, Write}, path::{Path, PathBuf}};
+use std::{
+    fs,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
 
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 
@@ -156,7 +160,8 @@ mod tests {
         )
         .unwrap();
         let workspace = JobWorkspace::new(root.join("work"));
-        let prepared = prepare_job_sources(&job, &workspace, &CancellationToken::default()).unwrap();
+        let prepared =
+            prepare_job_sources(&job, &workspace, &CancellationToken::default()).unwrap();
         assert_eq!(fs::read(&epub).unwrap(), b"epub-data");
         assert_eq!(prepared.epub().file_name().unwrap(), "source.epub");
         assert_eq!(prepared.audiobook().file_name().unwrap(), "audiobook.m4b");

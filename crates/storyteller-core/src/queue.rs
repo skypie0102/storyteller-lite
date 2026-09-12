@@ -188,7 +188,9 @@ impl JobQueue {
         }
         let target = target as usize;
         if self.jobs[target].status != JobStatus::Waiting {
-            return Err("Waiting jobs cannot be moved across the active or recent sections.".into());
+            return Err(
+                "Waiting jobs cannot be moved across the active or recent sections.".into(),
+            );
         }
         self.jobs.swap(index, target);
         Ok(())

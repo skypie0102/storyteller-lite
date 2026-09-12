@@ -217,7 +217,6 @@ fn display_name(path: &Path) -> String {
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
-
 fn book_title(epub_path: &Path) -> String {
     epub_path
         .file_stem()
@@ -472,7 +471,10 @@ mod tests {
 
     #[test]
     fn ui_encoding_values_map_to_core_settings() {
-        assert_eq!(audio_encoding("Copy", "96K").unwrap(), AudioEncoding::copy());
+        assert_eq!(
+            audio_encoding("Copy", "96K").unwrap(),
+            AudioEncoding::copy()
+        );
         assert_eq!(
             audio_encoding("Opus", "64K").unwrap(),
             AudioEncoding::new(AudioCodec::Opus, Some(AudioBitrate::Kbps64)).unwrap()

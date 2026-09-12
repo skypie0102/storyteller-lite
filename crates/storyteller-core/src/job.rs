@@ -224,7 +224,10 @@ impl Job {
     ) -> Result<(), String> {
         let status = self.progress.stages()[stage.index()].status;
         if !matches!(status, StageStatus::Completed | StageStatus::Cached) {
-            return Err(format!("Cannot checkpoint incomplete stage {}.", stage.label()));
+            return Err(format!(
+                "Cannot checkpoint incomplete stage {}.",
+                stage.label()
+            ));
         }
         let checkpoint = StageCheckpoint {
             stage,

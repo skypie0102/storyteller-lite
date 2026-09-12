@@ -18,13 +18,19 @@ impl ResumeContext {
     pub fn validate(&self) -> Result<(), String> {
         for (label, value) in [
             ("EPUB source fingerprint", self.epub_source.as_str()),
-            ("Audiobook source fingerprint", self.audiobook_source.as_str()),
+            (
+                "Audiobook source fingerprint",
+                self.audiobook_source.as_str(),
+            ),
             ("Whisper backend", self.whisper_backend.as_str()),
             ("Alignment backend", self.alignment_backend.as_str()),
             ("OCR backend", self.ocr_backend.as_str()),
             ("EPUB backend", self.epub_backend.as_str()),
             ("Effective language", self.effective_language.as_str()),
-            ("Effective Whisper model", self.effective_whisper_model.as_str()),
+            (
+                "Effective Whisper model",
+                self.effective_whisper_model.as_str(),
+            ),
         ] {
             if value.trim().is_empty() {
                 return Err(format!("{label} cannot be blank."));

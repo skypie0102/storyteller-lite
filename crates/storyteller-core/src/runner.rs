@@ -41,11 +41,7 @@ pub struct StageRunOutput {
 }
 
 impl StageRunOutput {
-    pub fn new(
-        artifacts: Vec<PathBuf>,
-        elapsed_seconds: u64,
-        completed_at_millis: u64,
-    ) -> Self {
+    pub fn new(artifacts: Vec<PathBuf>, elapsed_seconds: u64, completed_at_millis: u64) -> Self {
         Self {
             artifacts,
             elapsed_seconds,

@@ -1,5 +1,8 @@
 use crate::{InvalidResumeStage, JobId, PipelineStage, ResumePlan, ValidatedResumePlan};
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobWorkspace {
@@ -29,13 +32,16 @@ impl JobWorkspace {
         artifacts: &[PathBuf],
     ) -> Result<(), String> {
         let stage_dir = self.stage_dir(stage);
-        fs::create_dir_all(&stage_dir).map_err(|error| {
-            format!("Could not create {} workspace: {error}", stage.label())
-        })?;
+        fs::create_dir_all(&stage_dir)
+            .map_err(|error| format!("Could not create {} workspace: {error}", stage.label()))?;
 
         let mut manifest = String::new();
         for artifact in artifacts {
-            if artifact.is_absolute() || artifact.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+            if artifact.is_absolute()
+                || artifact
+                    .components()
+                    .any(|part| matches!(part, std::path::Component::ParentDir))
+            {
                 return Err(format!(
                     "{} artifact path must stay inside its stage workspace.",
                     stage.label()
@@ -43,7 +49,11 @@ impl JobWorkspace {
             }
             let path = stage_dir.join(artifact);
             let metadata = fs::metadata(&path).map_err(|error| {
-                format!("Missing {} artifact {}: {error}", stage.label(), path.display())
+                format!(
+                    "Missing {} artifact {}: {error}",
+                    stage.label(),
+                    path.display()
+                )
             })?;
             if !metadata.is_file() || metadata.len() == 0 {
                 return Err(format!(
@@ -55,9 +65,8 @@ impl JobWorkspace {
             manifest.push_str(&artifact.to_string_lossy());
             manifest.push('\n');
         }
-        fs::write(stage_dir.join(".artifacts"), manifest).map_err(|error| {
-            format!("Could not record {} artifacts: {error}", stage.label())
-        })
+        fs::write(stage_dir.join(".artifacts"), manifest)
+            .map_err(|error| format!("Could not record {} artifacts: {error}", stage.label()))
     }
 
     pub fn validate_resume_plan(&self, plan: &ResumePlan) -> ValidatedResumePlan {
@@ -97,9 +106,8 @@ impl JobWorkspace {
                 return Err(format!("{} artifact manifest is invalid.", stage.label()));
             }
             let path = stage_dir.join(relative);
-            let metadata = fs::metadata(&path).map_err(|error| {
-                format!("{} artifact is unavailable: {error}", path.display())
-            })?;
+            let metadata = fs::metadata(&path)
+                .map_err(|error| format!("{} artifact is unavailable: {error}", path.display()))?;
             if !metadata.is_file() || metadata.len() == 0 {
                 return Err(format!("{} artifact is invalid.", path.display()));
             }
