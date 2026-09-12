@@ -3,8 +3,10 @@ mod audio_encode;
 mod audio_review;
 mod cancellation;
 mod command;
+#[allow(clippy::too_many_arguments)]
 mod epub_build;
 mod epub_corpus;
+#[allow(clippy::too_many_arguments)]
 mod epub_overlay;
 mod epub_validate;
 mod job;
