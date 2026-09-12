@@ -4,7 +4,9 @@ mod pipeline_backend;
 mod runtime_setup;
 
 use crate::{refresh_main_view, AppWindow, QueueRow, StageDetailRow, StageRow};
-use runtime_setup::{detect_runtime, install_missing_dependencies, RuntimeStatus};
+use runtime_setup::{
+    configure_runtime_environment, detect_runtime, install_missing_dependencies, RuntimeStatus,
+};
 use slint::VecModel;
 use std::{
     cell::RefCell,
@@ -263,6 +265,7 @@ impl WorkerBridge {
         if job.status != JobStatus::Running {
             return None;
         }
+        configure_runtime_environment();
         let job_id = job.id;
         match pipeline_backend::spawn_job_worker(job) {
             Ok(worker) => {
