@@ -138,6 +138,10 @@ impl JobQueue {
         self.job_mut(id)?.retry()
     }
 
+    pub fn retry_from_scratch(&mut self, id: JobId) -> Result<(), String> {
+        self.job_mut(id)?.retry_from_scratch()
+    }
+
     pub fn retry_with_resume(
         &mut self,
         id: JobId,
@@ -280,5 +284,49 @@ mod tests {
         snapshot.finish(JobOutcome::Completed, 3).unwrap();
         queue.reconcile_worker_snapshot(snapshot).unwrap();
         assert_eq!(queue.state(), QueueState::Running);
+    }
+
+    #[test]
+    fn retry_from_scratch_clears_failed_stage_state() {
+        let mut queue = JobQueue::default();
+        let id = queue.enqueue(sample_job("retry"));
+        queue.start_next().unwrap();
+        {
+            let job = queue.job_mut(id).unwrap();
+            job.progress
+                .start_stage(PipelineStage::Prepare, "Preparing")
+                .unwrap();
+            job.progress.set_current_stage_percent(100).unwrap();
+            job.progress
+                .complete_stage(PipelineStage::Prepare, 2)
+                .unwrap();
+            job.progress
+                .start_stage(PipelineStage::Analyze, "Analyzing")
+                .unwrap();
+            job.progress.mark_failed(PipelineStage::Analyze).unwrap();
+        }
+        queue
+            .finish(id, JobOutcome::Failed("analysis failed".into()), 7)
+            .unwrap();
+
+        queue.retry_from_scratch(id).unwrap();
+        let job = queue.job(id).unwrap();
+        assert_eq!(job.status, JobStatus::Waiting);
+        assert_eq!(job.runtime_seconds, 0);
+        assert!(job.last_error.is_none());
+        assert!(job
+            .progress
+            .stages()
+            .iter()
+            .all(|stage| stage.status == crate::StageStatus::Pending));
+    }
+
+    #[test]
+    fn completed_job_cannot_restart_from_scratch() {
+        let mut queue = JobQueue::default();
+        let id = queue.enqueue(sample_job("completed"));
+        queue.start_next().unwrap();
+        queue.finish(id, JobOutcome::Completed, 1).unwrap();
+        assert!(queue.retry_from_scratch(id).is_err());
     }
 }
