@@ -1,4 +1,6 @@
-use crate::{PipelineProgress, PipelineStage, ResumeContext, ResumePlan, StageStatus, ValidatedResumePlan};
+use crate::{
+    PipelineProgress, PipelineStage, ResumeContext, ResumePlan, StageStatus, ValidatedResumePlan,
+};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -92,11 +94,11 @@ pub enum JobStatus {
 
 impl JobStatus {
     pub const fn is_terminal(self) -> bool {
-        matches!(Self::Completed | Self::Failed | Self::Cancelled, self)
+        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
     }
 
     pub const fn is_active(self) -> bool {
-        matches!(Self::Running | Self::NeedsReview, self)
+        matches!(self, Self::Running | Self::NeedsReview)
     }
 }
 
@@ -242,7 +244,8 @@ impl Job {
             .map(|saved| saved.stage)
         {
             self.progress.reset_from(stale);
-            self.checkpoints.retain(|saved| saved.stage.index() < stale.index());
+            self.checkpoints
+                .retain(|saved| saved.stage.index() < stale.index());
         }
         Ok(())
     }

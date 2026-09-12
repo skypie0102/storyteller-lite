@@ -4,7 +4,7 @@ use crate::{
 };
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineRunState {
     Completed,
     Cancelled,
@@ -173,7 +173,10 @@ pub fn run_pipeline<B: PipelineBackend>(
 
     for stage in PipelineStage::ALL {
         let status = job.progress.stages()[stage.index()].status;
-        if matches!(status, StageStatus::Completed | StageStatus::Cached | StageStatus::Skipped) {
+        if matches!(
+            status,
+            StageStatus::Completed | StageStatus::Cached | StageStatus::Skipped
+        ) {
             continue;
         }
         if cancellation.is_requested() {
@@ -225,7 +228,9 @@ pub fn run_pipeline<B: PipelineBackend>(
                     .checkpoint_completed_stage(stage, resume_context)?;
                 context.observer.observe(context.job);
             }
-            Err(error) if error.kind == StageRunErrorKind::Cancelled || cancellation.is_requested() => {
+            Err(error)
+                if error.kind == StageRunErrorKind::Cancelled || cancellation.is_requested() =>
+            {
                 let _ = error.at_millis;
                 context.job.progress.reset_stage(stage);
                 context.job.progress.set_activity("Processing cancelled")?;

@@ -1,6 +1,5 @@
 use crate::{
-    job::JobStatus, Job, JobId, JobOutcome, JobWorkspace, QueueMove, ResumeContext,
-    ValidatedResumePlan,
+    job::JobStatus, Job, JobId, JobOutcome, JobWorkspace, ResumeContext, ValidatedResumePlan,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
