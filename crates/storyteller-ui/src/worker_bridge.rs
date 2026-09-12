@@ -12,6 +12,14 @@ pub(crate) struct WorkerBridge {
 }
 
 impl WorkerBridge {
+    pub(crate) fn request_cancellation(&self) -> bool {
+        let Some(worker) = self.worker.as_ref() else {
+            return false;
+        };
+        worker.request_cancellation();
+        true
+    }
+
     pub(crate) fn poll(
         &mut self,
         ui_weak: &slint::Weak<AppWindow>,
