@@ -1,4 +1,5 @@
 mod alignment;
+mod audio_encode;
 mod audio_review;
 mod cancellation;
 mod command;
@@ -18,6 +19,10 @@ mod workspace;
 pub use alignment::{
     align_transcript_to_corpus, AlignmentDocument, AlignmentProgress, AlignmentSegment,
     AlignmentStatus, AlignmentSummary, CorpusPosition,
+};
+pub use audio_encode::{
+    encode_audiobook, read_encoded_audio_descriptor, AudioEncodeProgress, EncodedAudio,
+    EncodedAudioDescriptor,
 };
 pub use audio_review::{
     accept_unmatched_audio_exclusion, create_audio_review_report, read_audio_review_report,
