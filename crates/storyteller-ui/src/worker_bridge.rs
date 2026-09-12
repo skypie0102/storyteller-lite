@@ -173,7 +173,9 @@ impl WorkerBridge {
             let status = detect_runtime();
             apply_runtime_status(&ui, &status);
             if status.ready() {
-                ui.set_runtime_install_status_text("All runtime dependencies are already ready.".into());
+                ui.set_runtime_install_status_text(
+                    "All runtime dependencies are already ready.".into(),
+                );
             } else {
                 ui.set_runtime_busy(true);
                 ui.set_runtime_install_status_text("Preparing dependency download…".into());
