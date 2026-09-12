@@ -9,8 +9,8 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    AudioBitrate, AudioCodec, AudioEncoding, Job, JobInputs, JobQueue, JobSettings, JobStatus,
-    QueueState, StageStatus,
+    AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobQueue, JobSettings,
+    JobStatus, QueueMove, QueueState, StageStatus,
 };
 use worker_bridge::WorkerBridge;
 
@@ -224,6 +224,106 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    {
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_move_waiting(move |id, up| {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let id = match parse_job_id(id.as_str()) {
+                Ok(id) => id,
+                Err(error) => {
+                    ui.set_status_text(error.into());
+                    return;
+                }
+            };
+            let direction = if up { QueueMove::Up } else { QueueMove::Down };
+            if let Err(error) = queue.borrow_mut().move_waiting(id, direction) {
+                ui.set_status_text(error.into());
+                return;
+            }
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+        });
+    }
+
+    {
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_remove_job(move |id| {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let id = match parse_job_id(id.as_str()) {
+                Ok(id) => id,
+                Err(error) => {
+                    ui.set_status_text(error.into());
+                    return;
+                }
+            };
+            if let Err(error) = queue.borrow_mut().remove(id) {
+                ui.set_status_text(error.into());
+                return;
+            }
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+        });
+    }
+
+    {
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_retry_from_start(move |id| {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let id = match parse_job_id(id.as_str()) {
+                Ok(id) => id,
+                Err(error) => {
+                    ui.set_status_text(error.into());
+                    return;
+                }
+            };
+            let retry_result = {
+                let mut queue = queue.borrow_mut();
+                queue
+                    .retry_from_scratch(id)
+                    .and_then(|()| queue.start_next().map(|_| ()))
+            };
+            if let Err(error) = retry_result {
+                ui.set_status_text(error.into());
+                return;
+            }
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+        });
+    }
+
     ui.on_open_settings(|| {
         println!("Settings requested");
     });
@@ -275,6 +375,12 @@ fn book_title(epub_path: &Path) -> String {
 
 fn output_path(epub_path: &Path, title: &str) -> PathBuf {
     epub_path.with_file_name(format!("{title} (readaloud).epub"))
+}
+
+fn parse_job_id(value: &str) -> Result<JobId, String> {
+    value
+        .parse::<JobId>()
+        .map_err(|error| format!("Queue job identifier is invalid: {error}"))
 }
 
 fn audio_encoding(codec: &str, bitrate: &str) -> Result<AudioEncoding, String> {
@@ -346,17 +452,72 @@ pub(crate) fn refresh_main_view(
 }
 
 fn build_queue_rows(queue: &JobQueue) -> Vec<QueueRow> {
-    queue
+    let waiting = queue
         .jobs()
         .iter()
         .filter(|job| job.status == JobStatus::Waiting)
+        .collect::<Vec<_>>();
+    let waiting_count = waiting.len();
+    let mut rows = waiting
+        .into_iter()
         .enumerate()
         .map(|(index, job)| QueueRow {
+            id: job.id.to_string().into(),
             position: (index + 1).to_string().into(),
             title: job.inputs.title.clone().into(),
             status: "Waiting".into(),
+            detail: "".into(),
+            waiting: true,
+            retryable: false,
+            can_move_up: index > 0,
+            can_move_down: index + 1 < waiting_count,
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    rows.extend(
+        queue
+            .jobs()
+            .iter()
+            .rev()
+            .filter(|job| job.status.is_terminal())
+            .take(3)
+            .map(|job| QueueRow {
+                id: job.id.to_string().into(),
+                position: "".into(),
+                title: job.inputs.title.clone().into(),
+                status: terminal_status(job.status).into(),
+                detail: terminal_detail(job).into(),
+                waiting: false,
+                retryable: matches!(job.status, JobStatus::Failed | JobStatus::Cancelled),
+                can_move_up: false,
+                can_move_down: false,
+            }),
+    );
+
+    rows
+}
+
+fn terminal_status(status: JobStatus) -> &'static str {
+    match status {
+        JobStatus::Completed => "Completed",
+        JobStatus::Failed => "Failed",
+        JobStatus::Cancelled => "Cancelled",
+        _ => "",
+    }
+}
+
+fn terminal_detail(job: &Job) -> String {
+    if let Some(error) = job
+        .last_error
+        .as_deref()
+        .filter(|error| !error.trim().is_empty())
+    {
+        return error.to_string();
+    }
+    if job.runtime_seconds > 0 {
+        return format!("Runtime {}", format_duration(job.runtime_seconds));
+    }
+    String::new()
 }
 
 fn build_stage_rows(job: &Job) -> Vec<StageRow> {
@@ -580,5 +741,21 @@ mod tests {
             active_metrics(&job),
             "Backend CUDA  •  Model large-v3-turbo  •  Match 98.4%"
         );
+    }
+
+    #[test]
+    fn terminal_rows_keep_recent_failure_details_visible() {
+        let mut queue = JobQueue::default();
+        let id = queue.enqueue(sample_job("Recent"));
+        queue.start_next().unwrap();
+        queue
+            .finish(id, storyteller_core::JobOutcome::Failed("boom".into()), 4)
+            .unwrap();
+        let rows = build_queue_rows(&queue);
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].waiting);
+        assert!(rows[0].retryable);
+        assert_eq!(rows[0].status.as_str(), "Failed");
+        assert_eq!(rows[0].detail.as_str(), "boom");
     }
 }
