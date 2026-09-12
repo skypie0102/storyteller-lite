@@ -20,39 +20,62 @@ Treat the main mockup as the hierarchy target:
 
 - EPUB and audiobook drop/browse areas.
 - Compact output options.
+- Reduced unmatched-audio policy with **Smart** as the normal/default path and **ReviewAll** as the explicit review-heavy alternative; do not resurrect the old four-mode selector.
 - One current processing card with exactly one overall progress bar.
 - Seven pipeline stages: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate.
 - Real metrics only: elapsed, ETA, speed, backend, model, match percentage, and useful current activity/context.
 - Queue-first workflow with waiting/recent books and pause-after-current.
-- Settings remains a separate experience.
+- Settings remains a separate experience and includes the simple Whisper worker-count control without manual CPU-thread tuning.
 
 The mockup is a wide-window target, not a fixed canvas. Slint should reflow, hide secondary metadata when necessary, and use localized scrolling instead of absolute positioning.
 
 ## Manual allocation intent
 
-The allocator mockup preserves the old product idea, but Lite should initially implement a reduced version.
+The allocator mockup preserves the useful old product idea, but Lite should implement a reduced review experience rather than the old general-purpose editor.
 
 Required Lite behavior:
 
 - dedicated review screen for unresolved/unaligned audio segments;
 - previous/next unresolved segment navigation;
 - audio preview/seek for the current segment;
-- transcript text and timing;
+- transcript text, timing, and useful silence/context information;
+- Smart suggestion/classification when one exists;
 - EPUB candidate block/page context;
-- explicit manual assignment to EPUB text/block(s);
-- explicit exclusion/skip decision;
-- durable per-segment decisions;
+- explicit manual assignment/override to valid EPUB text/block(s);
+- explicit exclusion/skip decision under a validated policy;
+- durable per-segment decisions with autosave/retry restoration;
 - `Apply & Next` flow and a clear path back to processing.
 
 The first Lite implementation should preserve monotonic EPUB order by constraining assignment candidates between the nearest accepted matched neighbors when possible.
 
-The following mockup affordances are reference-only unless a later product decision explicitly restores them:
+## Smart classification and lazy OCR
 
-- split/merge editing;
-- manual trim handles and restore-original tooling;
-- permanent OCR controls;
-- automatic `Apply to similar` rules;
-- the full Introduction / Credits / Graphic Readout / Extra Audio classification system;
+The recovered Lite plan explicitly retained **automatic edge handling, Smart classification, and lazy OCR**. What was cut was the old permanent OCR toggle and the full allocator/editor surface.
+
+Accordingly:
+
+- OCR should be internal/on-demand, not a permanent user preference.
+- Only bounded candidate EPUB images/documents should be inspected/OCRed when Smart classification or the current review segment needs them.
+- Embedded `alt`/`title`/SVG text should be used before expensive OCR where practical.
+- High-confidence Graphic Readout narration may be suggested/assigned to a valid image page/document candidate.
+- Introduction, Credits, Graphic Readout, and Extra Audio may appear as a small useful classification set when they affect destination/build behavior or make the suggestion understandable.
+- The UI does not need to expose the old application's entire taxonomy/rule system just because the backend can classify a segment.
+- Ambiguous Smart results stay pending for human review rather than being silently discarded.
+
+See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` for the recovered behavioral evidence and historical test-vector thresholds.
+
+## Intentionally reduced from the old allocator
+
+The following mockup/old-app affordances are not initial Lite requirements unless a later product decision explicitly restores them:
+
+- arbitrary split/merge editing;
+- a general manual trim-handle editor and restore-original toolchain;
+- permanent OCR enable/disable controls;
+- broad automatic `Apply to similar` rules;
+- unrestricted category/destination editing;
+- the old four-mode unmatched-audio selector;
 - a general-purpose old-app audio editor.
 
-The goal is to restore the missing manual allocator, not the entire historical OneClick feature surface.
+This does **not** remove Smart classification, lazy OCR, conservative automatic edge handling, or image-page/Graphic Readout placement from the intended Lite backend.
+
+The goal is a focused allocator that makes unresolved audiobook content safe and understandable without recreating the entire historical OneClick editing surface.
