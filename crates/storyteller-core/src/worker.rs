@@ -8,6 +8,7 @@ use std::{sync::mpsc, thread};
 pub struct PipelineEnvironment {
     pub whisper_backend: String,
     pub alignment_backend: String,
+    pub audio_backend: String,
     pub ocr_backend: String,
     pub epub_backend: String,
     pub effective_language: String,
@@ -19,6 +20,7 @@ impl PipelineEnvironment {
         for (label, value) in [
             ("Whisper backend", self.whisper_backend.as_str()),
             ("Alignment backend", self.alignment_backend.as_str()),
+            ("Audio backend", self.audio_backend.as_str()),
             ("OCR backend", self.ocr_backend.as_str()),
             ("EPUB backend", self.epub_backend.as_str()),
             ("Effective language", self.effective_language.as_str()),
@@ -45,6 +47,7 @@ impl PipelineEnvironment {
             audiobook_source: sources.audiobook_source().into(),
             whisper_backend: self.whisper_backend.clone(),
             alignment_backend: self.alignment_backend.clone(),
+            audio_backend: self.audio_backend.clone(),
             ocr_backend: self.ocr_backend.clone(),
             epub_backend: self.epub_backend.clone(),
             effective_language: self.effective_language.clone(),
