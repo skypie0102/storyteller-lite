@@ -9,8 +9,9 @@ When sources disagree, use this order:
 1. **Current source code and tests on `recovery/rust-slint`** — technical truth about what exists now.
 2. **`docs/ROADMAP.md` and `docs/HANDOFF.md`** — current product decisions and pending work.
 3. **`docs/ui-guides/` mockups** — visual/product layout references.
-4. **`LITE_PLANNING_HISTORY.txt`** — historical planning/implementation transcript. It can contain claims about branches/commits that are no longer present; treat those as recovery clues, not proof of current code.
-5. **Storyteller OneClick v0.39.0 installer** — behavioral reference only. It predates the Rust + Slint refactor and is not the Lite codebase.
+4. **Installer dissection notes in this directory** — recovered historical behavior/invariants from v0.39.0.
+5. **`LITE_PLANNING_HISTORY.txt`** — historical planning/implementation transcript. It can contain claims about branches/commits that are no longer present; treat those as recovery clues, not proof of current code.
+6. **Storyteller OneClick v0.39.0 installer itself** — behavioral reference only. It predates the Rust + Slint Lite rebuild and is not the Lite codebase.
 
 ## Preserved materials
 
@@ -20,7 +21,7 @@ When sources disagree, use this order:
 - Source SHA-256: `8c3784ff4ebd7ec0b54993cc72bab54e11a019d6f10666d66d34d8e127856a0c`
 - Purpose: preserve the recovered sequence of Lite scope decisions and prior implementation claims so another agent can understand the intended direction.
 
-Important discrepancy: the transcript repeatedly refers to `refactor/rust-slint` and historical commit SHAs. The live repository branch recovered in this chat is `recovery/rust-slint`, head `56a48b4142caa89f49cd9020bc537c698932d57c` at the time this packet was created. Always inspect the current repository before assuming a historical commit still exists.
+Important discrepancy: the transcript repeatedly refers to `refactor/rust-slint` and historical commit SHAs. The live repository branch recovered in this chat is `recovery/rust-slint`. Always inspect the current repository before assuming a historical commit still exists.
 
 ### UI mockups
 
@@ -28,7 +29,18 @@ See `docs/ui-guides/README.md` and the two WebP files stored next to it. They ar
 
 ### Old installer
 
-See `LEGACY_INSTALLER_REFERENCE.md`.
+Start with:
+
+- `LEGACY_INSTALLER_REFERENCE.md` — provenance, exact installer identity, and scope rules.
+- `INSTALLER_DISSECTION.md` — NSIS payload structure, recovered desktop/helper payloads, and first-pass behavior clues.
+- `FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered Tauri frontend behavior, real old Settings defaults, concurrency semantics, allocator autosave/state-machine behavior, and persistence architecture.
+
+Reproducible static recovery tools live under `tools/recovery/`:
+
+- `extract_legacy_nsis.py` — hash-locked extraction of the exact v0.39.0 NSIS payload.
+- `extract_tauri_assets.py` — hash-locked recovery/verification of the embedded Tauri web assets from the old desktop executable. It requires Python's `brotli` package and is recovery-only tooling, not a Lite runtime dependency.
+
+The old installer and desktop executable are intentionally not committed to this source repository. Their hashes in the recovery docs identify the exact reference samples.
 
 ## Recovery principle
 
