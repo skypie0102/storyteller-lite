@@ -12,6 +12,7 @@ on:
         type: choice
         options:
           - core
+          - format-core
           - full-windows
 
 permissions:
@@ -40,6 +41,55 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-targets: false
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Core lint
+        run: cargo clippy -p storyteller-core --all-targets -- -D warnings
+
+      - name: Core tests
+        run: cargo test -p storyteller-core
+
+  format-core:
+    name: Format and core checks
+    if: ${{ inputs.validation == 'format-core' && github.ref == 'refs/heads/recovery/rust-slint' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
+
+      - name: Apply rustfmt and lock dependencies
+        run: |
+          cargo fmt --all
+          cargo generate-lockfile
+
+      - name: Commit maintenance changes
+        shell: bash
+        run: |
+          if git diff --quiet -- Cargo.lock crates; then
+            echo "No formatting or lockfile changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Cargo.lock crates
+            git commit -m "chore: apply rustfmt and lock dependencies"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          echo "Validated working-tree commit: $(git rev-parse HEAD)"
 
       - name: Rust formatting
         run: cargo fmt --all -- --check
