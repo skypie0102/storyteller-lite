@@ -145,10 +145,18 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
             };
+            let whisper_workers = match whisper_workers(&ui.get_whisper_workers_text().to_string()) {
+                Ok(workers) => workers,
+                Err(error) => {
+                    ui.set_status_text(error.into());
+                    return;
+                }
+            };
             let title = book_title(&epub_path);
             let output_path = output_path(&epub_path, &title);
             let settings = JobSettings {
                 audio,
+                whisper_workers,
                 ..JobSettings::default()
             };
             let job = match Job::new(
@@ -506,6 +514,17 @@ fn audio_encoding(codec: &str, bitrate: &str) -> Result<AudioEncoding, String> {
     AudioEncoding::new(codec, Some(bitrate))
 }
 
+fn whisper_workers(value: &str) -> Result<usize, String> {
+    let workers = value
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| format!("Invalid Whisper worker count: {value}"))?;
+    if !(1..=16).contains(&workers) {
+        return Err("Whisper workers must be between 1 and 16.".into());
+    }
+    Ok(workers)
+}
+
 pub(crate) fn refresh_main_view(
     ui: &AppWindow,
     queue: &JobQueue,
@@ -854,6 +873,14 @@ mod tests {
             AudioEncoding::new(AudioCodec::Opus, Some(AudioBitrate::Kbps64)).unwrap()
         );
         assert!(audio_encoding("MP3", "64K").is_err());
+    }
+
+    #[test]
+    fn whisper_worker_values_are_bounded() {
+        assert_eq!(whisper_workers("1").unwrap(), 1);
+        assert_eq!(whisper_workers("16").unwrap(), 16);
+        assert!(whisper_workers("0").is_err());
+        assert!(whisper_workers("17").is_err());
     }
 
     #[test]
