@@ -174,9 +174,7 @@ fn find_whisper_cli_in_tree(
             continue;
         }
         if file_type.is_dir() {
-            if let Some(found) =
-                find_whisper_cli_in_tree(&path, depth + 1, budget, legacy_main)
-            {
+            if let Some(found) = find_whisper_cli_in_tree(&path, depth + 1, budget, legacy_main) {
                 return Some(found);
             }
         }
@@ -233,7 +231,9 @@ fn run_powershell(script: &str) -> Result<(), String> {
     if detail.is_empty() {
         Err("The selected whisper.cpp archive could not be extracted.".into())
     } else {
-        Err(format!("The selected whisper.cpp archive could not be extracted: {detail}"))
+        Err(format!(
+            "The selected whisper.cpp archive could not be extracted: {detail}"
+        ))
     }
 }
 
