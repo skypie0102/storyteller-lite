@@ -5,7 +5,7 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    prepare_job_sources, prepared_job_sources, run_cancellable_command,
+    extract_epub_corpus, prepare_job_sources, prepared_job_sources, run_cancellable_command,
     spawn_pipeline_worker_with_preflight, CommandOutput, CommandRunError, CommandStream,
     HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
     PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
@@ -74,6 +74,19 @@ impl LitePipelineBackend {
         let stage_dir = context.workspace().stage_dir(PipelineStage::Analyze);
         reset_stage_dir(&stage_dir)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let cancellation = context.cancellation_token();
+
+        let corpus_path = stage_dir.join("book-corpus.json");
+        context
+            .set_activity("Extracting EPUB reading order", self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        match extract_epub_corpus(prepared.epub(), &corpus_path, &cancellation) {
+            Ok(_) => {}
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+            }
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        }
 
         let wav_path = stage_dir.join("audio.wav");
         context
@@ -82,7 +95,6 @@ impl LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        let cancellation = context.cancellation_token();
         let mut ffmpeg = Command::new(&runtime.ffmpeg);
         ffmpeg
             .arg("-hide_banner")
@@ -194,7 +206,11 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![PathBuf::from("audio.wav"), PathBuf::from("transcript.json")],
+            vec![
+                PathBuf::from("book-corpus.json"),
+                PathBuf::from("audio.wav"),
+                PathBuf::from("transcript.json"),
+            ],
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -210,7 +226,7 @@ impl PipelineBackend for LitePipelineBackend {
                 self.elapsed_millis(),
             )),
             PipelineStage::Analyze => Ok(StagePlan::run(
-                "Analyzing audiobook",
+                "Analyzing book and audiobook",
                 ResourceRequest::cpu_heavy(self.cpu_threads),
                 self.elapsed_millis(),
             )),
