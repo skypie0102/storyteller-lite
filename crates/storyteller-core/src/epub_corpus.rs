@@ -1,5 +1,9 @@
 use crate::CancellationToken;
-use quick_xml::{events::{BytesStart, Event}, escape::unescape, Reader};
+use quick_xml::{
+    escape::unescape,
+    events::{BytesStart, Event},
+    Reader,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -27,7 +31,10 @@ impl EpubCorpus {
     }
 
     pub fn character_count(&self) -> usize {
-        self.sections.iter().map(|section| section.text.chars().count()).sum()
+        self.sections
+            .iter()
+            .map(|section| section.text.chars().count())
+            .sum()
     }
 }
 
@@ -263,6 +270,7 @@ fn extract_xhtml_text(xml: &str) -> Result<String, String> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(false);
     let mut output = String::new();
+    let mut pending_space = false;
     let mut suppressed_depth = 0usize;
 
     loop {
@@ -275,19 +283,19 @@ fn extract_xhtml_text(xml: &str) -> Result<String, String> {
                 } else if is_suppressed_element(name) {
                     suppressed_depth = 1;
                 } else if is_block_element(name) {
-                    append_boundary(&mut output);
+                    append_boundary(&mut output, &mut pending_space);
                 }
             }
             Ok(Event::Empty(element)) => {
                 if suppressed_depth == 0 && is_block_element(local_name(element.name().as_ref())) {
-                    append_boundary(&mut output);
+                    append_boundary(&mut output, &mut pending_space);
                 }
             }
             Ok(Event::End(element)) => {
                 if suppressed_depth > 0 {
                     suppressed_depth -= 1;
                 } else if is_block_element(local_name(element.name().as_ref())) {
-                    append_boundary(&mut output);
+                    append_boundary(&mut output, &mut pending_space);
                 }
             }
             Ok(Event::Text(text)) if suppressed_depth == 0 => {
@@ -296,13 +304,13 @@ fn extract_xhtml_text(xml: &str) -> Result<String, String> {
                     .map_err(|error| format!("Could not decode EPUB XHTML text: {error}"))?;
                 let decoded = unescape(&decoded)
                     .map_err(|error| format!("Could not unescape EPUB XHTML text: {error}"))?;
-                append_words(&mut output, &decoded);
+                append_text(&mut output, &mut pending_space, &decoded);
             }
             Ok(Event::CData(text)) if suppressed_depth == 0 => {
                 let decoded = text
                     .decode()
                     .map_err(|error| format!("Could not decode EPUB XHTML CDATA: {error}"))?;
-                append_words(&mut output, &decoded);
+                append_text(&mut output, &mut pending_space, &decoded);
             }
             Ok(Event::Eof) => break,
             Ok(_) => {}
@@ -450,7 +458,10 @@ fn local_name(name: &[u8]) -> &[u8] {
 }
 
 fn is_suppressed_element(name: &[u8]) -> bool {
-    matches!(name, b"head" | b"script" | b"style" | b"svg" | b"math" | b"noscript")
+    matches!(
+        name,
+        b"head" | b"script" | b"style" | b"svg" | b"math" | b"noscript"
+    )
 }
 
 fn is_block_element(name: &[u8]) -> bool {
@@ -490,22 +501,28 @@ fn is_block_element(name: &[u8]) -> bool {
     )
 }
 
-fn append_words(output: &mut String, text: &str) {
-    for word in text.split_whitespace() {
-        if !output.is_empty() && !output.ends_with([' ', '\n']) {
+fn append_text(output: &mut String, pending_space: &mut bool, text: &str) {
+    for character in text.chars() {
+        if character.is_whitespace() {
+            *pending_space = !output.is_empty();
+            continue;
+        }
+        if *pending_space && !output.ends_with('\n') {
             output.push(' ');
         }
-        output.push_str(word);
+        output.push(character);
+        *pending_space = false;
     }
 }
 
-fn append_boundary(output: &mut String) {
+fn append_boundary(output: &mut String, pending_space: &mut bool) {
     while output.ends_with(' ') {
         output.pop();
     }
     if !output.is_empty() && !output.ends_with('\n') {
         output.push('\n');
     }
+    *pending_space = false;
 }
 
 #[cfg(test)]
@@ -515,7 +532,10 @@ mod tests {
     #[test]
     fn container_finds_namespaced_rootfile() {
         let xml = r#"<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/package.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#;
-        assert_eq!(parse_container_package_path(xml).unwrap(), "OPS/package.opf");
+        assert_eq!(
+            parse_container_package_path(xml).unwrap(),
+            "OPS/package.opf"
+        );
     }
 
     #[test]
@@ -536,7 +556,7 @@ mod tests {
         let text = extract_xhtml_text(xml).unwrap();
         assert_eq!(
             text,
-            "Chapter & One\nHello world .\nSecond paragraph\nnext line."
+            "Chapter & One\nHello world.\nSecond paragraph\nnext line."
         );
         assert!(!text.contains("Duplicate"));
         assert!(!text.contains("ignore me"));
