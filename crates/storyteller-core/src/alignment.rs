@@ -393,9 +393,10 @@ fn find_segment_match(
             {
                 continue;
             }
-            if best.as_ref().map_or(true, |current: &SegmentMatch| {
-                candidate_match.score > current.score
-            }) {
+            if best
+                .as_ref()
+                .is_none_or(|current: &SegmentMatch| candidate_match.score > current.score)
+            {
                 best = Some(candidate_match);
             }
         }
@@ -475,9 +476,10 @@ fn best_flexible_window(
             end_token: end,
             score,
         };
-        if best.as_ref().map_or(true, |current: &SegmentMatch| {
-            candidate.score > current.score
-        }) {
+        if best
+            .as_ref()
+            .is_none_or(|current: &SegmentMatch| candidate.score > current.score)
+        {
             best = Some(candidate);
         }
     }

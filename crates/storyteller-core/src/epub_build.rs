@@ -8,7 +8,7 @@ use crate::{
     AlignmentStatus, CancellationToken,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs::{self, File},
     io::{Read, Seek, Write},
     path::Path,

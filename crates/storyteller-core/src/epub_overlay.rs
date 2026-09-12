@@ -264,9 +264,7 @@ pub(crate) fn annotate_xhtml_blocks(
                     .map_err(|error| format!("Could not rewrite EPUB XHTML: {error}"))?;
             }
             Ok(Event::End(element)) => {
-                if suppressed_depth > 0 {
-                    suppressed_depth -= 1;
-                }
+                suppressed_depth = suppressed_depth.saturating_sub(1);
                 writer
                     .write_event(Event::End(element.into_owned()))
                     .map_err(|error| format!("Could not rewrite EPUB XHTML: {error}"))?;
