@@ -72,6 +72,38 @@ jobs:
         with:
           cache-targets: false
 
+      - name: Apply known EPUB entity parser fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("crates/storyteller-core/src/epub_corpus.rs")
+          source = path.read_text()
+          if "Event::GeneralRef(reference)" not in source:
+              needle = '''            Ok(Event::CData(text)) if suppressed_depth == 0 => {
+                  let decoded = text
+                      .decode()
+                      .map_err(|error| format!("Could not decode EPUB XHTML CDATA: {error}"))?;
+                  append_text(&mut output, &mut pending_space, &decoded);
+              }
+          '''
+              replacement = needle + '''            Ok(Event::GeneralRef(reference)) if suppressed_depth == 0 => {
+                  let raw = std::str::from_utf8(reference.as_ref()).map_err(|error| {
+                      format!("EPUB XHTML entity reference is not UTF-8: {error}")
+                  })?;
+                  let escaped = format!("&{raw};");
+                  let decoded = unescape(&escaped).map_err(|error| {
+                      format!("Could not unescape EPUB XHTML entity reference: {error}")
+                  })?;
+                  append_text(&mut output, &mut pending_space, &decoded);
+              }
+          '''
+              if needle not in source:
+                  raise SystemExit("Could not locate XHTML CDATA parser block for entity fix")
+              path.write_text(source.replace(needle, replacement, 1))
+          PY
+
       - name: Apply safe maintenance fixes
         run: |
           cargo generate-lockfile
@@ -82,12 +114,12 @@ jobs:
         shell: bash
         run: |
           if git diff --quiet -- Cargo.lock crates; then
-            echo "No formatting, lockfile, or Clippy changes to commit."
+            echo "No formatting, lockfile, parser, or Clippy changes to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add Cargo.lock crates
-            git commit -m "chore: apply rustfmt, clippy fixes, and lock dependencies"
+            git commit -m "chore: apply parser, rustfmt, clippy fixes, and lock dependencies"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
           echo "Validated working-tree commit: $(git rev-parse HEAD)"
