@@ -1,0 +1,533 @@
+mod worker_bridge;
+
+use rfd::FileDialog;
+use slint::{ComponentHandle, TimerMode, VecModel};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+    time::Duration,
+};
+use storyteller_core::{
+    AudioBitrate, AudioCodec, AudioEncoding, Job, JobInputs, JobQueue, JobSettings, JobStatus,
+    StageStatus,
+};
+use worker_bridge::WorkerBridge;
+
+slint::include_modules!();
+
+#[derive(Debug, Default)]
+struct PendingSources {
+    epub: Option<PathBuf>,
+    audiobook: Option<PathBuf>,
+}
+
+fn main() -> Result<(), slint::PlatformError> {
+    let ui = AppWindow::new()?;
+    let pending = Rc::new(RefCell::new(PendingSources::default()));
+    let queue = Rc::new(RefCell::new(JobQueue::default()));
+    let queue_rows = Rc::new(VecModel::<QueueRow>::default());
+    let stage_rows = Rc::new(VecModel::<StageRow>::default());
+    let detail_stage_rows = Rc::new(VecModel::<StageDetailRow>::default());
+    let worker_bridge = Rc::new(RefCell::new(WorkerBridge::default()));
+    ui.set_queue_rows(queue_rows.clone().into());
+    ui.set_active_stages(stage_rows.clone().into());
+    ui.set_active_stage_details(detail_stage_rows.clone().into());
+
+    {
+        let pending = Rc::clone(&pending);
+        let ui_weak = ui.as_weak();
+        ui.on_browse_epub(move || {
+            let Some(path) = FileDialog::new()
+                .set_title("Choose source EPUB")
+                .add_filter("EPUB", &["epub"])
+                .pick_file()
+            else {
+                return;
+            };
+            let label = display_name(&path);
+            pending.borrow_mut().epub = Some(path);
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_epub_source_name(label.into());
+                ui.set_status_text("EPUB selected".into());
+            }
+        });
+    }
+
+    {
+        let pending = Rc::clone(&pending);
+        let ui_weak = ui.as_weak();
+        ui.on_browse_audio(move || {
+            let Some(path) = FileDialog::new()
+                .set_title("Choose audiobook")
+                .add_filter(
+                    "Audiobook audio",
+                    &["m4b", "m4a", "mp3", "opus", "ogg", "aac", "flac", "wav"],
+                )
+                .pick_file()
+            else {
+                return;
+            };
+            let label = display_name(&path);
+            pending.borrow_mut().audiobook = Some(path);
+            if let Some(ui) = ui_weak.upgrade() {
+                ui.set_audio_source_name(label.into());
+                ui.set_status_text("Audiobook selected".into());
+            }
+        });
+    }
+
+    {
+        let pending = Rc::clone(&pending);
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_queue_book(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+
+            let (epub_path, audiobook_path) = {
+                let pending = pending.borrow();
+                let Some(epub_path) = pending.epub.clone() else {
+                    ui.set_status_text("Choose an EPUB first".into());
+                    return;
+                };
+                let Some(audiobook_path) = pending.audiobook.clone() else {
+                    ui.set_status_text("Choose an audiobook first".into());
+                    return;
+                };
+                (epub_path, audiobook_path)
+            };
+
+            let codec = ui.get_codec_text().to_string();
+            let bitrate = ui.get_bitrate_text().to_string();
+            let audio = match audio_encoding(&codec, &bitrate) {
+                Ok(audio) => audio,
+                Err(error) => {
+                    ui.set_status_text(error.into());
+                    return;
+                }
+            };
+            let title = book_title(&epub_path);
+            let output_path = output_path(&epub_path, &title);
+            let settings = JobSettings {
+                audio,
+                ..JobSettings::default()
+            };
+            let job = match Job::new(
+                JobInputs {
+                    title: title.clone(),
+                    epub_path,
+                    audiobook_path,
+                    output_path,
+                },
+                settings,
+            ) {
+                Ok(job) => job,
+                Err(error) => {
+                    ui.set_status_text(error.into());
+                    return;
+                }
+            };
+
+            let start_result = {
+                let mut queue = queue.borrow_mut();
+                queue.enqueue(job);
+                queue.start_next()
+            };
+            if let Err(error) = start_result {
+                ui.set_status_text(error.into());
+                return;
+            }
+
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+            ui.set_epub_source_name("".into());
+            ui.set_audio_source_name("".into());
+            *pending.borrow_mut() = PendingSources::default();
+        });
+    }
+
+    {
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_pause_after_book(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            queue.borrow_mut().request_pause_after_current();
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+        });
+    }
+
+    ui.on_open_settings(|| {
+        println!("Settings requested");
+    });
+
+    let poll_timer = slint::Timer::default();
+    {
+        let worker_bridge = Rc::clone(&worker_bridge);
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        poll_timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
+            worker_bridge.borrow_mut().poll(
+                &ui_weak,
+                &queue,
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+        });
+    }
+
+    refresh_main_view(
+        &ui,
+        &queue.borrow(),
+        &queue_rows,
+        &stage_rows,
+        &detail_stage_rows,
+    );
+    let result = ui.run();
+    poll_timer.stop();
+    result
+}
+
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+}
+
+fn book_title(epub_path: &Path) -> String {
+    epub_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "Untitled Book".into())
+}
+
+fn output_path(epub_path: &Path, title: &str) -> PathBuf {
+    epub_path.with_file_name(format!("{title} (readaloud).epub"))
+}
+
+fn audio_encoding(codec: &str, bitrate: &str) -> Result<AudioEncoding, String> {
+    let codec = match codec {
+        "Copy" => return AudioEncoding::new(AudioCodec::Copy, None),
+        "Opus" => AudioCodec::Opus,
+        "AAC" => AudioCodec::Aac,
+        value => return Err(format!("Unsupported audio codec: {value}")),
+    };
+    let bitrate = match bitrate {
+        "32K" => AudioBitrate::Kbps32,
+        "64K" => AudioBitrate::Kbps64,
+        "96K" => AudioBitrate::Kbps96,
+        value => return Err(format!("Unsupported audio bitrate: {value}")),
+    };
+    AudioEncoding::new(codec, Some(bitrate))
+}
+
+pub(crate) fn refresh_main_view(
+    ui: &AppWindow,
+    queue: &JobQueue,
+    queue_rows: &VecModel<QueueRow>,
+    stage_rows: &VecModel<StageRow>,
+    detail_stage_rows: &VecModel<StageDetailRow>,
+) {
+    queue_rows.set_vec(build_queue_rows(queue));
+
+    let Some(job) = queue.active_job() else {
+        stage_rows.set_vec(Vec::new());
+        detail_stage_rows.set_vec(Vec::new());
+        ui.set_has_active_job(false);
+        ui.set_active_title("".into());
+        ui.set_active_overall_progress(0.0);
+        ui.set_active_progress_text("0%".into());
+        ui.set_active_activity_text("".into());
+        ui.set_active_context_text("".into());
+        ui.set_active_timing_text("".into());
+        ui.set_active_metrics_text("".into());
+        ui.set_pause_action_text("Pause after book".into());
+        return;
+    };
+
+    stage_rows.set_vec(build_stage_rows(job));
+    detail_stage_rows.set_vec(build_stage_detail_rows(job));
+    ui.set_has_active_job(true);
+    ui.set_active_title(job.inputs.title.clone().into());
+    ui.set_active_overall_progress(job.progress.overall_percent() as f32 / 100.0);
+    ui.set_active_progress_text(format!("{}%", job.progress.overall_percent()).into());
+    ui.set_active_activity_text(active_activity(job).into());
+    ui.set_active_context_text(active_context(job).into());
+    ui.set_active_timing_text(active_timing(job).into());
+    ui.set_active_metrics_text(active_metrics(job).into());
+    ui.set_pause_action_text(
+        if queue.pause_after_current_requested() {
+            "Pause requested"
+        } else {
+            "Pause after book"
+        }
+        .into(),
+    );
+    ui.set_status_text(
+        match job.status {
+            JobStatus::NeedsReview => "Needs Review",
+            _ => "Processing",
+        }
+        .into(),
+    );
+}
+
+fn build_queue_rows(queue: &JobQueue) -> Vec<QueueRow> {
+    queue
+        .jobs()
+        .iter()
+        .filter(|job| job.status == JobStatus::Waiting)
+        .enumerate()
+        .map(|(index, job)| QueueRow {
+            position: (index + 1).to_string().into(),
+            title: job.inputs.title.clone().into(),
+            status: "Waiting".into(),
+        })
+        .collect()
+}
+
+fn build_stage_rows(job: &Job) -> Vec<StageRow> {
+    job.progress
+        .stages()
+        .iter()
+        .map(|stage| StageRow {
+            label: stage.stage.label().into(),
+            state: stage_state(stage.status).into(),
+        })
+        .collect()
+}
+
+fn build_stage_detail_rows(job: &Job) -> Vec<StageDetailRow> {
+    job.progress
+        .stages()
+        .iter()
+        .map(|stage| StageDetailRow {
+            label: stage.stage.label().into(),
+            state: stage_state(stage.status).into(),
+            elapsed: stage
+                .elapsed_seconds
+                .map(format_duration)
+                .unwrap_or_default()
+                .into(),
+            activity: if stage.status == StageStatus::Running {
+                job.progress.current_activity().into()
+            } else {
+                "".into()
+            },
+        })
+        .collect()
+}
+
+fn stage_state(status: StageStatus) -> &'static str {
+    match status {
+        StageStatus::Pending => "Pending",
+        StageStatus::Running => "Active",
+        StageStatus::Completed => "Done",
+        StageStatus::Cached => "Cached",
+        StageStatus::Skipped => "Skipped",
+        StageStatus::Failed => "Failed",
+    }
+}
+
+fn active_activity(job: &Job) -> String {
+    if job.progress.current_stage().is_none() && job.progress.current_activity() == "Waiting" {
+        "Waiting for first pipeline stage".into()
+    } else {
+        job.progress.current_activity().to_owned()
+    }
+}
+
+fn active_context(job: &Job) -> String {
+    let metrics = job.progress.metrics();
+    let mut parts = Vec::new();
+
+    if let (Some(current), Some(total)) = (metrics.current_item, metrics.total_items) {
+        if total > 0 {
+            parts.push(format!("Item {current} of {total}"));
+        }
+    }
+
+    if let (Some(processed), Some(total)) =
+        (metrics.processed_audio_seconds, metrics.total_audio_seconds)
+    {
+        if processed.is_finite() && total.is_finite() && total > 0.0 {
+            parts.push(format!(
+                "Audio {} / {}",
+                format_duration(processed.max(0.0) as u64),
+                format_duration(total.max(0.0) as u64)
+            ));
+        }
+    }
+
+    parts.join("  •  ")
+}
+
+fn active_timing(job: &Job) -> String {
+    let metrics = job.progress.metrics();
+    let mut parts = Vec::new();
+    let elapsed_seconds = job
+        .progress
+        .stages()
+        .iter()
+        .filter_map(|stage| stage.elapsed_seconds)
+        .sum::<u64>();
+
+    if elapsed_seconds > 0 {
+        parts.push(format!("Elapsed {}", format_duration(elapsed_seconds)));
+    }
+    if let Some(eta_seconds) = metrics.eta_seconds {
+        parts.push(format!("ETA ~{}", format_duration(eta_seconds)));
+    }
+    if let Some(speed) = metrics
+        .speed_factor
+        .filter(|speed| speed.is_finite() && *speed > 0.0)
+    {
+        parts.push(format!("Speed {speed:.1}x realtime"));
+    }
+
+    parts.join("  •  ")
+}
+
+fn active_metrics(job: &Job) -> String {
+    let metrics = job.progress.metrics();
+    let mut parts = Vec::new();
+
+    if let Some(backend) = metrics
+        .backend
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        parts.push(format!("Backend {backend}"));
+    }
+    if let Some(model) = metrics
+        .model
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        parts.push(format!("Model {model}"));
+    }
+    if let Some(percent) = metrics
+        .match_percent
+        .filter(|percent| percent.is_finite() && *percent >= 0.0)
+    {
+        parts.push(format!("Match {percent:.1}%"));
+    }
+
+    parts.join("  •  ")
+}
+
+fn format_duration(total_seconds: u64) -> String {
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use storyteller_core::{LiveMetrics, PipelineStage};
+
+    fn sample_job(title: &str) -> Job {
+        Job::new(
+            JobInputs {
+                title: title.into(),
+                epub_path: format!("{title}.epub").into(),
+                audiobook_path: format!("{title}.m4b").into(),
+                output_path: format!("{title} (readaloud).epub").into(),
+            },
+            JobSettings::default(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ui_encoding_values_map_to_core_settings() {
+        assert_eq!(audio_encoding("Copy", "96K").unwrap(), AudioEncoding::copy());
+        assert_eq!(
+            audio_encoding("Opus", "64K").unwrap(),
+            AudioEncoding::new(AudioCodec::Opus, Some(AudioBitrate::Kbps64)).unwrap()
+        );
+        assert!(audio_encoding("MP3", "64K").is_err());
+    }
+
+    #[test]
+    fn output_stays_next_to_source_without_replacing_it() {
+        let source = Path::new("books/The Example Novel.epub");
+        let output = output_path(source, &book_title(source));
+        assert_eq!(
+            output,
+            PathBuf::from("books/The Example Novel (readaloud).epub")
+        );
+        assert_ne!(source, output);
+    }
+
+    #[test]
+    fn active_progress_text_uses_only_real_core_metrics() {
+        let mut job = sample_job("Metrics");
+        job.start().unwrap();
+        job.progress
+            .start_stage(PipelineStage::Prepare, "Preparing sources")
+            .unwrap();
+        job.progress.set_current_stage_percent(100).unwrap();
+        job.progress
+            .complete_stage(PipelineStage::Prepare, 8)
+            .unwrap();
+        job.progress
+            .start_stage(PipelineStage::Analyze, "Transcribing audio")
+            .unwrap();
+        job.progress.set_metrics(LiveMetrics {
+            processed_audio_seconds: Some(60.0),
+            total_audio_seconds: Some(3600.0),
+            current_item: Some(2),
+            total_items: Some(12),
+            speed_factor: Some(22.4),
+            eta_seconds: Some(410),
+            match_percent: Some(98.4),
+            backend: Some("CUDA".into()),
+            model: Some("large-v3-turbo".into()),
+        });
+
+        assert_eq!(
+            active_context(&job),
+            "Item 2 of 12  •  Audio 1:00 / 1:00:00"
+        );
+        assert_eq!(
+            active_timing(&job),
+            "Elapsed 0:08  •  ETA ~6:50  •  Speed 22.4x realtime"
+        );
+        assert_eq!(
+            active_metrics(&job),
+            "Backend CUDA  •  Model large-v3-turbo  •  Match 98.4%"
+        );
+    }
+}
