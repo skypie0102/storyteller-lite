@@ -6,13 +6,19 @@ Rust + Slint successor to Storyteller OneClick.
 
 ## Current development boundary
 
-The recovered application has the queue-first native shell, weighted seven-stage progress model, worker-thread execution, source fingerprint preflight, resumable checkpoint infrastructure, source staging, active cancellation, pause/resume queue controls, and automatic handoff to the next queued book after the previous worker is joined.
+The recovered application has the queue-first native shell, weighted seven-stage progress model, worker-thread execution, source fingerprint preflight, resumable checkpoint infrastructure, source staging, active cancellation, pause/resume queue controls, automatic handoff after worker join, queue/recent management, and a real human-review pause state.
 
-Prepare is fully implemented. It copies the source EPUB into a per-job workspace and prefers a hard link for the audiobook with a cancellable copy fallback. The source files are never intentionally overwritten.
+The pipeline currently has real implementations for:
 
-Analyze now has a real offline backend based on `ffmpeg` and the `whisper.cpp` CLI. It converts the staged audiobook to 16 kHz mono PCM, runs Whisper with JSON-full output, forwards Whisper's real progress callbacks, and checkpoints the generated WAV and transcript JSON. See `docs/RUNTIME.md` for tool/model discovery and setup.
+- **Prepare** — source validation/fingerprinting and safe workspace staging.
+- **Analyze** — bounded EPUB reading-order extraction, ffmpeg PCM conversion, and `whisper.cpp` JSON-full transcription with real backend progress.
+- **Align** — conservative monotonic transcript-to-EPUB text alignment with explicit unmatched segments and real match metrics.
+- **Review Audio** — durable unmatched-audio report plus an explicit native decision to cancel or continue while excluding unmatched regions.
+- **Encode** — cancellable Copy mode or ffmpeg Opus/AAC encoding, with a durable codec/media-type descriptor and real processed-audio timestamps when ffmpeg reports them.
 
-Align and later pipeline backends are intentionally not implemented yet and fail explicitly rather than reporting fake progress.
+**Build EPUB** and **Validate** remain intentionally unimplemented. The next builder milestone is deterministic XHTML fragment anchoring followed by standards-conforming EPUB Media Overlay/SMIL packaging. The app will continue to fail explicitly at an unimplemented boundary rather than report fake completion.
+
+See `docs/RUNTIME.md` for ffmpeg/Whisper discovery and model setup.
 
 ## Build
 
@@ -23,3 +29,5 @@ cargo build -p storyteller-ui
 ## Validation policy
 
 GitHub-hosted CI is intentionally manual-only to avoid wasting public runner capacity. Routine pushes and pull requests do not start hosted jobs. Use the workflow's `core` validation for an occasional lightweight core checkpoint and `full-windows` only for meaningful native integration/release checkpoints. See `docs/CI_POLICY.md`.
+
+The last hosted fully-green checkpoint predates the newest Align/Review/Encode work; newer commits must not be treated as validated until an intentional checkpoint is run locally or through the manual workflow.
