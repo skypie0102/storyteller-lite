@@ -95,7 +95,17 @@ impl WorkerBridge {
                     }
                 }
             }
-            Err(error) => Some(error),
+            Err(error) => {
+                let active_job_id = { queue.borrow().active_job().map(|job| job.id) };
+                if let Some(job_id) = active_job_id {
+                    let _ = queue.borrow_mut().finish(
+                        job_id,
+                        JobOutcome::Failed(error.clone()),
+                        0,
+                    );
+                }
+                Some(format!("Failed: {error}"))
+            }
         };
 
         let status_override = match self.start_next_worker(queue) {
