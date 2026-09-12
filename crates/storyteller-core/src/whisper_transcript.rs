@@ -51,6 +51,7 @@ fn parse_whisper_transcript(root: &Value) -> Result<WhisperTranscript, String> {
         .and_then(Value::as_array)
         .ok_or("Whisper JSON-full output is missing the transcription array.")?;
     let mut segments = Vec::new();
+    let mut previous_end_ms = 0u64;
     for (index, entry) in entries.iter().enumerate() {
         let text = entry
             .get("text")
@@ -71,14 +72,23 @@ fn parse_whisper_transcript(root: &Value) -> Result<WhisperTranscript, String> {
             .get("to")
             .and_then(Value::as_u64)
             .ok_or_else(|| format!("Whisper segment {} has no end offset.", index + 1))?;
-        if end_ms < start_ms {
+        if end_ms <= start_ms {
             return Err(format!(
-                "Whisper segment {} ends before it starts ({} < {} ms).",
+                "Whisper segment {} has a non-positive duration ({}..{} ms).",
                 index + 1,
-                end_ms,
-                start_ms
+                start_ms,
+                end_ms
             ));
         }
+        if !segments.is_empty() && start_ms < previous_end_ms {
+            return Err(format!(
+                "Whisper segment {} overlaps or moves backward in time ({} ms starts before the previous end at {} ms).",
+                index + 1,
+                start_ms,
+                previous_end_ms
+            ));
+        }
+        previous_end_ms = end_ms;
         segments.push(TranscriptSegment {
             start_ms,
             end_ms,
@@ -126,5 +136,24 @@ mod tests {
             "transcription": [{ "text": "Missing offsets" }]
         });
         assert!(parse_whisper_transcript(&value).is_err());
+    }
+
+    #[test]
+    fn rejects_zero_duration_and_overlapping_segments() {
+        let zero = json!({
+            "transcription": [{
+                "offsets": { "from": 100, "to": 100 },
+                "text": "Zero duration"
+            }]
+        });
+        assert!(parse_whisper_transcript(&zero).is_err());
+
+        let overlap = json!({
+            "transcription": [
+                { "offsets": { "from": 0, "to": 1000 }, "text": "First" },
+                { "offsets": { "from": 900, "to": 1500 }, "text": "Second" }
+            ]
+        });
+        assert!(parse_whisper_transcript(&overlap).is_err());
     }
 }
