@@ -73,12 +73,7 @@ pub fn extract_epub_corpus(
         cancellation,
     )?;
     let package_path = parse_container_package_path(&container)?;
-    let package_xml = read_zip_text(
-        &mut archive,
-        &package_path,
-        MAX_PACKAGE_BYTES,
-        cancellation,
-    )?;
+    let package_xml = read_zip_text(&mut archive, &package_path, MAX_PACKAGE_BYTES, cancellation)?;
     let package = parse_package_document(&package_xml)?;
     let package_dir = parent_epub_path(&package_path);
 
@@ -96,12 +91,7 @@ pub fn extract_epub_corpus(
             continue;
         }
         let href = resolve_epub_href(&package_dir, &item.href)?;
-        let document = read_zip_text(
-            &mut archive,
-            &href,
-            MAX_SPINE_DOCUMENT_BYTES,
-            cancellation,
-        )?;
+        let document = read_zip_text(&mut archive, &href, MAX_SPINE_DOCUMENT_BYTES, cancellation)?;
         total_spine_bytes = total_spine_bytes
             .checked_add(document.len())
             .ok_or("EPUB spine content is too large.")?;
@@ -322,7 +312,8 @@ fn extract_xhtml_text(xml: &str) -> Result<String, String> {
 
 fn attribute_value(element: &BytesStart<'_>, wanted: &[u8]) -> Result<Option<String>, String> {
     for attribute in element.attributes().with_checks(false) {
-        let attribute = attribute.map_err(|error| format!("Invalid EPUB XML attribute: {error}"))?;
+        let attribute =
+            attribute.map_err(|error| format!("Invalid EPUB XML attribute: {error}"))?;
         if local_name(attribute.key.as_ref()) != wanted {
             continue;
         }
@@ -370,7 +361,9 @@ fn read_zip_text<R: Read + Seek>(
             break;
         }
         if bytes.len().saturating_add(count) > max_bytes as usize {
-            return Err(format!("EPUB entry {name} expanded beyond its extraction limit."));
+            return Err(format!(
+                "EPUB entry {name} expanded beyond its extraction limit."
+            ));
         }
         bytes.extend_from_slice(&buffer[..count]);
     }
@@ -408,7 +401,9 @@ fn normalize_archive_path(path: &str, allow_parent_segments: bool) -> Result<Str
             "" | "." => {}
             ".." if allow_parent_segments => {
                 if parts.pop().is_none() {
-                    return Err(format!("EPUB archive path escapes the archive root: {path}"));
+                    return Err(format!(
+                        "EPUB archive path escapes the archive root: {path}"
+                    ));
                 }
             }
             ".." => return Err(format!("EPUB archive path is unsafe: {path}")),
@@ -428,7 +423,9 @@ fn percent_decode(value: &str) -> Result<String, String> {
     while index < bytes.len() {
         if bytes[index] == b'%' {
             if index + 2 >= bytes.len() {
-                return Err(format!("EPUB href has an incomplete percent escape: {value}"));
+                return Err(format!(
+                    "EPUB href has an incomplete percent escape: {value}"
+                ));
             }
             let high = hex_value(bytes[index + 1])
                 .ok_or_else(|| format!("EPUB href has an invalid percent escape: {value}"))?;

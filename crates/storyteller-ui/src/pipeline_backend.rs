@@ -5,14 +5,13 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report,
-    encode_audiobook, extract_epub_corpus, prepare_job_sources, prepared_job_sources,
-    publish_validated_epub, read_audio_review_report, run_cancellable_command,
-    spawn_pipeline_worker_with_preflight, validate_readaloud_epub, write_validation_report,
-    AudioCodec, CommandOutput, CommandRunError, CommandStream, HardwareProfile, Job,
-    JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment, PipelineStage,
-    PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator, StagePlan,
-    StageRunContext, StageRunError, StageRunOutput,
+    align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report, encode_audiobook,
+    extract_epub_corpus, prepare_job_sources, prepared_job_sources, publish_validated_epub,
+    read_audio_review_report, run_cancellable_command, spawn_pipeline_worker_with_preflight,
+    validate_readaloud_epub, write_validation_report, AudioCodec, CommandOutput, CommandRunError,
+    CommandStream, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
+    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
+    RuntimeCoordinator, StagePlan, StageRunContext, StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -144,7 +143,10 @@ impl LitePipelineBackend {
         };
         context.set_metrics(metrics.clone(), self.elapsed_millis());
         context
-            .set_activity("Transcribing audiobook with whisper.cpp", self.elapsed_millis())
+            .set_activity(
+                "Transcribing audiobook with whisper.cpp",
+                self.elapsed_millis(),
+            )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         let output_prefix = stage_dir.join("transcript");
@@ -239,7 +241,10 @@ impl LitePipelineBackend {
         };
         context.set_metrics(metrics.clone(), self.elapsed_millis());
         context
-            .set_activity("Aligning transcript segments to EPUB text", self.elapsed_millis())
+            .set_activity(
+                "Aligning transcript segments to EPUB text",
+                self.elapsed_millis(),
+            )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         let result = align_transcript_to_corpus(
@@ -298,7 +303,10 @@ impl LitePipelineBackend {
         let report_path = stage_dir.join("review.json");
 
         context
-            .set_activity("Checking alignment for unmatched audio", self.elapsed_millis())
+            .set_activity(
+                "Checking alignment for unmatched audio",
+                self.elapsed_millis(),
+            )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let summary = create_audio_review_report(&alignment_path, &report_path)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;

@@ -171,7 +171,10 @@ fn failed_validate_finalization_keeps_validate_failed() {
     )
     .unwrap();
 
-    assert_eq!(result, PipelineRunState::Failed("publication failed".into()));
+    assert_eq!(
+        result,
+        PipelineRunState::Failed("publication failed".into())
+    );
     assert_eq!(job.status, JobStatus::Failed);
     assert_eq!(
         job.progress.stages()[PipelineStage::Validate.index()].status,

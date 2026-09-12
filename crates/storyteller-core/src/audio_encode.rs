@@ -133,7 +133,10 @@ pub fn encode_audiobook(
 
     Ok(EncodedAudio {
         descriptor,
-        relative_artifacts: vec![PathBuf::from(file_name), PathBuf::from("encoded-audio.json")],
+        relative_artifacts: vec![
+            PathBuf::from(file_name),
+            PathBuf::from("encoded-audio.json"),
+        ],
     })
 }
 
@@ -185,11 +188,7 @@ fn output_identity(
             })?;
             Ok((format!("audio.{extension}"), media_type, "copy"))
         }
-        AudioCodec::Opus => Ok((
-            "audio.opus".into(),
-            "audio/ogg; codecs=opus",
-            "opus",
-        )),
+        AudioCodec::Opus => Ok(("audio.opus".into(), "audio/ogg; codecs=opus", "opus")),
         AudioCodec::Aac => Ok(("audio.m4a".into(), "audio/mp4", "aac")),
     }
 }
@@ -286,10 +285,7 @@ mod tests {
 
     #[test]
     fn ffmpeg_progress_uses_real_microsecond_output_timestamp() {
-        assert_eq!(
-            parse_ffmpeg_out_time_us("out_time_us=1250000"),
-            Some(1.25)
-        );
+        assert_eq!(parse_ffmpeg_out_time_us("out_time_us=1250000"), Some(1.25));
         assert_eq!(parse_ffmpeg_out_time_us("out_time_us=N/A"), None);
         assert_eq!(parse_ffmpeg_out_time_us("out_time_us=-1"), None);
     }
@@ -306,11 +302,7 @@ mod tests {
                 AudioEncoding::new(AudioCodec::Opus, Some(AudioBitrate::Kbps64)).unwrap()
             )
             .unwrap(),
-            (
-                "audio.opus".into(),
-                "audio/ogg; codecs=opus",
-                "opus"
-            )
+            ("audio.opus".into(), "audio/ogg; codecs=opus", "opus")
         );
         assert!(output_identity(Path::new("book.flac"), AudioEncoding::copy()).is_err());
         assert!(output_identity(Path::new("book.ogg"), AudioEncoding::copy()).is_err());

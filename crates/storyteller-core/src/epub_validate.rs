@@ -58,8 +58,7 @@ pub fn validate_readaloud_epub(
     validate_first_mimetype(&mut archive)?;
     validate_unique_entries(&mut archive)?;
 
-    let container_xml =
-        read_archive_text(&mut archive, "META-INF/container.xml", cancellation)?;
+    let container_xml = read_archive_text(&mut archive, "META-INF/container.xml", cancellation)?;
     let package_path = parse_container_package_path(&container_xml)?;
     let package_xml = read_archive_text(&mut archive, &package_path, cancellation)?;
     let package = audit_package(&package_xml, &package_path)?;
@@ -101,9 +100,10 @@ pub fn validate_readaloud_epub(
                 "Media Overlay item {overlay_id} is associated more than once."
             ));
         }
-        let smil_item = package.items.get(overlay_id).ok_or_else(|| {
-            format!("Media Overlay manifest item {overlay_id} does not exist.")
-        })?;
+        let smil_item = package
+            .items
+            .get(overlay_id)
+            .ok_or_else(|| format!("Media Overlay manifest item {overlay_id} does not exist."))?;
         if smil_item.media_type != "application/smil+xml" {
             return Err(format!(
                 "Media Overlay item {overlay_id} has media type {} instead of application/smil+xml.",
@@ -167,10 +167,7 @@ pub fn validate_readaloud_epub(
     })
 }
 
-pub fn write_validation_report(
-    path: &Path,
-    summary: EpubValidationSummary,
-) -> Result<(), String> {
+pub fn write_validation_report(path: &Path, summary: EpubValidationSummary) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -342,12 +339,7 @@ fn audit_smil<R: Read + Seek>(
                         xhtml_ids,
                         cancellation,
                     )?;
-                    validate_audio_target(
-                        &audio_src,
-                        smil_dir,
-                        audio_manifest_paths,
-                        archive,
-                    )?;
+                    validate_audio_target(&audio_src, smil_dir, audio_manifest_paths, archive)?;
                     duration_ms = duration_ms
                         .checked_add(end - begin)
                         .ok_or("Media Overlay duration overflowed.")?;
@@ -463,8 +455,7 @@ fn audit_package(xml: &str, package_path: &str) -> Result<PackageAudit, String> 
                 if name == b"item" {
                     insert_manifest_item(&element, &package_dir, &mut items)?;
                 } else if name == b"meta"
-                    && attribute_value(&element, b"property")?.as_deref()
-                        == Some("media:duration")
+                    && attribute_value(&element, b"property")?.as_deref() == Some("media:duration")
                 {
                     let refines = attribute_value(&element, b"refines")?
                         .map(|value| value.trim_start_matches('#').to_string());
@@ -526,8 +517,7 @@ fn insert_manifest_item(
     items: &mut HashMap<String, ManifestItem>,
 ) -> Result<(), String> {
     let id = attribute_value(element, b"id")?.ok_or("EPUB manifest item is missing id.")?;
-    let href =
-        attribute_value(element, b"href")?.ok_or("EPUB manifest item is missing href.")?;
+    let href = attribute_value(element, b"href")?.ok_or("EPUB manifest item is missing href.")?;
     let media_type = attribute_value(element, b"media-type")?
         .ok_or("EPUB manifest item is missing media-type.")?;
     let archive_path = resolve_archive_href(package_dir, &href)?;
@@ -673,7 +663,10 @@ fn parse_clock(value: &str) -> Result<u64, String> {
         return Err(format!("Invalid Media Overlay clock value: {value}"));
     }
     let (seconds, millis) = if let Some((seconds, fraction)) = seconds_part.split_once('.') {
-        if fraction.is_empty() || fraction.len() > 3 || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+        if fraction.is_empty()
+            || fraction.len() > 3
+            || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+        {
             return Err(format!("Invalid Media Overlay clock value: {value}"));
         }
         let seconds = seconds

@@ -30,10 +30,18 @@ pub struct TranscriptSegment {
 }
 
 pub fn read_whisper_transcript(path: &Path) -> Result<WhisperTranscript, String> {
-    let data = fs::read(path)
-        .map_err(|error| format!("Could not read Whisper transcript {}: {error}", path.display()))?;
-    let root: Value = serde_json::from_slice(&data)
-        .map_err(|error| format!("Could not parse Whisper transcript {}: {error}", path.display()))?;
+    let data = fs::read(path).map_err(|error| {
+        format!(
+            "Could not read Whisper transcript {}: {error}",
+            path.display()
+        )
+    })?;
+    let root: Value = serde_json::from_slice(&data).map_err(|error| {
+        format!(
+            "Could not parse Whisper transcript {}: {error}",
+            path.display()
+        )
+    })?;
     parse_whisper_transcript(&root)
 }
 

@@ -77,8 +77,12 @@ fn build_readaloud_epub_inner(
     let encoded_audio_path = encoded_audio_dir.join(&audio.file_name);
     validate_nonempty_file(&encoded_audio_path, "Encoded audiobook")?;
 
-    let source = File::open(source_epub)
-        .map_err(|error| format!("Could not open source EPUB {}: {error}", source_epub.display()))?;
+    let source = File::open(source_epub).map_err(|error| {
+        format!(
+            "Could not open source EPUB {}: {error}",
+            source_epub.display()
+        )
+    })?;
     let mut archive = ZipArchive::new(source)
         .map_err(|error| format!("Could not read source EPUB ZIP container: {error}"))?;
     let archive_names = collect_archive_names(&mut archive)?;
@@ -96,10 +100,8 @@ fn build_readaloud_epub_inner(
 
     let mut used_ids = scan.existing_ids.clone();
     let audio_item_id = unique_id("stl-audio", &mut used_ids);
-    let audio_archive_path = join_archive_path(
-        &resource_root,
-        &format!("audio/{}", audio.file_name),
-    );
+    let audio_archive_path =
+        join_archive_path(&resource_root, &format!("audio/{}", audio.file_name));
     let audio_manifest_href = relative_archive_path(&package_dir, &audio_archive_path);
 
     let mut sections = Vec::<OverlaySectionSpec>::new();
@@ -131,8 +133,7 @@ fn build_readaloud_epub_inner(
             .collect::<Result<HashSet<_>, _>>()?;
         let (annotated_xhtml, anchors) =
             annotate_xhtml_blocks(&source_xhtml, &requested_lines, section_index)?;
-        let overlay_item_id =
-            unique_id(&format!("stl-mo-{:04}", section_index + 1), &mut used_ids);
+        let overlay_item_id = unique_id(&format!("stl-mo-{:04}", section_index + 1), &mut used_ids);
         let smil_archive_path = join_archive_path(
             &resource_root,
             &format!("overlays/overlay-{:04}.smil", section_index + 1),
@@ -160,7 +161,9 @@ fn build_readaloud_epub_inner(
 
     let total_duration_ms = sections
         .iter()
-        .try_fold(0u64, |total, section| total.checked_add(section.duration_ms))
+        .try_fold(0u64, |total, section| {
+            total.checked_add(section.duration_ms)
+        })
         .ok_or("Media Overlay duration overflowed.")?;
     let package_rewrite = rewrite_package(
         &package_xml,
@@ -175,16 +178,25 @@ fn build_readaloud_epub_inner(
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
-            format!("Could not create EPUB build directory {}: {error}", parent.display())
+            format!(
+                "Could not create EPUB build directory {}: {error}",
+                parent.display()
+            )
         })?;
     }
     if destination.exists() {
         fs::remove_file(destination).map_err(|error| {
-            format!("Could not replace EPUB build candidate {}: {error}", destination.display())
+            format!(
+                "Could not replace EPUB build candidate {}: {error}",
+                destination.display()
+            )
         })?;
     }
     let output = File::create(destination).map_err(|error| {
-        format!("Could not create EPUB build candidate {}: {error}", destination.display())
+        format!(
+            "Could not create EPUB build candidate {}: {error}",
+            destination.display()
+        )
     })?;
     let mut writer = ZipWriter::new(output);
     write_mimetype(&mut writer)?;
@@ -201,10 +213,7 @@ fn build_readaloud_epub_inner(
             .by_index(index)
             .map_err(|error| format!("Could not read source EPUB entry {index}: {error}"))?;
         let name = entry.name().to_string();
-        if name == "mimetype"
-            || name == package_path
-            || replacement_xhtml.contains(name.as_str())
-        {
+        if name == "mimetype" || name == package_path || replacement_xhtml.contains(name.as_str()) {
             continue;
         }
         if entry.is_dir() {
@@ -239,7 +248,10 @@ fn build_readaloud_epub_inner(
         )
         .map_err(|error| format!("Could not create embedded audiobook entry: {error}"))?;
     let mut encoded = File::open(&encoded_audio_path).map_err(|error| {
-        format!("Could not open encoded audiobook {}: {error}", encoded_audio_path.display())
+        format!(
+            "Could not open encoded audiobook {}: {error}",
+            encoded_audio_path.display()
+        )
     })?;
     copy_stream_cancellable(&mut encoded, &mut writer, cancellation, "encoded audiobook")?;
     let output = writer
@@ -356,7 +368,9 @@ fn read_archive_text<R: Read + Seek>(
         return Err(format!("EPUB entry {name} is not a regular file."));
     }
     if entry.size() > MAX_XML_BYTES as u64 {
-        return Err(format!("EPUB XML entry {name} exceeds the 32 MiB build limit."));
+        return Err(format!(
+            "EPUB XML entry {name} exceeds the 32 MiB build limit."
+        ));
     }
     let mut bytes = Vec::with_capacity(entry.size() as usize);
     let mut buffer = vec![0u8; COPY_BUFFER_BYTES];
@@ -371,7 +385,9 @@ fn read_archive_text<R: Read + Seek>(
             break;
         }
         if bytes.len().saturating_add(count) > MAX_XML_BYTES {
-            return Err(format!("EPUB XML entry {name} expanded beyond the build limit."));
+            return Err(format!(
+                "EPUB XML entry {name} expanded beyond the build limit."
+            ));
         }
         bytes.extend_from_slice(&buffer[..count]);
     }
@@ -452,7 +468,10 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("{label} is unavailable at {}: {error}", path.display()))?;
     if !metadata.is_file() || metadata.len() == 0 {
-        return Err(format!("{label} is not a non-empty regular file: {}", path.display()));
+        return Err(format!(
+            "{label} is not a non-empty regular file: {}",
+            path.display()
+        ));
     }
     Ok(())
 }
@@ -467,9 +486,6 @@ mod tests {
             "OPS/storyteller/audio/old.m4a".to_string(),
             "OPS/Text/chapter.xhtml".to_string(),
         ]);
-        assert_eq!(
-            unique_resource_root("OPS", &names),
-            "OPS/storyteller-1"
-        );
+        assert_eq!(unique_resource_root("OPS", &names), "OPS/storyteller-1");
     }
 }

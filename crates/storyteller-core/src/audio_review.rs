@@ -77,8 +77,12 @@ pub fn create_audio_review_report(
 }
 
 pub fn read_audio_review_report(path: &Path) -> Result<AudioReviewReport, String> {
-    let data = fs::read(path)
-        .map_err(|error| format!("Could not read audio review report {}: {error}", path.display()))?;
+    let data = fs::read(path).map_err(|error| {
+        format!(
+            "Could not read audio review report {}: {error}",
+            path.display()
+        )
+    })?;
     let report: AudioReviewReport = serde_json::from_slice(&data).map_err(|error| {
         format!(
             "Could not parse audio review report {}: {error}",

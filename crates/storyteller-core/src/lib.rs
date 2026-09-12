@@ -32,16 +32,13 @@ pub use audio_review::{
     AudioReviewItem, AudioReviewReport, AudioReviewSummary,
 };
 pub use cancellation::CancellationToken;
-pub use command::{
-    run_cancellable_command, CommandOutput, CommandRunError, CommandStream,
-};
+pub use command::{run_cancellable_command, CommandOutput, CommandRunError, CommandStream};
 pub use epub_build::{build_readaloud_epub, EpubBuildSummary};
 pub use epub_corpus::{
     extract_epub_corpus, read_epub_corpus, EpubCorpus, EpubCorpusSummary, EpubSection,
 };
 pub use epub_validate::{
-    publish_validated_epub, validate_readaloud_epub, write_validation_report,
-    EpubValidationSummary,
+    publish_validated_epub, validate_readaloud_epub, write_validation_report, EpubValidationSummary,
 };
 pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,

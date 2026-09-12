@@ -59,7 +59,9 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| CommandRunError::Spawn(format!("Could not start external command: {error}")))?;
+        .map_err(|error| {
+            CommandRunError::Spawn(format!("Could not start external command: {error}"))
+        })?;
 
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
@@ -83,13 +85,12 @@ where
     };
 
     let (sender, receiver) = mpsc::channel();
-    let stdout_reader = spawn_reader(stdout, CommandStream::Stdout, sender.clone()).map_err(
-        |error| {
+    let stdout_reader =
+        spawn_reader(stdout, CommandStream::Stdout, sender.clone()).map_err(|error| {
             let _ = child.kill();
             let _ = child.wait();
             CommandRunError::Spawn(format!("Could not start stdout reader: {error}"))
-        },
-    )?;
+        })?;
     let stderr_reader = match spawn_reader(stderr, CommandStream::Stderr, sender) {
         Ok(reader) => reader,
         Err(error) => {

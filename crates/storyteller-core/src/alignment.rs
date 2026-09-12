@@ -354,7 +354,8 @@ fn find_segment_match(
     let max_position = cursor
         .saturating_add(MAX_SEARCH_AHEAD_TOKENS)
         .min(book.len().saturating_sub(1));
-    let mut votes = collect_candidate_votes(book, indexes, transcript, 3, min_position, max_position);
+    let mut votes =
+        collect_candidate_votes(book, indexes, transcript, 3, min_position, max_position);
     if votes.is_empty() {
         votes = collect_candidate_votes(book, indexes, transcript, 2, min_position, max_position);
     }
@@ -367,9 +368,11 @@ fn find_segment_match(
 
     let mut ranked = votes.into_iter().collect::<Vec<_>>();
     ranked.sort_by(|(left_start, left_votes), (right_start, right_votes)| {
-        right_votes
-            .cmp(left_votes)
-            .then_with(|| left_start.abs_diff(cursor).cmp(&right_start.abs_diff(cursor)))
+        right_votes.cmp(left_votes).then_with(|| {
+            left_start
+                .abs_diff(cursor)
+                .cmp(&right_start.abs_diff(cursor))
+        })
     });
     ranked.truncate(MAX_CANDIDATES);
 
@@ -385,14 +388,14 @@ fn find_segment_match(
             let Some(candidate_match) = best_flexible_window(book, transcript, start) else {
                 continue;
             };
-            if candidate_match.start_token < min_position || candidate_match.start_token > max_position
+            if candidate_match.start_token < min_position
+                || candidate_match.start_token > max_position
             {
                 continue;
             }
-            if best
-                .as_ref()
-                .map_or(true, |current: &SegmentMatch| candidate_match.score > current.score)
-            {
+            if best.as_ref().map_or(true, |current: &SegmentMatch| {
+                candidate_match.score > current.score
+            }) {
                 best = Some(candidate_match);
             }
         }
@@ -431,7 +434,13 @@ fn collect_candidate_votes(
             if candidate_start < min_position || candidate_start > max_position {
                 continue;
             }
-            if !ngram_equals(book, book_position, transcript, transcript_offset, ngram_size) {
+            if !ngram_equals(
+                book,
+                book_position,
+                transcript,
+                transcript_offset,
+                ngram_size,
+            ) {
                 continue;
             }
             *votes.entry(candidate_start).or_insert(0) += 1;
@@ -466,10 +475,9 @@ fn best_flexible_window(
             end_token: end,
             score,
         };
-        if best
-            .as_ref()
-            .map_or(true, |current: &SegmentMatch| candidate.score > current.score)
-        {
+        if best.as_ref().map_or(true, |current: &SegmentMatch| {
+            candidate.score > current.score
+        }) {
             best = Some(candidate);
         }
     }
@@ -587,9 +595,8 @@ mod tests {
 
     #[test]
     fn aligns_monotonically_with_small_asr_errors() {
-        let book = corpus(
-            "The quick brown fox jumps over the lazy dog. A second sentence appears here.",
-        );
+        let book =
+            corpus("The quick brown fox jumps over the lazy dog. A second sentence appears here.");
         let spoken = transcript(&[
             "The quick brown fox jumps over a lazy dog.",
             "A second sentence appears here.",
@@ -617,12 +624,9 @@ mod tests {
     fn weak_segment_is_left_unmatched_instead_of_forced() {
         let book = corpus("This book contains ordinary prose and nothing about rockets.");
         let spoken = transcript(&["quantum banana orchestra travels sideways"]);
-        let result = align_loaded(
-            &book,
-            &spoken,
-            &CancellationToken::default(),
-            &mut |_| Ok(()),
-        )
+        let result = align_loaded(&book, &spoken, &CancellationToken::default(), &mut |_| {
+            Ok(())
+        })
         .unwrap();
         assert_eq!(result.matched_segments, 0);
         assert_eq!(result.segments[0].status, AlignmentStatus::Unmatched);
@@ -633,12 +637,9 @@ mod tests {
     fn match_cannot_cross_corpus_block_boundary() {
         let book = corpus("first paragraph words\nsecond paragraph words");
         let spoken = transcript(&["paragraph words second paragraph"]);
-        let result = align_loaded(
-            &book,
-            &spoken,
-            &CancellationToken::default(),
-            &mut |_| Ok(()),
-        )
+        let result = align_loaded(&book, &spoken, &CancellationToken::default(), &mut |_| {
+            Ok(())
+        })
         .unwrap();
         assert_eq!(result.matched_segments, 0);
     }

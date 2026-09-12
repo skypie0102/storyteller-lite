@@ -54,7 +54,8 @@ pub(crate) fn scan_package(
                     if let Some(id) = attribute_value(&element, b"id")? {
                         existing_ids.insert(id.clone());
                         let href = attribute_value(&element, b"href")?.unwrap_or_default();
-                        let media_type = attribute_value(&element, b"media-type")?.unwrap_or_default();
+                        let media_type =
+                            attribute_value(&element, b"media-type")?.unwrap_or_default();
                         if media_type == "application/smil+xml"
                             || attribute_value(&element, b"media-overlay")?.is_some()
                         {
@@ -73,7 +74,8 @@ pub(crate) fn scan_package(
                         }
                     }
                 } else if name == b"meta" {
-                    if attribute_value(&element, b"property")?.as_deref() == Some("media:duration") {
+                    if attribute_value(&element, b"property")?.as_deref() == Some("media:duration")
+                    {
                         existing_media_overlay = true;
                     }
                     if let Some(id) = attribute_value(&element, b"id")? {
@@ -196,7 +198,10 @@ pub(crate) fn rewrite_package(
     }
     for section in sections {
         if !scan.xhtml_item_ids.contains_key(&section.href) {
-            return Err(format!("Missing package item for synchronized XHTML {}.", section.href));
+            return Err(format!(
+                "Missing package item for synchronized XHTML {}.",
+                section.href
+            ));
         }
     }
     String::from_utf8(writer.into_inner())
@@ -354,7 +359,11 @@ pub(crate) fn join_archive_path(base: &str, child: &str) -> String {
     if base.is_empty() {
         child.trim_start_matches('/').to_string()
     } else {
-        format!("{}/{}", base.trim_end_matches('/'), child.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            base.trim_end_matches('/'),
+            child.trim_start_matches('/')
+        )
     }
 }
 
@@ -386,7 +395,9 @@ pub(crate) fn relative_archive_path(from_dir: &str, target: &str) -> String {
 pub(crate) fn resolve_archive_href(base: &str, href: &str) -> Result<String, String> {
     let href = href.split(['#', '?']).next().unwrap_or(href);
     if href.contains("://") || href.starts_with("data:") || href.starts_with('/') {
-        return Err(format!("EPUB package resource uses unsupported URI {href}."));
+        return Err(format!(
+            "EPUB package resource uses unsupported URI {href}."
+        ));
     }
     let decoded = percent_decode(href)?;
     normalize_archive_path(&join_archive_path(base, &decoded))
@@ -419,7 +430,9 @@ fn maybe_add_media_overlay(
     let resolved = resolve_archive_href(package_dir, &href)?;
     if let Some(overlay_id) = overlays.get(resolved.as_str()) {
         if attribute_value(element, b"media-overlay")?.is_some() {
-            return Err(format!("EPUB package item {resolved} already has media-overlay."));
+            return Err(format!(
+                "EPUB package item {resolved} already has media-overlay."
+            ));
         }
         element.push_attribute(("media-overlay", *overlay_id));
     }
@@ -499,7 +512,9 @@ fn map_line_owners(xml: &str) -> Result<(Vec<usize>, HashMap<usize, String>), St
                 if is_anchor_container(name) {
                     let ordinal = next_ordinal;
                     next_ordinal += 1;
-                    if let Some(id) = attribute_value(&element, b"id")?.filter(|id| !id.trim().is_empty()) {
+                    if let Some(id) =
+                        attribute_value(&element, b"id")?.filter(|id| !id.trim().is_empty())
+                    {
                         existing_ids.insert(ordinal, id);
                     }
                     stack.push(Frame {
@@ -572,7 +587,8 @@ fn finish_line(
     has_text: &mut bool,
 ) -> Result<(), String> {
     if *has_text {
-        lines.push(owner.ok_or("Visible EPUB text is not contained in an anchorable XHTML block.")?);
+        lines
+            .push(owner.ok_or("Visible EPUB text is not contained in an anchorable XHTML block.")?);
     }
     *owner = None;
     *has_text = false;
@@ -661,7 +677,8 @@ fn escape_xml(value: &str) -> String {
 
 fn attribute_value(element: &BytesStart<'_>, wanted: &[u8]) -> Result<Option<String>, String> {
     for attribute in element.attributes().with_checks(false) {
-        let attribute = attribute.map_err(|error| format!("Invalid EPUB XML attribute: {error}"))?;
+        let attribute =
+            attribute.map_err(|error| format!("Invalid EPUB XML attribute: {error}"))?;
         if local_name(attribute.key.as_ref()) != wanted {
             continue;
         }
@@ -748,7 +765,10 @@ mod tests {
             "../../Text/chapter.xhtml"
         );
         assert_eq!(
-            relative_archive_path("OPS/storyteller/overlays", "OPS/storyteller/audio/audio.m4a"),
+            relative_archive_path(
+                "OPS/storyteller/overlays",
+                "OPS/storyteller/audio/audio.m4a"
+            ),
             "../audio/audio.m4a"
         );
     }
