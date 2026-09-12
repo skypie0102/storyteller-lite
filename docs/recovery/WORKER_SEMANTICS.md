@@ -35,6 +35,22 @@ Those are historical OneClick defaults only. The current Lite product decision r
 
 Because the launcher explicitly used constant `--processors 1` while separately forwarding `parallelTranscribes`, old Parallel Whisper jobs cannot have meant whisper.cpp processors.
 
+### Important limit of historical reproducibility
+
+The old desktop app did **not** bundle or pin a particular align package version. It described its launcher as:
+
+```text
+@storyteller-platform/align@latest via npx
+```
+
+and the compiled command contains `--yes @storyteller-platform/align@latest`.
+
+The installer also does **not** contain a `--max-length` override. Therefore the precise processed-track/chunk length was inherited from whatever `@latest` package npm resolved when the user actually processed a book.
+
+So there is no trustworthy single historical chunk-duration constant to recover from this installer. A current upstream default (for example 120 minutes) is useful architecture evidence, but it must not be presented as a fixed v0.39.0 behavior.
+
+This strengthens the Lite design requirement to **own and version its chunking policy internally**, so Analyze behavior is deterministic and does not drift with an external package's defaults.
+
 ## Cross-check against current upstream Storyteller
 
 This section is an external source-code cross-check, **not proof of the exact npm implementation fetched by v0.39.0**, because the old installer invoked `@storyteller-platform/align@latest` rather than pinning a package version.
@@ -44,7 +60,7 @@ At upstream Storyteller commit `c13dd32a82388d8c3b5f39d248897d4050d5ba88`:
 1. `libraries/align/src/cli/bin.ts` parses `--parallel-transcribes` separately and passes it into `transcribe(...)` as `parallelism`.
 2. `libraries/align/src/transcribe/transcribe.ts` constructs an `AsyncSemaphore(options.parallelism ?? 1)`, enumerates the processed audio files, and runs one `transcribeFile(...)` task per file while the semaphore bounds how many are active concurrently.
 3. Each individual `transcribeFile(...)` receives its own `processors` and `threads` values separately.
-4. `libraries/align/src/process/parse.ts` has a default processed-track maximum length of 120 minutes.
+4. `libraries/align/src/process/parse.ts` currently has a default processed-track maximum length of 120 minutes.
 5. `libraries/align/src/process/processAudiobook.ts` splits source audio into multiple processed files/ranges. It prefers chapter boundaries; overlong/no-chapter regions are further split at safe points.
 6. `libraries/align/src/process/ranges.ts` uses voice-activity detection around candidate cut points when a chapter/range is too long.
 
@@ -77,7 +93,7 @@ worker   worker   worker   worker
               alignment
 ```
 
-So a single long audiobook could benefit from `Parallel Whisper jobs = 3` because preprocessing yielded several ordered tracks/ranges.
+So a single long audiobook could benefit from multiple parallel Whisper jobs because preprocessing yielded several ordered tracks/ranges. The exact size of those ranges in v0.39.0 was runtime-package-dependent, not pinned in the installer.
 
 ## Difference from current Lite
 
@@ -95,7 +111,7 @@ Passing `-p N` to that one whisper-cli process would implement a **different kin
 
 When implementing the user-requested worker-count option, prefer this architecture unless benchmarks show a better safe design:
 
-1. Decode/split the audiobook into deterministic ordered transcription chunks.
+1. Decode/split the audiobook into deterministic ordered transcription chunks under a **Lite-owned, versioned policy**.
 2. Keep boundaries safe for timestamp reconstruction — chapter boundaries where available, otherwise silence/VAD-aware boundaries or another tested deterministic policy.
 3. Run at most `workers` whisper transcription tasks concurrently.
 4. Keep each individual worker's whisper processor count at `1` initially.
