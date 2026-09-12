@@ -66,7 +66,7 @@ impl WorkerBridge {
         let Some(worker) = self.worker.take() else {
             return;
         };
-        let status_override = match worker.join() {
+        let terminal_status = match worker.join() {
             Ok(result) => {
                 let final_job = result.job;
                 if queue
@@ -90,6 +90,12 @@ impl WorkerBridge {
             Err(error) => Some(error),
         };
 
+        let status_override = match self.start_next_worker(queue) {
+            Ok(true) => None,
+            Ok(false) => terminal_status,
+            Err(status) => Some(status),
+        };
+
         refresh_if_open(
             ui_weak,
             queue,
@@ -98,6 +104,18 @@ impl WorkerBridge {
             detail_stage_rows,
             status_override,
         );
+    }
+
+    fn start_next_worker(&mut self, queue: &Rc<RefCell<JobQueue>>) -> Result<bool, String> {
+        let next_job = { queue.borrow_mut().start_next()? };
+        if next_job.is_none() {
+            return Ok(false);
+        }
+
+        if let Some(status) = self.start_active_worker(queue) {
+            return Err(status);
+        }
+        Ok(true)
     }
 
     fn start_active_worker(&mut self, queue: &Rc<RefCell<JobQueue>>) -> Option<String> {
