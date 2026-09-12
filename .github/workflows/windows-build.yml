@@ -1,0 +1,76 @@
+name: Windows test build
+
+# One-shot packaging trigger for the current developer-test checkpoint.
+# After the artifact is produced this workflow will be returned to manual-only.
+on:
+  push:
+    branches:
+      - recovery/rust-slint
+    paths:
+      - .github/workflows/windows-build.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package Windows x64 build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release executable
+        run: cargo build --locked --release -p storyteller-ui
+
+      - name: Assemble developer-test package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\storyteller-ui.exe dist\StoryTeller-Lite.exe
+          @'
+          StoryTeller Lite — Windows developer-test build
+
+          Launch:
+            Double-click StoryTeller-Lite.exe
+
+          Analyze runtime requirements:
+            - ffmpeg.exe
+            - whisper-cli.exe from whisper.cpp
+            - ggml-large-v3-turbo.bin (default model)
+
+          Recommended portable layout next to StoryTeller-Lite.exe:
+            tools\ffmpeg.exe
+            tools\whisper-cli.exe
+            models\ggml-large-v3-turbo.bin
+
+          Environment-variable overrides are also supported:
+            STORYTELLER_FFMPEG
+            STORYTELLER_WHISPER
+            STORYTELLER_WHISPER_MODEL
+
+          This is a developer-test build, not a public release. Runtime downloader/settings,
+          installer/signing, EPUBCheck interoperability, and release polish are still pending.
+          '@ | Set-Content -Encoding UTF8 dist\README.txt
+          "commit=${env:GITHUB_SHA}" | Set-Content -Encoding ASCII dist\BUILD.txt
+          (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash + "  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: StoryTeller-Lite-Windows-x64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 3
