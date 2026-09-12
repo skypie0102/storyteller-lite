@@ -30,7 +30,7 @@ pub use scheduler::{HardwareProfile, ResourceRequest, ResourceScheduler, Runtime
 pub use source_fingerprint::{
     fingerprint_job_sources, fingerprint_source_file, SourceFingerprints,
 };
-pub use source_prepare::{prepare_job_sources, PreparedSources};
+pub use source_prepare::{prepare_job_sources, prepared_job_sources, PreparedSources};
 pub use worker::{
     spawn_pipeline_worker, spawn_pipeline_worker_with_preflight, PipelineEnvironment,
     PipelineWorkerHandle, WorkerResult,
