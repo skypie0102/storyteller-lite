@@ -4,13 +4,13 @@ Storyteller Lite keeps heavyweight media/ML tools outside the Rust UI process. T
 
 ## Default Whisper model
 
-The current job default is `large-v3-turbo`, so automatic model discovery looks for:
+The current job default is `large-v3-turbo`, so model discovery looks for:
 
 ```text
 ggml-large-v3-turbo.bin
 ```
 
-A different model name may be supplied by `JobSettings` as the Settings UI is completed.
+A different model name may be supplied by `JobSettings` as model selection is expanded in the Settings UI.
 
 ## Tool discovery
 
@@ -23,6 +23,8 @@ The backend checks, in order:
 3. `ffmpeg.exe` next to the application on Windows (`ffmpeg` elsewhere)
 4. `ffmpeg` from `PATH`
 
+The Settings runtime scan probes a discovered executable with `ffmpeg -version` before reporting it ready.
+
 ### whisper.cpp CLI
 
 The backend checks, in order:
@@ -32,16 +34,44 @@ The backend checks, in order:
 3. `whisper-cli.exe` next to the application on Windows (`whisper-cli` elsewhere)
 4. `whisper-cli` from `PATH`
 
+The Settings runtime scan probes a discovered executable with `whisper-cli --help` before reporting it ready.
+
 ### Whisper model
 
-`STORYTELLER_WHISPER_MODEL` may point directly to a non-empty model file. Otherwise the backend checks conventional model folders for `ggml-<model>.bin`:
+`STORYTELLER_WHISPER_MODEL` may point directly to a non-empty model file. Otherwise the backend and Settings scan check conventional model folders for `ggml-<model>.bin`:
 
 - `%LOCALAPPDATA%/Storyteller OneClick Lite/models/` on Windows
 - `models/` next to the application
 - `tools/models/` next to the application
 - `models/` under the current working directory (development convenience)
 
-The application does not silently download a multi-gigabyte model during processing. Missing tooling/model files produce an explicit Analyze failure with setup information.
+A model is reported ready only when the candidate is a non-empty regular file.
+
+## Settings runtime manager
+
+Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. If anything is missing, **Download missing** offers an explicit, user-initiated portable install on Windows. Processing never silently starts a multi-gigabyte model download.
+
+Downloads are performed on a background thread so the Slint UI remains responsive. Missing dependencies are installed beside the portable application:
+
+```text
+tools/ffmpeg.exe
+tools/whisper-cli.exe
+models/ggml-large-v3-turbo.bin
+```
+
+The whisper.cpp package's sibling runtime DLLs are copied into `tools/` with `whisper-cli.exe`.
+
+Current download sources and integrity checks:
+
+- ffmpeg: the Gyan Windows Essentials ZIP plus the provider's published `.sha256`; the archive hash must match before extraction.
+- whisper.cpp: an official `ggml-org/whisper.cpp` GitHub release asset named `whisper-bin-x64.zip`; the GitHub asset must publish a `sha256:` digest and the downloaded archive must match it.
+- `large-v3-turbo`: the canonical whisper.cpp model download; the downloaded file is staged as a temporary partial file and must match the pinned SHA-256 before it is moved into `models/`.
+
+After installation, Storyteller Lite probes ffmpeg and whisper-cli again and re-runs dependency detection before displaying **Dependencies ready**. If one dependency succeeds and a later dependency fails, the successful portable file is retained and the next attempt downloads only what is still missing.
+
+Automatic installation is currently Windows-focused and uses PowerShell. The portable application directory must be writable; a build placed under a protected directory such as `Program Files` may need to be moved to a user-writable folder before installing dependencies. The current downloader does not expose mid-download cancellation yet.
+
+Missing dependencies still produce explicit Analyze/setup errors if the user chooses not to install them from Settings.
 
 ## Analyze artifacts
 
@@ -58,4 +88,4 @@ The Analyze progress percentage comes from whisper.cpp's own progress callback o
 
 ## Cancellation
 
-External commands are launched with stdin disabled and stdout/stderr drained on dedicated reader threads. The worker polls its cancellation token; cancellation kills and waits for the child process before the stage returns as cancelled. This prevents a cancelled job from leaving ffmpeg or whisper-cli running behind the UI.
+External processing commands are launched with stdin disabled and stdout/stderr drained on dedicated reader threads. The worker polls its cancellation token; cancellation kills and waits for the child process before the stage returns as cancelled. This prevents a cancelled job from leaving ffmpeg or whisper-cli running behind the UI.
