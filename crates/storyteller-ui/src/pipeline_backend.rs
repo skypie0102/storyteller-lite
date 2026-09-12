@@ -321,7 +321,10 @@ impl LitePipelineBackend {
         );
         if summary.unmatched_segments == 0 {
             context
-                .set_activity("No unmatched audio segments require review", self.elapsed_millis())
+                .set_activity(
+                    "No unmatched audio segments require review",
+                    self.elapsed_millis(),
+                )
                 .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
             Ok(output)
         } else {
@@ -330,7 +333,11 @@ impl LitePipelineBackend {
                     format!(
                         "{} unmatched audio segment{} need review",
                         summary.unmatched_segments,
-                        if summary.unmatched_segments == 1 { "" } else { "s" }
+                        if summary.unmatched_segments == 1 {
+                            ""
+                        } else {
+                            "s"
+                        }
                     ),
                     self.elapsed_millis(),
                 )
@@ -437,7 +444,10 @@ impl LitePipelineBackend {
             self.elapsed_millis(),
         );
         context
-            .set_activity("Building synchronized EPUB Media Overlays", self.elapsed_millis())
+            .set_activity(
+                "Building synchronized EPUB Media Overlays",
+                self.elapsed_millis(),
+            )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let summary = build_readaloud_epub(
             prepared.epub(),
@@ -489,7 +499,6 @@ impl LitePipelineBackend {
         reset_stage_dir(&stage_dir, PipelineStage::Validate)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let report_path = stage_dir.join("validation.json");
-        let output_path = context.job().inputs.output_path.clone();
         let cancellation = context.cancellation_token();
 
         context.set_metrics(
@@ -500,7 +509,10 @@ impl LitePipelineBackend {
             self.elapsed_millis(),
         );
         context
-            .set_activity("Auditing EPUB container and Media Overlays", self.elapsed_millis())
+            .set_activity(
+                "Auditing EPUB container and Media Overlays",
+                self.elapsed_millis(),
+            )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let summary = validate_readaloud_epub(&candidate, &cancellation);
         let summary = match summary {
@@ -522,15 +534,8 @@ impl LitePipelineBackend {
             self.elapsed_millis(),
         );
         context
-            .set_activity("Publishing validated read-aloud EPUB", self.elapsed_millis())
+            .set_activity("EPUB validation passed", self.elapsed_millis())
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        match publish_validated_epub(&candidate, &output_path, &cancellation) {
-            Ok(()) => {}
-            Err(error) if cancellation.is_requested() => {
-                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
-            }
-            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
-        }
         context
             .set_stage_percent(100, self.elapsed_millis())
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
@@ -601,6 +606,36 @@ impl PipelineBackend for LitePipelineBackend {
             PipelineStage::Encode => self.run_encode(context),
             PipelineStage::BuildEpub => self.run_build_epub(context),
             PipelineStage::Validate => self.run_validate(context),
+        }
+    }
+
+    fn finalize_stage(
+        &mut self,
+        context: &mut StageRunContext<'_>,
+        _output: &StageRunOutput,
+    ) -> Result<(), StageRunError> {
+        if context.stage() != PipelineStage::Validate {
+            return Ok(());
+        }
+
+        let candidate = context
+            .workspace()
+            .stage_dir(PipelineStage::BuildEpub)
+            .join("readaloud.epub");
+        let output_path = context.job().inputs.output_path.clone();
+        let cancellation = context.cancellation_token();
+        context
+            .set_activity(
+                "Publishing validated read-aloud EPUB",
+                self.elapsed_millis(),
+            )
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        match publish_validated_epub(&candidate, &output_path, &cancellation) {
+            Ok(()) => Ok(()),
+            Err(error) if cancellation.is_requested() => {
+                Err(StageRunError::cancelled(error, self.elapsed_millis()))
+            }
+            Err(error) => Err(StageRunError::failed(error, self.elapsed_millis())),
         }
     }
 }
@@ -816,7 +851,11 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
 fn parse_whisper_progress(line: &str) -> Option<u8> {
     let (_, remainder) = line.split_once("progress =")?;
     let (percent, _) = remainder.split_once('%')?;
-    percent.trim().parse::<u8>().ok().filter(|value| *value <= 100)
+    percent
+        .trim()
+        .parse::<u8>()
+        .ok()
+        .filter(|value| *value <= 100)
 }
 
 fn parse_whisper_backend(line: &str) -> Option<String> {
