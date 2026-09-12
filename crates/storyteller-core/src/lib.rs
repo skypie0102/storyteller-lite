@@ -1,4 +1,5 @@
 mod alignment;
+mod audio_review;
 mod cancellation;
 mod command;
 mod epub_corpus;
@@ -17,6 +18,10 @@ mod workspace;
 pub use alignment::{
     align_transcript_to_corpus, AlignmentDocument, AlignmentProgress, AlignmentSegment,
     AlignmentStatus, AlignmentSummary, CorpusPosition,
+};
+pub use audio_review::{
+    create_audio_review_report, read_audio_review_report, AudioReviewItem, AudioReviewReport,
+    AudioReviewSummary,
 };
 pub use cancellation::CancellationToken;
 pub use command::{
