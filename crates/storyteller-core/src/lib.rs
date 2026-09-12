@@ -1,5 +1,6 @@
 mod cancellation;
 mod command;
+mod epub_corpus;
 mod job;
 mod progress;
 mod queue;
@@ -14,6 +15,9 @@ mod workspace;
 pub use cancellation::CancellationToken;
 pub use command::{
     run_cancellable_command, CommandOutput, CommandRunError, CommandStream,
+};
+pub use epub_corpus::{
+    extract_epub_corpus, read_epub_corpus, EpubCorpus, EpubCorpusSummary, EpubSection,
 };
 pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,
