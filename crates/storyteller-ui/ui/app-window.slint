@@ -180,6 +180,42 @@ export component AppWindow inherits Window {
             }
         }
 
+        if root.has-active-job : Rectangle {
+            min-height: 64px;
+            max-height: 64px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            HorizontalBox {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                Text { text: "QUEUE ANOTHER BOOK"; font-size: 12px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
+                Button {
+                    text: root.epub-source-name == "" ? "Choose EPUB" : root.epub-source-name;
+                    clicked => { root.browse-epub(); }
+                }
+                Button {
+                    text: root.audio-source-name == "" ? "Choose audio" : root.audio-source-name;
+                    clicked => { root.browse-audio(); }
+                }
+                ComboBox {
+                    model: ["Copy", "Opus", "AAC"];
+                    current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                    selected(value) => { root.codec-text = value; }
+                }
+                ComboBox {
+                    model: ["32K", "64K", "96K"];
+                    current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                    enabled: root.codec-text != "Copy";
+                    selected(value) => { root.bitrate-text = value; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+            }
+        }
+
         if root.has-active-job : VerticalBox {
             spacing: 12px;
             Text { text: "ACTIVE JOB"; font-size: 14px; font-weight: 700; opacity: 0.72; }
