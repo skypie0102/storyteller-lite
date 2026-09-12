@@ -6,7 +6,7 @@ mod command;
 #[allow(clippy::too_many_arguments)]
 mod epub_build;
 mod epub_corpus;
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::same_item_push)]
 mod epub_overlay;
 mod epub_validate;
 mod job;
