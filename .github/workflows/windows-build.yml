@@ -10,7 +10,7 @@ on:
       - .github/workflows/windows-build.yml
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: storyteller-lite-windows-build-${{ github.ref }}
@@ -32,6 +32,21 @@ jobs:
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Apply rustfmt and commit source
+        shell: bash
+        run: |
+          cargo fmt --all
+          if git diff --quiet -- crates/storyteller-ui/src; then
+            echo "No Rust formatting changes to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add crates/storyteller-ui/src
+            git commit -m "style: format CUDA runtime discovery"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          echo "Validated working-tree commit: $(git rev-parse HEAD)"
 
       - name: Rust formatting
         run: cargo fmt --all -- --check
@@ -72,7 +87,7 @@ jobs:
 
           This is a developer-test build, not a public release.
           '@ | Set-Content -Encoding UTF8 dist\README.txt
-          "commit=${env:GITHUB_SHA}" | Set-Content -Encoding ASCII dist\BUILD.txt
+          "commit=$(git rev-parse HEAD)" | Set-Content -Encoding ASCII dist\BUILD.txt
           (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash + "  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
 
       - name: Upload Windows build
