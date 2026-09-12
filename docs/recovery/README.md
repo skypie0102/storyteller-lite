@@ -36,6 +36,11 @@ Start with:
 - `FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered Tauri frontend behavior, real old Settings defaults, queue snapshots, allocator autosave/state-machine behavior, and persistence architecture.
 - `WORKER_SEMANTICS.md` — evidence that old Parallel Whisper jobs meant concurrent processed audio files/chunks, not whisper.cpp processor count, plus the preferred Lite worker architecture.
 - `UNMATCHED_AUDIO_RECOVERY.md` — reconciles the Lite planning transcript, mockup, and old helper around Smart / ReviewAll, automatic edge handling, lazy OCR, Graphic Readout/image placement, and the deliberately reduced allocator surface.
+- `ALLOCATOR_OUTPUT_RECOVERY.md` — downstream EPUB meaning of reviewed Introduction/Credits/Graphic Readout assignments, including supplemental XHTML+SMIL pages and image-bound narration.
+- `ALLOCATOR_PREVIEW_RECOVERY.md` — shows that manual-review preview clips were disposable cache while original/global segment timing remained authoritative.
+- `QUEUE_FAILURE_RECOVERY.md` — resolves the old failure policy: a failed book remains retryable and the queue advances to the next pending book unless explicitly stopped/paused.
+- `PUBLICATION_RECOVERY.md` — recovered staged-audit and atomic publish/rollback semantics, plus how Lite deliberately simplifies them by refusing overwrite.
+- `storyteller-readaloud-v039.css` — exact old built-in generated-page stylesheet preserved as a visual regression reference, not a mandatory Lite theme.
 
 Reproducible static recovery tools live under `tools/recovery/`:
 
@@ -51,6 +56,9 @@ Do not lose these when implementing Lite:
 - `parallelTranscribes` historically meant concurrent transcription **files/chunks**. It was separate from per-job CPU threads and separate from Whisper `processors`.
 - The Lite plan removes the **permanent OCR toggle**, not lazy OCR itself. Smart classification, automatic edge handling, and bounded/on-demand OCR were part of the intended reduced pipeline.
 - Manual allocator **decisions/drafts are durable state**; preview audio/images and temporary inspection workspaces are rebuildable artifacts.
+- Review decisions imply downstream rendering semantics: normal text assignment, supplemental synchronized page, image-bound narration, or explicit exclusion are not interchangeable.
+- The old failure policy is no longer unknown: failures auto-advanced while keeping the failed book retryable. Cancellation auto-advance remains less firmly proven historically and should not be asserted from the installer without further evidence.
+- Publication safety means build/stage first, audit independently, then expose the final output atomically; never publish a partial book.
 - Old helper/source code is Sigil-derived GPLv3-or-later. Recover behavior/invariants/tests, not implementation code, unless licensing is deliberately resolved.
 - The old edge-only unmatched-audio discovery model is historical behavior, not a replacement for Lite's current general segment-level alignment review.
 
