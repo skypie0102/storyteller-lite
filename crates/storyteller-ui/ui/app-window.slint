@@ -31,6 +31,7 @@ export component AppWindow inherits Window {
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
     in property <[QueueRow]> queue-rows;
+    in property <bool> queue-paused: false;
 
     in property <bool> has-active-job: false;
     in property <string> active-title: "";
@@ -49,6 +50,8 @@ export component AppWindow inherits Window {
     callback queue-book();
     callback open-settings();
     callback pause-after-book();
+    callback cancel-current();
+    callback resume-queue();
 
     VerticalBox {
         padding: 24px;
@@ -261,14 +264,26 @@ export component AppWindow inherits Window {
                             wrap: word-wrap;
                         }
                         if root.active-metrics-text == "" : Rectangle { horizontal-stretch: 1; }
-                        Button { text: root.pause-action-text; clicked => { root.pause-after-book(); } }
+                        Button { text: "Cancel"; clicked => { root.cancel-current(); } }
+                        Button {
+                            text: root.pause-action-text;
+                            enabled: root.pause-action-text != "Pause requested";
+                            clicked => { root.pause-after-book(); }
+                        }
                     }
                 }
             }
         }
 
         Rectangle { min-height: 1px; max-height: 1px; background: Palette.border; opacity: 0.5; }
-        Text { text: "QUEUE"; font-size: 14px; font-weight: 700; opacity: 0.72; }
+
+        HorizontalBox {
+            spacing: 10px;
+            Text { text: "QUEUE"; font-size: 14px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            if root.queue-paused : Text { text: "Paused"; opacity: 0.72; vertical-alignment: center; }
+            if root.queue-paused : Button { text: "Resume queue"; clicked => { root.resume-queue(); } }
+        }
 
         Rectangle {
             vertical-stretch: 1;
