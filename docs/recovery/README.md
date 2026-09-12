@@ -8,8 +8,8 @@ When sources disagree, use this order:
 
 1. **Current source code and tests on `recovery/rust-slint`** — technical truth about what exists now.
 2. **`docs/ROADMAP.md` and `docs/HANDOFF.md`** — current product decisions and pending work.
-3. **`docs/ui-guides/` mockups** — visual/product layout references.
-4. **Installer dissection notes in this directory** — recovered historical behavior/invariants from v0.39.0.
+3. **`docs/ui-guides/` mockups and interpretation notes** — current visual/product layout references.
+4. **Installer dissection notes in this directory** — recovered historical behavior/invariants from v0.39.0, interpreted through current Lite scope.
 5. **`LITE_PLANNING_HISTORY.txt`** — historical planning/implementation transcript. It can contain claims about branches/commits that are no longer present; treat those as recovery clues, not proof of current code.
 6. **Storyteller OneClick v0.39.0 installer itself** — behavioral reference only. It predates the Rust + Slint Lite rebuild and is not the Lite codebase.
 
@@ -27,13 +27,15 @@ Important discrepancy: the transcript repeatedly refers to `refactor/rust-slint`
 
 See `docs/ui-guides/README.md` and the two WebP files stored next to it. They are the current layout references for the main screen and the reduced manual-audio-allocation experience.
 
-### Old installer
+### Old installer recovery
 
 Start with:
 
 - `LEGACY_INSTALLER_REFERENCE.md` — provenance, exact installer identity, and scope rules.
 - `INSTALLER_DISSECTION.md` — NSIS payload structure, recovered desktop/helper payloads, and first-pass behavior clues.
-- `FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered Tauri frontend behavior, real old Settings defaults, concurrency semantics, allocator autosave/state-machine behavior, and persistence architecture.
+- `FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered Tauri frontend behavior, real old Settings defaults, queue snapshots, allocator autosave/state-machine behavior, and persistence architecture.
+- `WORKER_SEMANTICS.md` — evidence that old Parallel Whisper jobs meant concurrent processed audio files/chunks, not whisper.cpp processor count, plus the preferred Lite worker architecture.
+- `UNMATCHED_AUDIO_RECOVERY.md` — reconciles the Lite planning transcript, mockup, and old helper around Smart / ReviewAll, automatic edge handling, lazy OCR, Graphic Readout/image placement, and the deliberately reduced allocator surface.
 
 Reproducible static recovery tools live under `tools/recovery/`:
 
@@ -42,10 +44,20 @@ Reproducible static recovery tools live under `tools/recovery/`:
 
 The old installer and desktop executable are intentionally not committed to this source repository. Their hashes in the recovery docs identify the exact reference samples.
 
+## Key recovered distinctions
+
+Do not lose these when implementing Lite:
+
+- `parallelTranscribes` historically meant concurrent transcription **files/chunks**. It was separate from per-job CPU threads and separate from Whisper `processors`.
+- The Lite plan removes the **permanent OCR toggle**, not lazy OCR itself. Smart classification, automatic edge handling, and bounded/on-demand OCR were part of the intended reduced pipeline.
+- Manual allocator **decisions/drafts are durable state**; preview audio/images and temporary inspection workspaces are rebuildable artifacts.
+- Old helper/source code is Sigil-derived GPLv3-or-later. Recover behavior/invariants/tests, not implementation code, unless licensing is deliberately resolved.
+- The old edge-only unmatched-audio discovery model is historical behavior, not a replacement for Lite's current general segment-level alignment review.
+
 ## Recovery principle
 
 The pre-Rust application is a **behavioral regression reference, not a porting target**. Lite intentionally cuts features. The migration rule remains:
 
 > Replace → regression-test → delete. Never delete → hope we remembered everything.
 
-Do not reintroduce historical features simply because they are discoverable in the installer or planning transcript. Only restore features that are explicitly part of the current Lite roadmap.
+Do not reintroduce historical features simply because they are discoverable in the installer or planning transcript. Only restore behavior that is part of the current Lite roadmap or is necessary to implement those behaviors safely.
