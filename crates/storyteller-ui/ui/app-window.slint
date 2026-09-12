@@ -36,6 +36,7 @@ export component AppWindow inherits Window {
     in-out property <string> audio-source-name: "";
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
+    in-out property <bool> settings-open: false;
     in property <[QueueRow]> queue-rows;
     in property <bool> queue-paused: false;
 
@@ -57,7 +58,6 @@ export component AppWindow inherits Window {
     callback browse-epub();
     callback browse-audio();
     callback queue-book();
-    callback open-settings();
     callback pause-after-book();
     callback cancel-current();
     callback continue-after-review();
@@ -66,7 +66,7 @@ export component AppWindow inherits Window {
     callback remove-job(string);
     callback retry-from-start(string);
 
-    VerticalBox {
+    if !root.settings-open : VerticalBox {
         padding: 24px;
         spacing: 18px;
 
@@ -90,7 +90,7 @@ export component AppWindow inherits Window {
 
             Button {
                 text: "Settings";
-                clicked => { root.open-settings(); }
+                clicked => { root.settings-open = true; }
             }
         }
 
@@ -400,6 +400,119 @@ export component AppWindow inherits Window {
                         Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
                     }
                 }
+            }
+        }
+    }
+
+    if root.settings-open : VerticalBox {
+        padding: 24px;
+        spacing: 18px;
+
+        HorizontalBox {
+            spacing: 12px;
+            Text {
+                text: "Settings";
+                font-size: 26px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Back";
+                clicked => { root.settings-open = false; }
+            }
+        }
+
+        Rectangle {
+            min-height: 1px;
+            max-height: 1px;
+            background: Palette.border;
+            opacity: 0.5;
+        }
+
+        Text {
+            text: "RUNTIME SETUP";
+            font-size: 14px;
+            font-weight: 700;
+            opacity: 0.72;
+        }
+
+        Rectangle {
+            min-height: 300px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 12px;
+
+                Text { text: "Media & transcription tools"; font-size: 18px; font-weight: 700; }
+                Text {
+                    text: "StoryTeller Lite discovers runtime tools when a job reaches Analyze. The portable layout below is recommended for this developer-test build.";
+                    wrap: word-wrap;
+                    opacity: 0.78;
+                }
+
+                Text { text: "ffmpeg"; font-weight: 700; }
+                Text {
+                    text: "tools\\ffmpeg.exe next to StoryTeller-Lite.exe, or ffmpeg available on PATH. STORYTELLER_FFMPEG may also point to an executable.";
+                    wrap: word-wrap;
+                    opacity: 0.72;
+                }
+
+                Text { text: "whisper.cpp CLI"; font-weight: 700; }
+                Text {
+                    text: "tools\\whisper-cli.exe next to StoryTeller-Lite.exe, or whisper-cli available on PATH. STORYTELLER_WHISPER may also point to an executable.";
+                    wrap: word-wrap;
+                    opacity: 0.72;
+                }
+
+                Text { text: "Whisper model"; font-weight: 700; }
+                Text {
+                    text: "Default: models\\ggml-large-v3-turbo.bin next to StoryTeller-Lite.exe. STORYTELLER_WHISPER_MODEL may point directly to another model file.";
+                    wrap: word-wrap;
+                    opacity: 0.72;
+                }
+            }
+        }
+
+        Text {
+            text: "CURRENT DEFAULTS";
+            font-size: 14px;
+            font-weight: 700;
+            opacity: 0.72;
+        }
+
+        Rectangle {
+            min-height: 170px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            VerticalBox {
+                padding: 18px;
+                spacing: 10px;
+                Text { text: "Whisper model: large-v3-turbo"; }
+                Text { text: "Language: Auto"; }
+                Text { text: "Output location: Next to source EPUB"; }
+                Text { text: "Audio encoding: Choose per book on the main screen"; }
+                Text {
+                    text: "Runtime download/install controls and persistent path pickers are not implemented yet; this page reports the configuration the current backend actually uses.";
+                    wrap: word-wrap;
+                    opacity: 0.72;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        HorizontalBox {
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Done";
+                primary: true;
+                clicked => { root.settings-open = false; }
             }
         }
     }
