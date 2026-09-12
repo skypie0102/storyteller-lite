@@ -1,13 +1,7 @@
 name: Windows test build
 
-# One-shot packaging trigger for the current developer-test checkpoint.
-# After the artifact is produced this workflow will be returned to manual-only.
+# Windows packaging is intentionally manual-only to conserve hosted runner usage.
 on:
-  push:
-    branches:
-      - recovery/rust-slint
-    paths:
-      - .github/workflows/windows-build.yml
   workflow_dispatch:
 
 permissions:
