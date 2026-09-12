@@ -8,6 +8,8 @@ pub struct AudioReviewReport {
     pub matched_segments: usize,
     pub match_percent: f64,
     pub unmatched: Vec<AudioReviewItem>,
+    #[serde(default)]
+    pub accepted_unmatched_exclusion: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +64,7 @@ pub fn create_audio_review_report(
         matched_segments: alignment.matched_segments,
         match_percent: alignment.match_percent,
         unmatched,
+        accepted_unmatched_exclusion: false,
     };
     let summary = AudioReviewSummary {
         total_segments: report.total_segments,
@@ -69,22 +72,7 @@ pub fn create_audio_review_report(
         match_percent: report.match_percent,
     };
 
-    if let Some(parent) = destination.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Could not create audio review destination {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let json = serde_json::to_vec_pretty(&report)
-        .map_err(|error| format!("Could not serialize audio review report: {error}"))?;
-    fs::write(destination, json).map_err(|error| {
-        format!(
-            "Could not write audio review report {}: {error}",
-            destination.display()
-        )
-    })?;
+    write_audio_review_report(destination, &report)?;
     Ok(summary)
 }
 
@@ -97,10 +85,42 @@ pub fn read_audio_review_report(path: &Path) -> Result<AudioReviewReport, String
             path.display()
         )
     })?;
-    if report.unmatched.iter().any(|item| item.audio_end_ms < item.audio_start_ms) {
+    if report
+        .unmatched
+        .iter()
+        .any(|item| item.audio_end_ms < item.audio_start_ms)
+    {
         return Err("Audio review report contains an invalid time range.".into());
     }
     Ok(report)
+}
+
+pub fn accept_unmatched_audio_exclusion(path: &Path) -> Result<(), String> {
+    let mut report = read_audio_review_report(path)?;
+    if report.unmatched.is_empty() {
+        return Ok(());
+    }
+    report.accepted_unmatched_exclusion = true;
+    write_audio_review_report(path, &report)
+}
+
+fn write_audio_review_report(path: &Path, report: &AudioReviewReport) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Could not create audio review destination {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let json = serde_json::to_vec_pretty(report)
+        .map_err(|error| format!("Could not serialize audio review report: {error}"))?;
+    fs::write(path, json).map_err(|error| {
+        format!(
+            "Could not write audio review report {}: {error}",
+            path.display()
+        )
+    })
 }
 
 #[cfg(test)]
