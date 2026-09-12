@@ -66,6 +66,7 @@ export component AppWindow inherits Window {
 
     callback browse-epub();
     callback browse-audio();
+    callback import-whisper-archive();
     callback queue-book();
     callback open-settings();
     callback pause-after-book();
@@ -462,7 +463,7 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            min-height: 390px;
+            min-height: 405px;
             border-width: 1px;
             border-color: Palette.border;
             border-radius: 10px;
@@ -472,7 +473,7 @@ export component AppWindow inherits Window {
                 spacing: 14px;
 
                 Text {
-                    text: "StoryTeller Lite scans environment overrides, its portable tools/models folders, PATH for ffmpeg and whisper-cli, and the StoryTeller model folders before offering any download.";
+                    text: "StoryTeller Lite scans existing runtime locations automatically. If you already have a whisper.cpp archive, you can import that file directly instead of relying on discovery or downloading another build.";
                     wrap: word-wrap;
                     opacity: 0.78;
                 }
@@ -494,7 +495,7 @@ export component AppWindow inherits Window {
                 }
 
                 Text {
-                    text: "Automatic downloads are opt-in. ffmpeg and whisper.cpp archives are SHA-256 verified before installation. The default Whisper model is about 1.62 GB and is verified against its published SHA-256 before it is moved into models\\.";
+                    text: "Import whisper archive accepts .zip, .tgz, and .tar.gz files such as whisper-cpp-windows-x64-cuda-13.1.0.tar.gz. The selected local file is extracted into Lite's persistent runtime folder and is never uploaded. Automatic downloads remain opt-in and verified separately.";
                     wrap: word-wrap;
                     opacity: 0.72;
                 }
@@ -508,7 +509,7 @@ export component AppWindow inherits Window {
         }
 
         Text {
-            text: "New downloads are placed beside this portable app: tools\\ffmpeg.exe, tools\\whisper-cli.exe (with its DLLs), and models\\ggml-large-v3-turbo.bin. Existing working dependencies elsewhere on the PC are reused instead of downloaded.";
+            text: "Imported whisper.cpp builds are stored under %LOCALAPPDATA%\\Storyteller OneClick Lite\\runtime\\whisper\\ so they remain available even if the portable EXE is moved. New downloads are still placed beside the portable app.";
             wrap: word-wrap;
             opacity: 0.68;
         }
@@ -522,9 +523,14 @@ export component AppWindow inherits Window {
                 enabled: !root.runtime-busy;
                 clicked => { root.runtime-refresh-requested = true; }
             }
+            Button {
+                text: "Import whisper archive…";
+                enabled: !root.runtime-busy;
+                clicked => { root.import-whisper-archive(); }
+            }
             Rectangle { horizontal-stretch: 1; }
             Button {
-                text: root.runtime-busy ? "Downloading…" : root.runtime-ready ? "Dependencies ready" : "Download missing";
+                text: root.runtime-busy ? "Working…" : root.runtime-ready ? "Dependencies ready" : "Download missing";
                 primary: !root.runtime-ready;
                 enabled: !root.runtime-busy && !root.runtime-ready;
                 clicked => { root.runtime-install-requested = true; }
