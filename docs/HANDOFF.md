@@ -22,6 +22,8 @@ Primary references:
 3. `docs/recovery/README.md` — provenance and source hierarchy.
 4. `docs/recovery/LITE_PLANNING_HISTORY.txt` — recovered historical planning transcript.
 5. `docs/recovery/LEGACY_INSTALLER_REFERENCE.md` — old installer provenance and usage rules.
+6. `docs/recovery/INSTALLER_DISSECTION.md` — facts recovered by static analysis of the v0.39.0 installer.
+7. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
 
 ## User decisions recovered in this chat
 
@@ -67,6 +69,19 @@ As of the recovered branch inspected during this chat:
 
 Inspect the current source before implementation because the branch may have advanced since this snapshot.
 
+## Installer recovery status
+
+Static analysis of the user-provided v0.39.0 installer is now reproducible and documented in `docs/recovery/INSTALLER_DISSECTION.md`.
+
+Important recovered clues:
+
+- The old Tauri/Rust app had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings. Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs. This supports keeping Lite's automatic CPU thread selection while exposing only the newly requested worker count.
+- Old manual-allocation IPC included draft save/restore, pending request retrieval, audio preview, image preview, submit, and cancel operations.
+- Old persisted state contained `manualDrafts`; retry after interruption could reopen/restored allocations. Durable review drafts are therefore a real historical behavior worth preserving in reduced Lite form.
+- The installer contains the old finishing helper's **plain Python source**. Its manual allocation code enforces complete time coverage, no gaps/overlaps, explicit targets, and final output auditing.
+- The old helper's discovery logic was primarily edge-focused (Introduction/Credits) rather than a generic internal-segment allocator. Do not blindly copy that discovery policy into Lite's current arbitrary unmatched-segment review model.
+- The helper is GPLv3-or-later/Sigil-derived. Treat it as a behavioral/test-vector reference unless licensing for direct code reuse is deliberately resolved.
+
 ## Immediate implementation order
 
 ### P0 — validate current head
@@ -108,9 +123,9 @@ Minimum UI should support:
 - explicit assignment;
 - explicit exclusion/skip;
 - Apply & Next;
-- durable decisions that survive resume/review transitions.
+- durable decisions that survive resume/review transitions and application restart/retry where practical.
 
-Preserve monotonic EPUB order. Candidate assignments should normally be constrained between the nearest accepted matched neighbors, with validation rejecting backwards/cross-block-invalid results.
+Preserve monotonic EPUB order. Candidate assignments should normally be constrained between the nearest accepted matched neighbors, with validation rejecting backwards/cross-block-invalid results. Also preserve the old allocator's strong accounting rule: a reviewed segment must not silently develop uncovered gaps or overlaps.
 
 Do **not** initially implement the mockup’s split/merge/trim editor, permanent OCR controls, automatic apply-to-similar, or full historical classification system unless a concrete Lite requirement emerges.
 
