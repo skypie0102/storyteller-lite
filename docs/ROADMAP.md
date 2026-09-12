@@ -14,6 +14,10 @@ The recovery packet is stored in the repository so another agent can continue wi
 - `docs/ui-guides/README.md` — mockup interpretation and Lite trimming rules.
 - `docs/recovery/LITE_PLANNING_HISTORY.txt` — recovered planning/implementation transcript.
 - `docs/recovery/LEGACY_INSTALLER_REFERENCE.md` — old installer provenance and behavioral-reference policy.
+- `docs/recovery/INSTALLER_DISSECTION.md` — static installer findings.
+- `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend/state/persistence behavior.
+- `docs/recovery/WORKER_SEMANTICS.md` — recovered meaning of Parallel Whisper jobs and preferred Lite direction.
+- `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` — recovered Smart/edge/lazy-OCR behavior and allocator scope.
 - `docs/recovery/README.md` — authority order and provenance index.
 
 The planning transcript references a historical `refactor/rust-slint` branch and commit SHAs. The recovered live code branch is `recovery/rust-slint`; never assume a historical transcript claim is present without checking the repository.
@@ -31,6 +35,7 @@ The planning transcript references a historical `refactor/rust-slint` branch and
 - Retry/resume may reuse only a validated contiguous prefix of stage checkpoints. A stale stage invalidates itself and all downstream stages.
 - An unimplemented or unsupported boundary must fail explicitly. It must never be represented as completed or skipped just to make the pipeline look finished.
 - Human review decisions must be explicit and durable.
+- Smart automatic decisions must be conservative, auditable, and reversible before publication.
 - Publication occurs only after the candidate EPUB passes an independent structural audit and the runner has accepted the Validate stage artifacts.
 
 ## Current Lite scope decisions
@@ -42,8 +47,13 @@ The planning transcript references a historical `refactor/rust-slint` branch and
 - Structured real progress/metrics.
 - Native Rust + Slint application architecture.
 - Existing automatic CPU-thread selection for Whisper.
-- **One simple Whisper worker-count setting**, default `1`.
+- **One simple Whisper worker-count setting**, default `1` unless deliberate benchmarking changes it.
+- Worker count means **concurrent transcription chunks/tracks**, not manual CPU allocation and not a direct alias for whisper.cpp `-p`.
+- **Smart / ReviewAll** unmatched-audio policy.
+- **Automatic edge trimming/handling** where confidence and safety are high.
+- **Lazy/on-demand OCR** for bounded candidate EPUB images when Smart classification or review needs it.
 - **Reduced manual audio allocation** for unresolved/unaligned segments.
+- Limited useful classifications/destinations such as Introduction, Credits, Graphic Readout, and Extra Audio when they materially help Smart/manual placement; do not expose the entire old editor taxonomy merely for parity.
 - The supplied mockups as current visual hierarchy references.
 - The old installer only as a behavioral regression/reference source when a Lite behavior is ambiguous.
 
@@ -57,10 +67,10 @@ The planning transcript references a historical `refactor/rust-slint` branch and
 - Full engine/runtime path tuning UI.
 - Standardize-EPUB toggle.
 - CSS editor.
-- Permanent OCR controls.
-- Full historical unmatched-audio editor/classification surface.
+- Permanent OCR enable/disable controls.
+- Full historical unmatched-audio editor surface: arbitrary split/merge, general waveform trimming, broad rule editor, and unrestricted old classification/destination UI.
 
-The recovered historical plan once listed worker/thread controls as removable. The newer explicit user decision restores **worker count only**; manual CPU allocation remains out of scope.
+The recovered historical plan once listed worker/thread controls as removable. The newer explicit user decision restores **worker count only**; manual CPU allocation remains out of scope. Likewise, removing the old permanent OCR toggle does **not** remove lazy OCR from the Smart review pipeline.
 
 ## Pipeline
 
@@ -69,7 +79,7 @@ The user-facing stage order is fixed:
 1. **Prepare** — validate and fingerprint inputs, create the per-job workspace, copy the source EPUB, and hard-link/copy the audiobook.
 2. **Analyze** — extract EPUB reading-order text, normalize audio for speech recognition, and generate a timestamped Whisper transcript.
 3. **Align** — align transcript/audio timing against the EPUB reading text and derive real match/confidence information.
-4. **Review Audio** — surface unresolved or ambiguous alignment regions that genuinely require user review.
+4. **Review Audio** — Smart-handle safe unmatched regions and surface unresolved or ambiguous regions that genuinely require user review.
 5. **Encode** — create the final audio representation according to Copy / Opus / AAC and bitrate settings.
 6. **Build EPUB** — construct the synchronized read-aloud EPUB without replacing the source.
 7. **Validate** — independently audit the completed candidate and only then publish/complete the job.
@@ -100,7 +110,7 @@ Implemented. EPUB is copied. Audiobook staging prefers a hard link and falls bac
 
 Implemented using native EPUB parsing plus external `ffmpeg` and `whisper.cpp` CLI tooling. The stage extracts a bounded/cancellable reading-order corpus, converts the audiobook to 16 kHz mono PCM, invokes Whisper with JSON-full output, publishes only Whisper's real progress callbacks, and checkpoints `book-corpus.json`, `audio.wav`, and `transcript.json`. Whisper segment timing must be positive, chronological, and non-overlapping.
 
-Current recovered implementation uses all available logical CPU threads with whisper.cpp `-t` and does not expose/pass a user worker/processor count. Adding the worker-count setting is immediate pending work.
+Current recovered implementation uses all available logical CPU threads with whisper.cpp `-t`, converts the full book to one `audio.wav`, and launches one whisper-cli process. It therefore has only one transcription work item per book. Adding true worker-count support requires deterministic chunk/track work items; simply passing `-p N` would not restore the recovered worker semantics.
 
 ### Align
 
@@ -110,11 +120,24 @@ Implemented with the conservative `monotonic-ngram-edit-v2-block-safe` engine. W
 
 Partially implemented relative to the recovered Lite product intent. `review.json` contains the real unmatched transcript segments and audio ranges. If there are no unmatched segments, processing continues automatically. Otherwise the job enters `NeedsReview`.
 
-**Current limitation:** the UI only previews unmatched regions and offers Cancel or global **Continue without unmatched audio**. Continuing records a global exclusion decision.
+**Current limitation:** the UI only previews unmatched regions and offers Cancel or global **Continue without unmatched audio**. Continuing records a global exclusion decision. Smart edge handling, lazy OCR/classification, and durable per-segment assignment are not implemented in the current recovered code.
 
-**Pending requirement:** replace that all-or-nothing path with a reduced manual allocator that stores durable per-segment decisions. Minimum decisions are Pending, manually Assigned to valid EPUB block/range, and Explicitly Excluded. The allocator should provide audio preview/seek, transcript/timing, EPUB candidate context, previous/next unresolved navigation, and Apply & Next. Candidate assignments should preserve monotonic EPUB order and be constrained by neighboring accepted matches where possible.
+**Pending requirement:** implement the reduced Smart/manual review pipeline:
 
-Do not initially restore the full old editor/classification surface (split/merge, trim editor, permanent OCR, apply-to-similar, or the complete Introduction/Credits/Graphic Readout/Extra Audio taxonomy) unless a concrete Lite requirement emerges.
+- default **Smart** policy should automatically resolve only high-confidence safe cases and leave ambiguous cases pending;
+- **ReviewAll** should surface regions that Smart could otherwise resolve so the user can inspect/override them;
+- perform automatic edge trimming/handling conservatively rather than silently throwing away meaningful narration;
+- use lazy OCR only for bounded candidate EPUB images/documents when image text is actually needed;
+- support high-confidence Graphic Readout → image/page placement where transcript + EPUB image text establish a safe match;
+- preserve optional classifications such as Introduction, Credits, Graphic Readout, or Extra Audio where needed for destination/build behavior;
+- persist every unresolved segment's explicit decision and autosave review drafts;
+- provide audio preview/seek, transcript/timing/silence context, EPUB candidate context, previous/next unresolved navigation, explicit assignment/exclusion/override, and Apply & Next;
+- preserve monotonic EPUB order and validate candidate destinations against neighboring accepted matches and real XHTML block boundaries;
+- keep automatic/manual decisions auditable and validate the generated EPUB/Media Overlay afterward.
+
+Do **not** initially restore arbitrary split/merge editing, a general trim editor, a permanent OCR toggle, the old broad Apply-to-similar rule system, or an unrestricted general-purpose allocator.
+
+See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` for recovered historical behavior and test-vector thresholds. The GPL/Sigil-derived helper is a behavioral reference, not code to copy wholesale.
 
 ### Encode
 
@@ -148,35 +171,44 @@ An end-to-end core fixture builds a minimal EPUB with two synchronized blocks, v
 
 Run the intended Windows validation path on the current `recovery/rust-slint` head before feature work. Historical planning transcript CI claims are not a substitute for validating the recovered branch that exists now.
 
-### P1 — Whisper worker-count setting
+### P1 — Whisper worker-count setting and chunked Analyze
 
-Add one simple user setting for whisper.cpp processors/workers.
+Add one simple worker-count setting backed by **concurrently transcribed ordered chunks/tracks**.
+
+Recovered evidence is decisive that old `Parallel Whisper jobs` was higher-level file/chunk concurrency while Whisper `processors` was a separate knob fixed to `1`. Current upstream Storyteller independently confirms this conceptual split. See `docs/recovery/WORKER_SEMANTICS.md`.
 
 Requirements:
 
-- default `1`;
+- default `1` unless deliberate benchmarking changes it;
 - exposed in Settings without reintroducing manual CPU allocation;
-- positive validated/clamped range appropriate for the detected machine/runtime;
-- wire to the exact current whisper.cpp CLI processor option (expected `-p`) only after checking the bundled/current CLI semantics;
-- keep current automatic CPU-thread selection;
-- avoid obvious CPU/GPU oversubscription after validating the exact interaction between `-t` and `-p` in the shipped build;
-- keep worker count out of semantic output/checkpoint fingerprints unless evidence shows it changes transcript semantics.
+- initial user range can reasonably benchmark 1–4, matching the old product's parallel-job range without treating it as a compatibility mandate;
+- create deterministic ordered transcription work items for one long audiobook, preferring chapter-safe boundaries and a tested silence/VAD-aware fallback for overlong/no-chapter ranges;
+- run at most `workers` Whisper tasks concurrently;
+- keep each individual whisper.cpp invocation at one processor initially rather than mapping workers to `-p`;
+- automatically budget per-worker CPU threads and GPU/VRAM resources instead of giving every simultaneous process all logical CPUs;
+- convert local chunk timestamps back to global audiobook timestamps and merge to one deterministic transcript;
+- validate merged chronology/non-overlap before publishing the Analyze artifact;
+- aggregate progress and cancellation across all active workers;
+- capture the worker setting per queued book if needed for deterministic execution, but keep it out of semantic output/checkpoint fingerprints unless evidence shows it changes transcript semantics.
 
-Preferred architecture: app/runtime execution settings separate from output-affecting `JobSettings`. If queued-job determinism requires capturing the value per job, still exclude it from semantic stage fingerprints.
+Preferred architecture: app/runtime execution settings separate from output-affecting `JobSettings`. The UI stays simple even if the scheduler is hardware-aware internally.
 
-### P2 — reduced manual allocator
+### P2 — Smart unmatched-audio pipeline and reduced manual allocator
 
-Create the per-segment review data model and Slint review experience described above and in `docs/ui-guides/storyteller-lite-manual-allocation.webp`.
+Implement the behavior described in the Review Audio section and `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md`.
 
 Suggested implementation shape:
 
-1. Extend/replace the current global review artifact with durable per-unmatched-segment decisions.
-2. Load EPUB corpus context and neighboring accepted alignment positions for candidate generation.
-3. Validate manual assignments for chronology/monotonicity and existing XHTML block boundaries.
-4. Materialize an effective alignment used by downstream Build EPUB while retaining the original automatic alignment for audit/debugging.
-5. Update NeedsReview resume behavior so processing continues only when every required unresolved segment has an explicit decision.
-6. Build the reduced allocator UI: audio preview, transcript, candidate context, assign/exclude, previous/next, Apply & Next.
-7. Add regression tests for assignment ordering, exclusion, resume durability, invalid/cross-boundary decisions, and mixed automatic/manual alignment.
+1. Add a reduced `Smart / ReviewAll` policy without restoring the old four-mode selector.
+2. Add native silence/edge analysis and conservative automatic edge handling.
+3. Add bounded candidate generation from EPUB context and lazy image OCR/text hints only when needed.
+4. Extend/replace the current global review artifact with durable per-segment decisions plus optional classification/suggestion/source metadata.
+5. Constrain automatic/manual assignments by neighboring accepted alignment positions and actual XHTML/image candidates.
+6. Materialize an effective alignment/allocation result for downstream Build EPUB while retaining original automatic alignment and decision provenance for audit/debugging.
+7. Autosave decisions separately from rebuildable preview/workspace artifacts; app restart/retry should restore review work.
+8. Continue only when every required unresolved region has an explicit validated disposition.
+9. Build the reduced Slint allocator UI from the supplied mockup: preview, transcript/timing, Smart suggestion, candidate context, assign/exclude/override, previous/next, Apply & Next.
+10. Add regression tests for ordering, exclusions, Smart/manual mixes, edge cases, OCR/image candidates, restart/retry durability, and invalid/cross-boundary decisions.
 
 ### P3 — main Slint UI alignment
 
