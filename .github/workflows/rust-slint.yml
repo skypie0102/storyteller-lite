@@ -1,0 +1,80 @@
+name: Manual Rust validation
+
+# Hosted CI is intentionally opt-in for this public repository.
+# Routine pushes and pull requests do not consume GitHub-hosted runner time.
+on:
+  workflow_dispatch:
+    inputs:
+      validation:
+        description: Validation scope
+        required: true
+        default: core
+        type: choice
+        options:
+          - core
+          - full-windows
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Core checks
+    if: ${{ inputs.validation == 'core' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Core lint
+        run: cargo clippy -p storyteller-core --all-targets -- -D warnings
+
+      - name: Core tests
+        run: cargo test -p storyteller-core
+
+  full-windows:
+    name: Full Windows validation
+    if: ${{ inputs.validation == 'full-windows' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build native Slint shell
+        run: cargo build -p storyteller-ui
