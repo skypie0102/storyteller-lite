@@ -1,8 +1,13 @@
 name: Windows test build
 
-# Windows packaging is intentionally manual-only to conserve hosted runner usage.
+# Temporary one-shot push trigger for the CUDA runtime-discovery package.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - recovery/rust-slint
+    paths:
+      - .github/workflows/windows-build.yml
 
 permissions:
   contents: read
@@ -13,7 +18,7 @@ concurrency:
 
 jobs:
   package:
-    name: Package Windows x64 build
+    name: Validate and package Windows x64 build
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -22,9 +27,20 @@ jobs:
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
 
       - name: Build release executable
         run: cargo build --locked --release -p storyteller-ui
@@ -39,8 +55,16 @@ jobs:
 
           Runtime manager:
             Open Settings. StoryTeller Lite detects ffmpeg, whisper.cpp, and the
-            large-v3-turbo model from supported existing locations. If anything is
-            missing, choose Download missing to install verified portable copies.
+            large-v3-turbo model from supported existing locations.
+
+          CUDA whisper.cpp:
+            - Existing CUDA-capable whisper.cpp builds are preferred automatically.
+            - Legacy whisper-cli.exe and main.exe layouts are supported.
+            - Persistent StoryTeller/whisper caches under Windows user/system data
+              locations are scanned with bounded depth.
+            - A cached whisper-cpp-windows-x64-cuda-*.tar.gz/.tgz/.zip can be reused.
+            - If whisper.cpp is missing and an NVIDIA GPU is detected, Download missing
+              prefers an official CUDA-enabled Windows x64 whisper.cpp asset.
 
           Automatic downloads are user-initiated. The default Whisper model is about
           1.62 GB. Downloaded ffmpeg, whisper.cpp, and model files are checksum/digest
@@ -54,7 +78,7 @@ jobs:
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: StoryTeller-Lite-Windows-x64-RuntimeManager
+          name: StoryTeller-Lite-Windows-x64-CUDA-Discovery
           path: dist/
           if-no-files-found: error
           retention-days: 3
