@@ -1,3 +1,4 @@
+mod runtime_import;
 mod worker_bridge;
 
 use rfd::FileDialog;
@@ -74,6 +75,39 @@ fn main() -> Result<(), slint::PlatformError> {
                 ui.set_audio_source_name(label.into());
                 ui.set_status_text("Audiobook selected".into());
             }
+        });
+    }
+
+    {
+        let ui_weak = ui.as_weak();
+        ui.on_import_whisper_archive(move || {
+            let Some(path) = FileDialog::new()
+                .set_title("Import whisper.cpp archive")
+                .add_filter("whisper.cpp archive", &["zip", "tgz", "gz"])
+                .pick_file()
+            else {
+                return;
+            };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            ui.set_runtime_busy(true);
+            ui.set_runtime_install_status_text(
+                format!("Importing and verifying {}…", display_name(&path)).into(),
+            );
+            match runtime_import::import_whisper_archive(&path) {
+                Ok(cli) => {
+                    std::env::set_var("STORYTELLER_WHISPER", &cli);
+                    ui.set_runtime_install_status_text(
+                        format!("Imported and verified whisper.cpp at {}", cli.display()).into(),
+                    );
+                    ui.set_runtime_refresh_requested(true);
+                }
+                Err(error) => {
+                    ui.set_runtime_install_status_text(format!("Import failed: {error}").into());
+                }
+            }
+            ui.set_runtime_busy(false);
         });
     }
 
