@@ -1,6 +1,6 @@
 name: Windows test build
 
-# One-shot trigger for the runtime dependency manager checkpoint.
+# One-shot trigger for the runtime dependency manager checkpoint (rustfmt retry).
 # This is returned to manual-only after the artifact is produced.
 on:
   push:
