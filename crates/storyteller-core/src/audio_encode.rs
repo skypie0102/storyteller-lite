@@ -106,7 +106,9 @@ pub fn encode_audiobook(
             match result {
                 Ok(output) if output.success => {}
                 Ok(output) => return Err(command_failure("ffmpeg audio encode", &output)),
-                Err(CommandRunError::Cancelled) => return Err("Audio encoding was cancelled.".into()),
+                Err(CommandRunError::Cancelled) => {
+                    return Err("Audio encoding was cancelled.".into())
+                }
                 Err(error) => return Err(format!("Could not run ffmpeg audio encode: {error}")),
             }
         }
@@ -154,10 +156,19 @@ pub fn read_encoded_audio_descriptor(path: &Path) -> Result<EncodedAudioDescript
     {
         return Err("Encoded audio descriptor contains blank required fields.".into());
     }
+    if !is_epub_core_audio_media_type(&descriptor.media_type) {
+        return Err(format!(
+            "Encoded audio media type is not supported for EPUB Media Overlays: {}",
+            descriptor.media_type
+        ));
+    }
     Ok(descriptor)
 }
 
-fn output_identity(source: &Path, encoding: AudioEncoding) -> Result<(String, &'static str, &'static str), String> {
+fn output_identity(
+    source: &Path,
+    encoding: AudioEncoding,
+) -> Result<(String, &'static str, &'static str), String> {
     match encoding.codec {
         AudioCodec::Copy => {
             let extension = source
@@ -167,26 +178,36 @@ fn output_identity(source: &Path, encoding: AudioEncoding) -> Result<(String, &'
                 .filter(|value| !value.is_empty())
                 .ok_or("Copy audio requires a source filename extension.")?
                 .to_ascii_lowercase();
-            let media_type = media_type_for_extension(&extension).ok_or_else(|| {
-                format!("Copy audio cannot determine an EPUB media type for .{extension}.")
+            let media_type = media_type_for_copy_extension(&extension).ok_or_else(|| {
+                format!(
+                    "Copy mode cannot safely embed .{extension} as EPUB 3.3 Media Overlay audio. Use Opus or AAC encoding instead."
+                )
             })?;
             Ok((format!("audio.{extension}"), media_type, "copy"))
         }
-        AudioCodec::Opus => Ok(("audio.opus".into(), "audio/ogg", "opus")),
+        AudioCodec::Opus => Ok((
+            "audio.opus".into(),
+            "audio/ogg; codecs=opus",
+            "opus",
+        )),
         AudioCodec::Aac => Ok(("audio.m4a".into(), "audio/mp4", "aac")),
     }
 }
 
-fn media_type_for_extension(extension: &str) -> Option<&'static str> {
+fn media_type_for_copy_extension(extension: &str) -> Option<&'static str> {
     match extension {
         "mp3" => Some("audio/mpeg"),
         "m4a" | "m4b" | "mp4" => Some("audio/mp4"),
-        "aac" => Some("audio/aac"),
-        "ogg" | "oga" | "opus" => Some("audio/ogg"),
-        "flac" => Some("audio/flac"),
-        "wav" | "wave" => Some("audio/wav"),
+        "opus" => Some("audio/ogg; codecs=opus"),
         _ => None,
     }
+}
+
+fn is_epub_core_audio_media_type(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "audio/mpeg" | "audio/mp4" | "audio/ogg; codecs=opus"
+    )
 }
 
 fn parse_ffmpeg_out_time_us(line: &str) -> Option<f64> {
@@ -203,11 +224,19 @@ fn parse_ffmpeg_out_time_us(line: &str) -> Option<f64> {
 
 fn reset_directory(path: &Path) -> Result<(), String> {
     if path.exists() {
-        fs::remove_dir_all(path)
-            .map_err(|error| format!("Could not reset Encode workspace {}: {error}", path.display()))?;
+        fs::remove_dir_all(path).map_err(|error| {
+            format!(
+                "Could not reset Encode workspace {}: {error}",
+                path.display()
+            )
+        })?;
     }
-    fs::create_dir_all(path)
-        .map_err(|error| format!("Could not create Encode workspace {}: {error}", path.display()))
+    fs::create_dir_all(path).map_err(|error| {
+        format!(
+            "Could not create Encode workspace {}: {error}",
+            path.display()
+        )
+    })
 }
 
 fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
@@ -257,13 +286,16 @@ mod tests {
 
     #[test]
     fn ffmpeg_progress_uses_real_microsecond_output_timestamp() {
-        assert_eq!(parse_ffmpeg_out_time_us("out_time_us=1250000"), Some(1.25));
+        assert_eq!(
+            parse_ffmpeg_out_time_us("out_time_us=1250000"),
+            Some(1.25)
+        );
         assert_eq!(parse_ffmpeg_out_time_us("out_time_us=N/A"), None);
         assert_eq!(parse_ffmpeg_out_time_us("out_time_us=-1"), None);
     }
 
     #[test]
-    fn output_identity_matches_selected_codec() {
+    fn output_identity_matches_epub_core_audio_types() {
         assert_eq!(
             output_identity(Path::new("book.m4b"), AudioEncoding::copy()).unwrap(),
             ("audio.m4b".into(), "audio/mp4", "copy")
@@ -274,7 +306,13 @@ mod tests {
                 AudioEncoding::new(AudioCodec::Opus, Some(AudioBitrate::Kbps64)).unwrap()
             )
             .unwrap(),
-            ("audio.opus".into(), "audio/ogg", "opus")
+            (
+                "audio.opus".into(),
+                "audio/ogg; codecs=opus",
+                "opus"
+            )
         );
+        assert!(output_identity(Path::new("book.flac"), AudioEncoding::copy()).is_err());
+        assert!(output_identity(Path::new("book.ogg"), AudioEncoding::copy()).is_err());
     }
 }
