@@ -217,6 +217,18 @@ impl Job {
         Ok(())
     }
 
+    pub fn retry_from_scratch(&mut self) -> Result<(), String> {
+        if !matches!(self.status, JobStatus::Failed | JobStatus::Cancelled) {
+            return Err("Only failed or cancelled jobs can restart from the beginning.".into());
+        }
+        self.status = JobStatus::Waiting;
+        self.progress = PipelineProgress::default();
+        self.last_error = None;
+        self.runtime_seconds = 0;
+        self.checkpoints.clear();
+        Ok(())
+    }
+
     pub fn checkpoint_completed_stage(
         &mut self,
         stage: PipelineStage,
