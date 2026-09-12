@@ -72,21 +72,22 @@ jobs:
         with:
           cache-targets: false
 
-      - name: Apply rustfmt and lock dependencies
+      - name: Apply safe maintenance fixes
         run: |
-          cargo fmt --all
           cargo generate-lockfile
+          cargo clippy -p storyteller-core --all-targets --fix --allow-dirty --allow-staged
+          cargo fmt --all
 
       - name: Commit maintenance changes
         shell: bash
         run: |
           if git diff --quiet -- Cargo.lock crates; then
-            echo "No formatting or lockfile changes to commit."
+            echo "No formatting, lockfile, or Clippy changes to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add Cargo.lock crates
-            git commit -m "chore: apply rustfmt and lock dependencies"
+            git commit -m "chore: apply rustfmt, clippy fixes, and lock dependencies"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
           echo "Validated working-tree commit: $(git rev-parse HEAD)"
