@@ -9,6 +9,7 @@ mod runner;
 mod scheduler;
 mod source_fingerprint;
 mod source_prepare;
+mod whisper_transcript;
 mod worker;
 mod workspace;
 
@@ -35,6 +36,7 @@ pub use source_fingerprint::{
     fingerprint_job_sources, fingerprint_source_file, SourceFingerprints,
 };
 pub use source_prepare::{prepare_job_sources, prepared_job_sources, PreparedSources};
+pub use whisper_transcript::{read_whisper_transcript, TranscriptSegment, WhisperTranscript};
 pub use worker::{
     spawn_pipeline_worker, spawn_pipeline_worker_with_preflight, PipelineEnvironment,
     PipelineWorkerHandle, WorkerResult,
