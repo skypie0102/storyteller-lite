@@ -16,6 +16,13 @@ pub struct ResourceRequest {
 }
 
 impl ResourceRequest {
+    pub fn cpu_heavy(cpu_threads: usize) -> Self {
+        Self {
+            cpu_threads: cpu_threads.max(1),
+            io_slots: 0,
+        }
+    }
+
     pub fn io_heavy(cpu_threads: usize) -> Self {
         Self {
             cpu_threads: cpu_threads.max(1),
