@@ -3,7 +3,9 @@ mod audio_encode;
 mod audio_review;
 mod cancellation;
 mod command;
+mod epub_build;
 mod epub_corpus;
+mod epub_overlay;
 mod job;
 mod progress;
 mod queue;
@@ -32,6 +34,7 @@ pub use cancellation::CancellationToken;
 pub use command::{
     run_cancellable_command, CommandOutput, CommandRunError, CommandStream,
 };
+pub use epub_build::{build_readaloud_epub, EpubBuildSummary};
 pub use epub_corpus::{
     extract_epub_corpus, read_epub_corpus, EpubCorpus, EpubCorpusSummary, EpubSection,
 };
