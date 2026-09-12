@@ -5,11 +5,11 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    extract_epub_corpus, prepare_job_sources, prepared_job_sources, run_cancellable_command,
-    spawn_pipeline_worker_with_preflight, CommandOutput, CommandRunError, CommandStream,
-    HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
-    PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
-    StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    align_transcript_to_corpus, extract_epub_corpus, prepare_job_sources, prepared_job_sources,
+    run_cancellable_command, spawn_pipeline_worker_with_preflight, CommandOutput, CommandRunError,
+    CommandStream, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
+    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
+    RuntimeCoordinator, StagePlan, StageRunContext, StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -72,7 +72,7 @@ impl LitePipelineBackend {
         let runtime = AnalyzeRuntime::discover(context.job())
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let stage_dir = context.workspace().stage_dir(PipelineStage::Analyze);
-        reset_stage_dir(&stage_dir)
+        reset_stage_dir(&stage_dir, PipelineStage::Analyze)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let cancellation = context.cancellation_token();
 
@@ -215,6 +215,70 @@ impl LitePipelineBackend {
             self.elapsed_millis(),
         ))
     }
+
+    fn run_align(
+        &mut self,
+        context: &mut StageRunContext<'_>,
+    ) -> Result<StageRunOutput, StageRunError> {
+        let stage_started = Instant::now();
+        let analyze_dir = context.workspace().stage_dir(PipelineStage::Analyze);
+        let corpus_path = analyze_dir.join("book-corpus.json");
+        let transcript_path = analyze_dir.join("transcript.json");
+        let stage_dir = context.workspace().stage_dir(PipelineStage::Align);
+        reset_stage_dir(&stage_dir, PipelineStage::Align)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let alignment_path = stage_dir.join("alignment.json");
+        let cancellation = context.cancellation_token();
+
+        let mut metrics = LiveMetrics {
+            backend: Some("Storyteller monotonic n-gram aligner".into()),
+            ..LiveMetrics::default()
+        };
+        context.set_metrics(metrics.clone(), self.elapsed_millis());
+        context
+            .set_activity("Aligning transcript segments to EPUB text", self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        let result = align_transcript_to_corpus(
+            &corpus_path,
+            &transcript_path,
+            &alignment_path,
+            &cancellation,
+            &mut |progress| {
+                metrics.current_item = Some(progress.processed_segments as u64);
+                metrics.total_items = Some(progress.total_segments as u64);
+                metrics.match_percent = Some(progress.match_percent);
+                context.set_metrics(metrics.clone(), 0);
+                let percent = if progress.total_segments == 0 {
+                    0
+                } else {
+                    progress
+                        .processed_segments
+                        .saturating_mul(100)
+                        .checked_div(progress.total_segments)
+                        .unwrap_or(0)
+                        .min(100) as u8
+                };
+                context.set_stage_percent(percent, 0)
+            },
+        );
+        match result {
+            Ok(_) => {}
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+            }
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        }
+        context
+            .set_stage_percent(100, self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        Ok(StageRunOutput::new(
+            vec![PathBuf::from("alignment.json")],
+            stage_started.elapsed().as_secs(),
+            self.elapsed_millis(),
+        ))
+    }
 }
 
 impl PipelineBackend for LitePipelineBackend {
@@ -227,6 +291,11 @@ impl PipelineBackend for LitePipelineBackend {
             )),
             PipelineStage::Analyze => Ok(StagePlan::run(
                 "Analyzing book and audiobook",
+                ResourceRequest::cpu_heavy(self.cpu_threads),
+                self.elapsed_millis(),
+            )),
+            PipelineStage::Align => Ok(StagePlan::run(
+                "Aligning transcript to book text",
                 ResourceRequest::cpu_heavy(self.cpu_threads),
                 self.elapsed_millis(),
             )),
@@ -244,6 +313,7 @@ impl PipelineBackend for LitePipelineBackend {
         match context.stage() {
             PipelineStage::Prepare => self.run_prepare(context),
             PipelineStage::Analyze => self.run_analyze(context),
+            PipelineStage::Align => self.run_align(context),
             stage => Err(StageRunError::failed(
                 format!(
                     "{} backend is not implemented in Storyteller Lite yet.",
@@ -318,7 +388,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
 
     PipelineEnvironment {
         whisper_backend: file_identity("whisper.cpp-cli", &whisper_cli),
-        alignment_backend: "unimplemented:alignment".into(),
+        alignment_backend: "storyteller:monotonic-ngram-edit-v1".into(),
         ocr_backend: "unimplemented:ocr".into(),
         epub_backend: "unimplemented:epub".into(),
         effective_language: effective_language(job),
@@ -422,18 +492,20 @@ fn file_identity(label: &str, path: &Path) -> String {
     format!("{label}:{}:{}:{modified}", path.display(), metadata.len())
 }
 
-fn reset_stage_dir(stage_dir: &Path) -> Result<(), String> {
+fn reset_stage_dir(stage_dir: &Path, stage: PipelineStage) -> Result<(), String> {
     if stage_dir.exists() {
         fs::remove_dir_all(stage_dir).map_err(|error| {
             format!(
-                "Could not reset Analyze workspace {}: {error}",
+                "Could not reset {} workspace {}: {error}",
+                stage.label(),
                 stage_dir.display()
             )
         })?;
     }
     fs::create_dir_all(stage_dir).map_err(|error| {
         format!(
-            "Could not create Analyze workspace {}: {error}",
+            "Could not create {} workspace {}: {error}",
+            stage.label(),
             stage_dir.display()
         )
     })
