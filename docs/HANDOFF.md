@@ -22,8 +22,10 @@ Primary references:
 4. `docs/recovery/LITE_PLANNING_HISTORY.txt` — recovered historical planning transcript.
 5. `docs/recovery/LEGACY_INSTALLER_REFERENCE.md` — old installer provenance and usage rules.
 6. `docs/recovery/INSTALLER_DISSECTION.md` — facts recovered by static analysis of the v0.39.0 installer.
-7. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend state machine, exact allocator invariants, backend defaults, and concurrency semantics.
-8. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
+7. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend state machine, exact allocator invariants, backend defaults, and persistence/concurrency behavior.
+8. `docs/recovery/WORKER_SEMANTICS.md` — focused evidence for what old Parallel Whisper jobs meant and the preferred Lite worker architecture.
+9. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
+10. `tools/recovery/extract_tauri_assets.py` — reproducible recovery/verification of the old embedded Tauri frontend assets.
 
 ## User decisions recovered in this chat
 
@@ -61,6 +63,7 @@ As of the recovered branch inspected during this chat:
 - `spawn_job_worker()` derives all logical CPU threads from `std::thread::available_parallelism()`.
 - `LitePipelineBackend` passes that value to whisper.cpp with `-t`.
 - The app does **not** currently pass whisper.cpp `-p`.
+- Analyze currently converts the whole audiobook into one `audio.wav` and launches one whisper-cli process, so there is only one transcription work item per book.
 - `JobSettings` currently contains audio encoding, language override, and Whisper model; no worker-count field exists.
 - Settings UI currently focuses on runtime dependency discovery/install/import.
 - Review Audio currently writes `review.json`, previews unmatched segments, and only offers Cancel or global **Continue without unmatched audio**.
@@ -78,6 +81,7 @@ Important recovered clues:
 - The old Tauri/Rust app had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings. Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs.
 - Machine-code recovery confirms the old backend defaults were `threads=6`, `parallelTranscribes=3`, and `parallelTranscodes=6`, with `npx`, `large-v3-turbo`, `en-US`, and `64K`. These are historical defaults only, not Lite defaults.
 - **Critical:** the old alignment launcher passed `--processors 1` separately from `--parallel-transcribes <parallelTranscribes>`. Therefore historical `parallelTranscribes` was higher-level job concurrency and was **not** whisper.cpp processor count / `-p`.
+- A current upstream Storyteller source cross-check confirms the same conceptual split: `parallelTranscribes` is used as a semaphore over multiple processed audio files, while each file has independent Whisper `processors`/`threads`. Current preprocessing splits long audio into bounded chapter/VAD-safe tracks. See `docs/recovery/WORKER_SEMANTICS.md`.
 - Old manual-allocation IPC included draft save/restore, pending request retrieval, audio preview, image preview, submit, and pause/cancel operations.
 - Old persisted state contained `manualDrafts`; retry after interruption could reopen/restore allocations. The recovered frontend autosaved after a 450 ms debounce and also kept a local fallback copy.
 - The installer contains the old finishing helper's **plain Python source**. Its manual allocation code enforces complete time coverage, no gaps/overlaps, explicit targets, and final output auditing.
@@ -94,16 +98,24 @@ Before feature changes, establish that the current branch builds/tests on the in
 
 Implement one simple user-facing worker-count setting while retaining automatic CPU-thread selection.
 
+Recovered evidence now gives a preferred semantic definition: **worker count should bound concurrently transcribed audio chunks/tracks**, not be a direct alias for whisper.cpp `-p`.
+
 Requirements:
 
 - Lite default `1` unless deliberate benchmarking changes it;
 - user-adjustable from Settings;
-- validate/clamp to a sensible positive range;
-- **do not automatically equate this setting with the old `parallelTranscribes` or with whisper.cpp `-p`;** those are proven to be different historical concepts;
-- before wiring it, verify the exact current whisper.cpp build's `-p` semantics and decide whether the desired Lite behavior is whisper.cpp internal processor parallelism or Lite-managed chunk/job concurrency;
-- avoid obvious CPU/GPU/VRAM oversubscription;
-- keep automatic CPU-thread selection — do not add manual CPU allocation;
-- treat worker count as **execution/performance configuration**, not semantic output configuration. Do not make changing worker count invalidate otherwise reusable Analyze/Align checkpoints unless the backend actually produces semantically different results.
+- validate/clamp to a sensible positive range (the old product used 1–4 for parallel Whisper jobs, which is a reasonable initial UI range to benchmark rather than a mandatory compatibility rule);
+- split/decode long audiobook input into deterministic ordered transcription work items so `workers > 1` actually has work to schedule;
+- prefer chapter-safe boundaries where available and a tested silence/VAD-aware fallback for overlong/no-chapter ranges;
+- run at most `workers` Whisper transcription tasks concurrently;
+- keep each individual whisper.cpp invocation at one processor initially; do **not** implement this setting by simply passing `-p N`;
+- automatically budget per-worker CPU threads/resources instead of restoring manual thread controls or giving every simultaneous worker all logical CPUs;
+- add each chunk's global audio offset to its local Whisper timestamps, then merge and validate one chronological Analyze transcript artifact;
+- aggregate progress/cancellation across active workers;
+- avoid CPU/GPU/VRAM oversubscription, especially when the model is loaded by multiple concurrent GPU processes;
+- treat worker count as **execution/performance configuration**, not semantic output configuration. Do not make changing worker count invalidate otherwise reusable Analyze/Align checkpoints solely because N changed if the merged transcript contract is deterministic/equivalent.
+
+`docs/recovery/WORKER_SEMANTICS.md` contains the evidence and implementation cautions in detail.
 
 Prefer an app/runtime settings model separate from output-affecting `JobSettings` fingerprints. If implementation constraints require storing it on a queued job for deterministic execution, exclude it from semantic stage fingerprints.
 
