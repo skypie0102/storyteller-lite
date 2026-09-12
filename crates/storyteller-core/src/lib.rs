@@ -1,4 +1,5 @@
 mod cancellation;
+mod command;
 mod job;
 mod progress;
 mod queue;
@@ -11,6 +12,9 @@ mod worker;
 mod workspace;
 
 pub use cancellation::CancellationToken;
+pub use command::{
+    run_cancellable_command, CommandOutput, CommandRunError, CommandStream,
+};
 pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,
     JobStatus,
