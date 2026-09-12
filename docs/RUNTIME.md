@@ -56,6 +56,26 @@ A model is reported ready only when the candidate is a non-empty regular file.
 
 Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. The whisper row identifies a detected CUDA build explicitly. If anything is missing, **Download missing** offers an explicit, user-initiated portable install on Windows. Processing never silently starts a multi-gigabyte model download.
 
+### Importing an existing whisper.cpp archive
+
+Settings also exposes **Import whisper archive…** for users who already have a Windows whisper.cpp build. This is the preferred deterministic path when automatic discovery cannot locate an existing runtime.
+
+The picker accepts `.zip`, `.tgz`, and `.tar.gz` files, including the former StoryTeller CUDA package shape:
+
+```text
+whisper-cpp-windows-x64-cuda-13.1.0.tar.gz
+```
+
+The selected archive stays local; StoryTeller Lite does not upload it or redownload whisper.cpp. The archive is extracted into a persistent per-user runtime location:
+
+```text
+%LOCALAPPDATA%\Storyteller OneClick Lite\runtime\whisper\<archive-name>-<timestamp>\
+```
+
+Lite searches the extracted tree for `whisper-cli.exe`, falling back to legacy `main.exe`. It then launches the discovered CLI with `--help`; the import is rejected and its extracted directory is removed if the executable cannot start, which catches missing/incompatible runtime DLLs before a book is queued.
+
+On successful import, the verified executable is selected immediately for the current app session and a runtime re-scan updates Settings. Future launches rediscover the persistent extracted copy automatically. The original archive is not modified and may be moved or deleted after a successful import.
+
 Downloads are performed on a background thread so the Slint UI remains responsive. Missing dependencies are installed beside the portable application:
 
 ```text
@@ -88,7 +108,7 @@ Both must exist and be non-empty before the stage can be checkpointed.
 
 ## Progress policy
 
-The Analyze progress percentage comes from whisper.cpp's own progress callback output. Storyteller Lite does not estimate a transcription percentage from wall-clock time. Backend/model labels are shown only when the backend has actually started, and a GPU backend label is only adopted when whisper.cpp reports one.
+The Analyze progress percentage comes from whisper.cpp's own progress callback output. StoryTeller Lite does not estimate a transcription percentage from wall-clock time. Backend/model labels are shown only when the backend has actually started, and a GPU backend label is only adopted when whisper.cpp reports one.
 
 ## Cancellation
 
