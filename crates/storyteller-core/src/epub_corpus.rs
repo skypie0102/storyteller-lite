@@ -302,6 +302,16 @@ fn extract_xhtml_text(xml: &str) -> Result<String, String> {
                     .map_err(|error| format!("Could not decode EPUB XHTML CDATA: {error}"))?;
                 append_text(&mut output, &mut pending_space, &decoded);
             }
+            Ok(Event::GeneralRef(reference)) if suppressed_depth == 0 => {
+                let raw = std::str::from_utf8(reference.as_ref()).map_err(|error| {
+                    format!("EPUB XHTML entity reference is not UTF-8: {error}")
+                })?;
+                let escaped = format!("&{raw};");
+                let decoded = unescape(&escaped).map_err(|error| {
+                    format!("Could not unescape EPUB XHTML entity reference: {error}")
+                })?;
+                append_text(&mut output, &mut pending_space, &decoded);
+            }
             Ok(Event::Eof) => break,
             Ok(_) => {}
             Err(error) => return Err(format!("Could not parse EPUB XHTML: {error}")),
