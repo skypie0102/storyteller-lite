@@ -10,7 +10,7 @@ use std::{
 };
 use storyteller_core::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobInputs, JobQueue, JobSettings, JobStatus,
-    StageStatus,
+    QueueState, StageStatus,
 };
 use worker_bridge::WorkerBridge;
 
@@ -177,6 +177,53 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    {
+        let worker_bridge = Rc::clone(&worker_bridge);
+        let ui_weak = ui.as_weak();
+        ui.on_cancel_current(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            if worker_bridge.borrow().request_cancellation() {
+                ui.set_status_text("Cancellation requested".into());
+            } else {
+                ui.set_status_text("Active worker is not ready to cancel".into());
+            }
+        });
+    }
+
+    {
+        let queue = Rc::clone(&queue);
+        let queue_rows = Rc::clone(&queue_rows);
+        let stage_rows = Rc::clone(&stage_rows);
+        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_resume_queue(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let start_result = {
+                let mut queue = queue.borrow_mut();
+                queue.resume();
+                queue.start_next()
+            };
+            if let Err(error) = start_result {
+                ui.set_status_text(error.into());
+                return;
+            }
+            refresh_main_view(
+                &ui,
+                &queue.borrow(),
+                &queue_rows,
+                &stage_rows,
+                &detail_stage_rows,
+            );
+            if queue.borrow().active_job().is_none() {
+                ui.set_status_text("Queue resumed".into());
+            }
+        });
+    }
+
     ui.on_open_settings(|| {
         println!("Settings requested");
     });
@@ -217,6 +264,7 @@ fn display_name(path: &Path) -> String {
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
+
 fn book_title(epub_path: &Path) -> String {
     epub_path
         .file_stem()
@@ -253,6 +301,7 @@ pub(crate) fn refresh_main_view(
     detail_stage_rows: &VecModel<StageDetailRow>,
 ) {
     queue_rows.set_vec(build_queue_rows(queue));
+    ui.set_queue_paused(queue.state() == QueueState::Paused);
 
     let Some(job) = queue.active_job() else {
         stage_rows.set_vec(Vec::new());
