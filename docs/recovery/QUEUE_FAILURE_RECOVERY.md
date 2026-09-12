@@ -1,53 +1,75 @@
-# Queue failure behavior recovery — v0.39.0 and Lite
+# Queue terminal behavior recovery — v0.39.0 and Lite
 
-This note resolves the previously unknown historical policy for what happens when one queued book fails while later books are still waiting.
+This note resolves the historical policy for what happens when one queued book completes, fails, or is cancelled while later books are still waiting.
 
 ## Recovered v0.39.0 behavior
 
 Static analysis of the user-provided `Storyteller-OneClick-v0.39.0-Windows-x64-Setup.exe` recovered the old desktop executable and its embedded frontend.
 
-The compiled backend contains this explicit runtime message:
+The compiled backend contains this explicit failure message:
 
 > `Queue continuing after this failure; <N> pending book(s) remain.`
 
-The old frontend separately exposed **Stop After** / `stop_after_current`, described as stopping the queue after the current book finishes. Failed/cancelled jobs remained individually retryable, while pending jobs were left alone.
+The old frontend separately exposed two distinct controls:
 
-Together, that establishes the historical v0.39.0 policy:
+- **Stop After** — `Stop the queue after the current book finishes.`
+- **Cancel** — `Cancel the current processing book.`
 
-- a processing failure marks the current book failed;
-- the queue itself remains running;
-- if another unblocked pending book exists, processing continues to the next book automatically;
-- `Stop After` is the explicit user mechanism that prevents auto-advance after the current terminal transition.
+Failed/cancelled jobs remained individually retryable.
 
-This is stronger evidence than the older recovery note that said the v1 policy was unknown.
+## Cancellation control-flow recovery
+
+A deeper static disassembly resolves the cancellation edge that was initially uncertain.
+
+The backend maps the processing result into distinct terminal variants/statuses for:
+
+- Completed
+- Cancelled
+- Failed
+
+The Cancelled branch emits `Processing cancelled.` and then joins the same common terminal cleanup/state-persistence path used by the other outcomes.
+
+After terminal state is persisted, the runner checks a **separate queue-stop flag** before advancing. If that stop flag is clear, the common path pops the next pending queue entry and starts it.
+
+The current-job cancellation flag is checked separately from the queue-stop flag. In other words, cancelling the active book does not itself set the queue-stop condition.
+
+This matches the old UI separation between **Cancel current book** and **Stop After current book**.
+
+Therefore recovered v0.39.0 behavior is:
+
+- Completed current book -> queue normally advances.
+- Failed current book -> current book becomes failed/retryable and queue normally advances.
+- Cancelled current book -> current book becomes cancelled/retryable and queue normally advances.
+- `Stop After` -> the current book is allowed to reach its terminal outcome, then the queue stops before starting the next pending book.
+
+The failure-specific `Queue continuing after this failure...` message was merely additional feedback for the failure case, not evidence that only failures could advance.
 
 ## Current Lite behavior
 
-The recovered Rust + Slint implementation already matches that policy.
+The recovered Rust + Slint implementation already matches this policy.
 
-`WorkerBridge::poll()` reconciles the terminal worker result and then calls `start_next_worker()` regardless of whether the completed worker outcome was Completed, Cancelled, or Failed. `start_next_worker()` delegates to `JobQueue::start_next()`.
+`WorkerBridge::poll()` reconciles the terminal worker result and then calls `start_next_worker()` for Completed, Cancelled, and Failed outcomes. `start_next_worker()` delegates to `JobQueue::start_next()`.
 
 `JobQueue` remains `Running` across terminal transitions unless `pause_after_current` had been requested. When that flag is set, the first terminal transition clears the flag and moves the queue to `Paused`.
-
-Therefore current Lite behavior is consistent with the recovered old app:
-
-- **failure normally auto-advances** to the next waiting book;
-- **Pause after current** suppresses that advance after the active book reaches any terminal state.
 
 ## Product decision
 
 Treat this as recovered behavior, not an open policy question.
 
-Keep the current Lite policy unless the product requirement explicitly changes:
+Keep the current Lite policy unless an explicit product requirement changes it:
 
-> A failed book should not stall the whole queue. Mark it failed, preserve diagnostics/retry state, and continue with the next waiting book unless the queue was explicitly paused or `Pause after current` was requested.
+> **A terminal book result does not stall the queue.** Completed books finish normally; failed/cancelled books retain their retryable state; then the next waiting book starts. Only an explicit queue pause / Pause-after-current suppresses the next start.
+
+This keeps a single problematic book from blocking a long batch while preserving the user's ability to inspect/retry it later.
 
 ## Implementation/test implication
 
 Add or retain regression coverage for at least:
 
 1. Completed current job -> next waiting job starts automatically.
-2. Failed current job -> next waiting job starts automatically.
-3. Cancelled current job -> next waiting job starts automatically unless product cancellation semantics deliberately pause the queue.
-4. `Pause after current` + terminal current job -> queue becomes paused and the next waiting job does not start.
-5. Failed job remains available for explicit Retry without disturbing other waiting jobs.
+2. Failed current job -> next waiting job starts automatically and failed job remains retryable.
+3. Cancelled current job -> next waiting job starts automatically and cancelled job remains retryable.
+4. `Pause after current` + Completed -> queue becomes paused; next waiting job does not start.
+5. `Pause after current` + Failed -> queue becomes paused; next waiting job does not start.
+6. `Pause after current` + Cancelled -> queue becomes paused; next waiting job does not start.
+7. Retrying a failed/cancelled historical job does not disturb the ordering/state of unrelated waiting jobs.
