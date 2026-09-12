@@ -6,6 +6,7 @@ mod command;
 mod epub_build;
 mod epub_corpus;
 mod epub_overlay;
+mod epub_validate;
 mod job;
 mod progress;
 mod queue;
@@ -37,6 +38,10 @@ pub use command::{
 pub use epub_build::{build_readaloud_epub, EpubBuildSummary};
 pub use epub_corpus::{
     extract_epub_corpus, read_epub_corpus, EpubCorpus, EpubCorpusSummary, EpubSection,
+};
+pub use epub_validate::{
+    publish_validated_epub, validate_readaloud_epub, write_validation_report,
+    EpubValidationSummary,
 };
 pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,
