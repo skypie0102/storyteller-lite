@@ -75,15 +75,18 @@ pub(crate) fn install_missing_dependencies(
     mut progress: impl FnMut(String),
 ) -> Result<(), String> {
     if !cfg!(windows) {
-        return Err("Automatic dependency installation is currently supported on Windows only.".into());
+        return Err(
+            "Automatic dependency installation is currently supported on Windows only.".into(),
+        );
     }
     if status.ready() {
         progress("All runtime dependencies are already available.".into());
         return Ok(());
     }
 
-    let app_root = current_executable_dir()
-        .ok_or_else(|| "Could not determine the StoryTeller Lite application folder.".to_string())?;
+    let app_root = current_executable_dir().ok_or_else(|| {
+        "Could not determine the StoryTeller Lite application folder.".to_string()
+    })?;
     let tools_dir = app_root.join("tools");
     let models_dir = app_root.join("models");
     fs::create_dir_all(&tools_dir)
@@ -95,7 +98,10 @@ pub(crate) fn install_missing_dependencies(
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_millis())
         .unwrap_or(0);
-    let temp_dir = env::temp_dir().join(format!("storyteller-lite-runtime-{}-{stamp}", std::process::id()));
+    let temp_dir = env::temp_dir().join(format!(
+        "storyteller-lite-runtime-{}-{stamp}",
+        std::process::id()
+    ));
     if temp_dir.exists() {
         let _ = fs::remove_dir_all(&temp_dir);
     }
@@ -142,7 +148,11 @@ fn dependency_text(path: Option<&Path>, missing: &str) -> String {
     }
 }
 
-fn find_executable(environment_variable: &str, base_name: &str, probe_args: &[&str]) -> Option<PathBuf> {
+fn find_executable(
+    environment_variable: &str,
+    base_name: &str,
+    probe_args: &[&str],
+) -> Option<PathBuf> {
     if let Some(value) = env::var_os(environment_variable).filter(|value| !value.is_empty()) {
         let path = PathBuf::from(value);
         if probe_executable(&path, probe_args) {
@@ -156,53 +166,8 @@ fn find_executable(environment_variable: &str, base_name: &str, probe_args: &[&s
         candidates.push(executable_dir.join("tools").join(&file_name));
         candidates.push(executable_dir.join(&file_name));
     }
-
     if let Some(path) = env::var_os("PATH") {
         candidates.extend(env::split_paths(&path).map(|entry| entry.join(&file_name)));
-    }
-
-    if cfg!(windows) {
-        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
-            candidates.push(
-                PathBuf::from(local_app_data)
-                    .join("Microsoft")
-                    .join("WinGet")
-                    .join("Links")
-                    .join(&file_name),
-            );
-        }
-        if let Some(user_profile) = env::var_os("USERPROFILE") {
-            let user_profile = PathBuf::from(user_profile);
-            candidates.push(user_profile.join("scoop").join("shims").join(&file_name));
-            if base_name == "ffmpeg" {
-                candidates.push(
-                    user_profile
-                        .join("scoop")
-                        .join("apps")
-                        .join("ffmpeg")
-                        .join("current")
-                        .join("bin")
-                        .join(&file_name),
-                );
-                candidates.push(
-                    user_profile
-                        .join("scoop")
-                        .join("apps")
-                        .join("ffmpeg-essentials")
-                        .join("current")
-                        .join("bin")
-                        .join(&file_name),
-                );
-            }
-        }
-        if let Some(program_data) = env::var_os("PROGRAMDATA") {
-            candidates.push(
-                PathBuf::from(program_data)
-                    .join("chocolatey")
-                    .join("bin")
-                    .join(&file_name),
-            );
-        }
     }
 
     candidates
@@ -211,7 +176,8 @@ fn find_executable(environment_variable: &str, base_name: &str, probe_args: &[&s
 }
 
 fn find_whisper_model(model_name: &str) -> Option<PathBuf> {
-    if let Some(value) = env::var_os("STORYTELLER_WHISPER_MODEL").filter(|value| !value.is_empty()) {
+    if let Some(value) = env::var_os("STORYTELLER_WHISPER_MODEL").filter(|value| !value.is_empty())
+    {
         let path = PathBuf::from(value);
         if validate_nonempty_file(&path, "Configured Whisper model").is_ok() {
             return Some(path);
@@ -236,32 +202,9 @@ fn find_whisper_model(model_name: &str) -> Option<PathBuf> {
         candidates.push(current_dir.join("models").join(&file_name));
     }
 
-    if let Some(found) = candidates
+    candidates
         .into_iter()
         .find(|candidate| validate_nonempty_file(candidate, "Whisper model").is_ok())
-    {
-        return Some(found);
-    }
-
-    find_huggingface_cached_model(&file_name)
-}
-
-fn find_huggingface_cached_model(file_name: &str) -> Option<PathBuf> {
-    let user_profile = env::var_os("USERPROFILE")?;
-    let hub = PathBuf::from(user_profile).join(".cache").join("huggingface").join("hub");
-    for repository in ["models--ggerganov--whisper.cpp", "models--ggml-org--whisper.cpp"] {
-        let snapshots = hub.join(repository).join("snapshots");
-        let Ok(entries) = fs::read_dir(snapshots) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let candidate = entry.path().join(file_name);
-            if validate_nonempty_file(&candidate, "Cached Whisper model").is_ok() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
 }
 
 fn install_ffmpeg(tools_dir: &Path, temp_dir: &Path) -> Result<(), String> {
@@ -353,7 +296,9 @@ fn run_powershell(script: &str) -> Result<(), String> {
                 .map(|status| status.success())
                 .unwrap_or(false)
         })
-        .ok_or_else(|| "PowerShell was not found; automatic dependency download is unavailable.".to_string())?;
+        .ok_or_else(|| {
+            "PowerShell was not found; automatic dependency download is unavailable.".to_string()
+        })?;
 
     let output = Command::new(shell)
         .arg("-NoProfile")
@@ -373,7 +318,15 @@ fn run_powershell(script: &str) -> Result<(), String> {
     } else {
         stderr.trim()
     };
-    let detail = detail.lines().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join(" | ");
+    let detail = detail
+        .lines()
+        .rev()
+        .take(6)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(" | ");
     if detail.is_empty() {
         Err("Dependency download failed without diagnostics.".into())
     } else {
@@ -409,7 +362,10 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("{label} is unavailable at {}: {error}", path.display()))?;
     if !metadata.is_file() || metadata.len() == 0 {
-        return Err(format!("{label} is not a non-empty regular file: {}", path.display()));
+        return Err(format!(
+            "{label} is not a non-empty regular file: {}",
+            path.display()
+        ));
     }
     Ok(())
 }
@@ -439,6 +395,9 @@ mod tests {
 
     #[test]
     fn powershell_strings_escape_single_quotes() {
-        assert_eq!(ps_string("C:\\O'Brien\\tool.exe"), "'C:\\O''Brien\\tool.exe'");
+        assert_eq!(
+            ps_string("C:\\O'Brien\\tool.exe"),
+            "'C:\\O''Brien\\tool.exe'"
+        );
     }
 }
