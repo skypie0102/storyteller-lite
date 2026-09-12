@@ -82,6 +82,52 @@ When implementation begins, first decide which current-Lite behavior the setting
 
 In either case, keep Lite's automatic CPU-thread selection unless the product requirement changes, and avoid making a performance-only setting invalidate semantic Analyze/Align checkpoints unnecessarily.
 
+## Queue settings snapshot behavior
+
+The old main UI explicitly told the user:
+
+> Each queued book keeps its own Settings snapshot.
+
+The queue entries therefore did not read mutable global settings at execution time; processing parameters were captured with the queued book.
+
+This is useful precedent for Lite's worker-count design. If the new worker count is captured per queued job for deterministic execution, keep it separate from semantic/output-affecting fingerprints so changing only performance parallelism does not invalidate reusable transcription/alignment artifacts without a technical reason.
+
+## Persisted application state and crash/restart normalization
+
+The compiled backend exposes `PersistedState` with exactly four serialized top-level fields:
+
+- `settings`
+- `queue`
+- `runningJobId`
+- `manualDrafts`
+
+Persistence strings show a primary `state.json` plus temporary/backup extensions `json.tmp` and `json.bak`, consistent with an atomic primary/temp/backup write scheme.
+
+The old app also used `%LOCALAPPDATA%/Storyteller-OneClick/workspaces` for disposable/rebuildable processing workspaces.
+
+### Startup recovery behavior
+
+Machine-code recovery of startup normalization shows that jobs left in any of these states when the process stopped:
+
+- `running`
+- `waiting_for_allocation`
+- `allocation_paused`
+
+were not left pretending to be live after restart.
+
+A previously running job was converted into an interrupted/failed recoverable state with the message that processing stopped when Storyteller closed.
+
+A job that had been waiting for or paused in manual allocation was converted into an interrupted/failed recoverable state with the message:
+
+> Storyteller closed while manual allocation was active or paused. Retry this book to rebuild the temporary inspection workspace; the autosaved allocation draft will be restored when the allocator reopens.
+
+This establishes an important architecture boundary:
+
+- **manual decisions/drafts are durable application state**;
+- **inspection previews and temporary processing workspace are rebuildable artifacts**.
+
+That is a strong pattern for Lite: persist small review decisions and enough identifiers to reconstruct the review session, rather than trying to make temporary audio previews themselves authoritative state.
+
 ## Allocator frontend: durable state behavior
 
 The recovered frontend calls these manual-allocation IPC commands:
@@ -200,7 +246,9 @@ The strongest behaviors to carry forward are:
 4. every reviewed audio region receives an explicit disposition;
 5. invalid/backwards/ambiguous assignments are rejected before continuing;
 6. generated EPUB/media-overlay output is audited after manual decisions;
-7. execution parallelism is separate from semantic job settings and from per-worker CPU threads.
+7. execution parallelism is separate from semantic job settings and from per-worker CPU threads;
+8. queued books may capture their execution settings while semantic cache fingerprints remain limited to settings that can change outputs;
+9. durable review decisions should survive independently of disposable preview/workspace files.
 
 What Lite should **not** infer from the old app:
 
