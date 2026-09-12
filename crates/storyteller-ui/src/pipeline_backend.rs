@@ -2,7 +2,7 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
-    time::Instant,
+    time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
     prepare_job_sources, prepared_job_sources, run_cancellable_command,
@@ -156,7 +156,9 @@ impl LitePipelineBackend {
             }
             if let Some(percent) = parse_whisper_progress(line) {
                 if let Err(error) = context.set_stage_percent(percent, 0) {
-                    progress_error.get_or_insert(error);
+                    if progress_error.is_none() {
+                        progress_error = Some(error);
+                    }
                 }
             }
             if let Some(backend) = parse_whisper_backend(line) {
@@ -287,13 +289,24 @@ pub(crate) fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String>
 }
 
 fn pipeline_environment(job: &Job) -> PipelineEnvironment {
+    let whisper_cli = resolve_executable("STORYTELLER_WHISPER", "whisper-cli");
+    let model_name = job.settings.whisper_model.trim();
+    let effective_whisper_model = if model_name.is_empty() {
+        String::new()
+    } else {
+        match resolve_whisper_model(model_name) {
+            Ok(path) => file_identity("whisper-model", &path),
+            Err(_) => format!("requested:{model_name}"),
+        }
+    };
+
     PipelineEnvironment {
-        whisper_backend: "whisper.cpp-cli".into(),
+        whisper_backend: file_identity("whisper.cpp-cli", &whisper_cli),
         alignment_backend: "unimplemented:alignment".into(),
         ocr_backend: "unimplemented:ocr".into(),
         epub_backend: "unimplemented:epub".into(),
         effective_language: effective_language(job),
-        effective_whisper_model: job.settings.whisper_model.clone(),
+        effective_whisper_model,
     }
 }
 
@@ -375,6 +388,22 @@ fn executable_file_name(base_name: &str) -> String {
     } else {
         base_name.to_string()
     }
+}
+
+fn file_identity(label: &str, path: &Path) -> String {
+    let Ok(metadata) = fs::metadata(path) else {
+        return format!("{label}:{}", path.display());
+    };
+    if !metadata.is_file() {
+        return format!("{label}:{}", path.display());
+    }
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_secs())
+        .unwrap_or(0);
+    format!("{label}:{}:{}:{modified}", path.display(), metadata.len())
 }
 
 fn reset_stage_dir(stage_dir: &Path) -> Result<(), String> {
