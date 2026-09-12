@@ -5,7 +5,8 @@ use crate::{refresh_main_view, AppWindow, QueueRow, StageDetailRow, StageRow};
 use slint::VecModel;
 use std::{cell::RefCell, rc::Rc};
 use storyteller_core::{
-    JobOutcome, JobQueue, JobStatus, PipelineRunState, PipelineWorkerHandle,
+    read_audio_review_report, AudioReviewReport, Job, JobOutcome, JobQueue, JobStatus, PipelineRunState,
+    PipelineStage, PipelineWorkerHandle,
 };
 
 #[derive(Default)]
@@ -159,6 +160,13 @@ impl WorkerBridge {
             }
         }
     }
+}
+
+pub(crate) fn load_audio_review_report(job: &Job) -> Result<AudioReviewReport, String> {
+    let path = pipeline_backend::job_workspace(job)
+        .stage_dir(PipelineStage::ReviewAudio)
+        .join("review.json");
+    read_audio_review_report(&path)
 }
 
 fn mark_worker_start_failed(
