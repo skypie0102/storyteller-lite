@@ -1,0 +1,33 @@
+name: Rust + Slint CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    name: Rust + Slint on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build native Slint shell
+        run: cargo build -p storyteller-ui
