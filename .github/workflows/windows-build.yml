@@ -1,13 +1,7 @@
 name: Windows test build
 
-# One-shot release package after a text-only Settings copy correction.
-# Runtime-manager code already passed fmt, strict Clippy, and workspace tests.
+# Windows packaging is intentionally manual-only to conserve hosted runner usage.
 on:
-  push:
-    branches:
-      - recovery/rust-slint
-    paths:
-      - .github/workflows/windows-build.yml
   workflow_dispatch:
 
 permissions:
