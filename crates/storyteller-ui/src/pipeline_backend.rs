@@ -5,9 +5,9 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    align_transcript_to_corpus, create_audio_review_report, extract_epub_corpus,
-    prepare_job_sources, prepared_job_sources, run_cancellable_command,
-    spawn_pipeline_worker_with_preflight, CommandOutput, CommandRunError, CommandStream,
+    align_transcript_to_corpus, create_audio_review_report, encode_audiobook, extract_epub_corpus,
+    prepare_job_sources, prepared_job_sources, read_audio_review_report, run_cancellable_command,
+    spawn_pipeline_worker_with_preflight, AudioCodec, CommandOutput, CommandRunError, CommandStream,
     HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
     PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
     StagePlan, StageRunContext, StageRunError, StageRunOutput,
@@ -336,10 +336,83 @@ impl LitePipelineBackend {
             Ok(output.requiring_review())
         }
     }
+
+    fn run_encode(
+        &mut self,
+        context: &mut StageRunContext<'_>,
+    ) -> Result<StageRunOutput, StageRunError> {
+        let stage_started = Instant::now();
+        let prepared = prepared_job_sources(context.job(), context.workspace())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let review_path = context
+            .workspace()
+            .stage_dir(PipelineStage::ReviewAudio)
+            .join("review.json");
+        let review = read_audio_review_report(&review_path)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        if !review.unmatched.is_empty() && !review.accepted_unmatched_exclusion {
+            return Err(StageRunError::failed(
+                "Unmatched audio must be reviewed before encoding can continue.",
+                self.elapsed_millis(),
+            ));
+        }
+
+        let stage_dir = context.workspace().stage_dir(PipelineStage::Encode);
+        let ffmpeg = resolve_executable("STORYTELLER_FFMPEG", "ffmpeg");
+        let cancellation = context.cancellation_token();
+        let encoding = context.job().settings.audio;
+        let backend_label = match encoding.codec {
+            AudioCodec::Copy => "Storyteller byte copy",
+            AudioCodec::Opus | AudioCodec::Aac => "ffmpeg",
+        };
+        let activity = match encoding.codec {
+            AudioCodec::Copy => "Copying audiobook without re-encoding",
+            AudioCodec::Opus => "Encoding audiobook as Opus",
+            AudioCodec::Aac => "Encoding audiobook as AAC",
+        };
+        let mut metrics = LiveMetrics {
+            backend: Some(backend_label.into()),
+            match_percent: Some(review.match_percent),
+            ..LiveMetrics::default()
+        };
+        context.set_metrics(metrics.clone(), self.elapsed_millis());
+        context
+            .set_activity(activity, self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        let encoded = encode_audiobook(
+            prepared.audiobook(),
+            &stage_dir,
+            encoding,
+            &ffmpeg,
+            &cancellation,
+            &mut |progress| {
+                metrics.processed_audio_seconds = Some(progress.processed_audio_seconds);
+                context.set_metrics(metrics.clone(), 0);
+                Ok(())
+            },
+        );
+        let encoded = match encoded {
+            Ok(encoded) => encoded,
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+            }
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        };
+        context
+            .set_stage_percent(100, self.elapsed_millis())
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        Ok(StageRunOutput::new(
+            encoded.relative_artifacts,
+            stage_started.elapsed().as_secs(),
+            self.elapsed_millis(),
+        ))
+    }
 }
 
 impl PipelineBackend for LitePipelineBackend {
-    fn plan_stage(&mut self, _job: &Job, stage: PipelineStage) -> Result<StagePlan, String> {
+    fn plan_stage(&mut self, job: &Job, stage: PipelineStage) -> Result<StagePlan, String> {
         match stage {
             PipelineStage::Prepare => Ok(StagePlan::run(
                 "Preparing source files",
@@ -361,6 +434,14 @@ impl PipelineBackend for LitePipelineBackend {
                 ResourceRequest::io_heavy(1),
                 self.elapsed_millis(),
             )),
+            PipelineStage::Encode => Ok(StagePlan::run(
+                "Preparing output audiobook",
+                match job.settings.audio.codec {
+                    AudioCodec::Copy => ResourceRequest::io_heavy(1),
+                    AudioCodec::Opus | AudioCodec::Aac => ResourceRequest::cpu_heavy(self.cpu_threads),
+                },
+                self.elapsed_millis(),
+            )),
             _ => Err(format!(
                 "{} backend is not implemented in Storyteller Lite yet.",
                 stage.label()
@@ -377,6 +458,7 @@ impl PipelineBackend for LitePipelineBackend {
             PipelineStage::Analyze => self.run_analyze(context),
             PipelineStage::Align => self.run_align(context),
             PipelineStage::ReviewAudio => self.run_review_audio(context),
+            PipelineStage::Encode => self.run_encode(context),
             stage => Err(StageRunError::failed(
                 format!(
                     "{} backend is not implemented in Storyteller Lite yet.",
@@ -443,6 +525,7 @@ pub(crate) fn job_workspace(job: &Job) -> JobWorkspace {
 
 fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     let whisper_cli = resolve_executable("STORYTELLER_WHISPER", "whisper-cli");
+    let ffmpeg = resolve_executable("STORYTELLER_FFMPEG", "ffmpeg");
     let model_name = job.settings.whisper_model.trim();
     let effective_whisper_model = if model_name.is_empty() {
         String::new()
@@ -452,10 +535,15 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
             Err(_) => format!("requested:{model_name}"),
         }
     };
+    let audio_backend = match job.settings.audio.codec {
+        AudioCodec::Copy => "storyteller:cancellable-file-copy-v1".into(),
+        AudioCodec::Opus | AudioCodec::Aac => file_identity("ffmpeg", &ffmpeg),
+    };
 
     PipelineEnvironment {
         whisper_backend: file_identity("whisper.cpp-cli", &whisper_cli),
         alignment_backend: "storyteller:monotonic-ngram-edit-v1".into(),
+        audio_backend,
         ocr_backend: "unimplemented:ocr".into(),
         epub_backend: "unimplemented:epub".into(),
         effective_language: effective_language(job),
