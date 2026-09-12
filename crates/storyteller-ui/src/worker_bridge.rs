@@ -4,7 +4,9 @@ mod pipeline_backend;
 use crate::{refresh_main_view, AppWindow, QueueRow, StageDetailRow, StageRow};
 use slint::VecModel;
 use std::{cell::RefCell, rc::Rc};
-use storyteller_core::{JobOutcome, JobQueue, PipelineRunState, PipelineWorkerHandle};
+use storyteller_core::{
+    JobOutcome, JobQueue, JobStatus, PipelineRunState, PipelineWorkerHandle,
+};
 
 #[derive(Default)]
 pub(crate) struct WorkerBridge {
@@ -91,6 +93,9 @@ impl WorkerBridge {
                         Ok(PipelineRunState::WaitingForResources(stage)) => {
                             Some(format!("Waiting for resources: {}", stage.label()))
                         }
+                        Ok(PipelineRunState::NeedsReview(stage)) => {
+                            Some(format!("Needs review: {}", stage.label()))
+                        }
                         Err(error) => Some(format!("Processing stopped: {error}")),
                     }
                 }
@@ -138,6 +143,9 @@ impl WorkerBridge {
 
     fn start_active_worker(&mut self, queue: &Rc<RefCell<JobQueue>>) -> Option<String> {
         let job = queue.borrow().active_job()?.clone();
+        if job.status != JobStatus::Running {
+            return None;
+        }
         let job_id = job.id;
         match pipeline_backend::spawn_job_worker(job) {
             Ok(worker) => {
