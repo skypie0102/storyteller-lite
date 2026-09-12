@@ -37,6 +37,15 @@ export component AppWindow inherits Window {
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
     in-out property <bool> settings-open: false;
+    in-out property <bool> runtime-refresh-requested: false;
+    in-out property <bool> runtime-install-requested: false;
+    in-out property <bool> runtime-busy: false;
+    in-out property <bool> runtime-ready: false;
+    in-out property <string> runtime-summary-text: "Open Settings to scan dependencies.";
+    in-out property <string> runtime-ffmpeg-text: "Not scanned";
+    in-out property <string> runtime-whisper-text: "Not scanned";
+    in-out property <string> runtime-model-text: "Not scanned";
+    in-out property <string> runtime-install-status-text: "";
     in property <[QueueRow]> queue-rows;
     in property <bool> queue-paused: false;
 
@@ -91,7 +100,10 @@ export component AppWindow inherits Window {
 
             Button {
                 text: "Settings";
-                clicked => { root.settings-open = true; }
+                clicked => {
+                    root.settings-open = true;
+                    root.runtime-refresh-requested = true;
+                }
             }
         }
 
@@ -407,7 +419,7 @@ export component AppWindow inherits Window {
 
     if root.settings-open : VerticalBox {
         padding: 24px;
-        spacing: 18px;
+        spacing: 16px;
 
         HorizontalBox {
             spacing: 12px;
@@ -420,6 +432,7 @@ export component AppWindow inherits Window {
             Rectangle { horizontal-stretch: 1; }
             Button {
                 text: "Back";
+                enabled: !root.runtime-busy;
                 clicked => { root.settings-open = false; }
             }
         }
@@ -431,88 +444,94 @@ export component AppWindow inherits Window {
             opacity: 0.5;
         }
 
-        Text {
-            text: "RUNTIME SETUP";
-            font-size: 14px;
-            font-weight: 700;
-            opacity: 0.72;
+        HorizontalBox {
+            spacing: 10px;
+            Text {
+                text: "RUNTIME DEPENDENCIES";
+                font-size: 14px;
+                font-weight: 700;
+                opacity: 0.72;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.runtime-summary-text;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
         }
 
         Rectangle {
-            min-height: 300px;
+            min-height: 390px;
             border-width: 1px;
             border-color: Palette.border;
             border-radius: 10px;
 
             VerticalBox {
                 padding: 18px;
-                spacing: 12px;
+                spacing: 14px;
 
-                Text { text: "Media & transcription tools"; font-size: 18px; font-weight: 700; }
                 Text {
-                    text: "StoryTeller Lite discovers runtime tools when a job reaches Analyze. The portable layout below is recommended for this developer-test build.";
+                    text: "StoryTeller Lite scans environment overrides, its portable folders, PATH, WinGet links, Scoop/Chocolatey shims, and the Hugging Face model cache before offering any download.";
                     wrap: word-wrap;
                     opacity: 0.78;
                 }
 
-                Text { text: "ffmpeg"; font-weight: 700; }
+                Text { text: "ffmpeg"; font-size: 16px; font-weight: 700; }
+                Text { text: root.runtime-ffmpeg-text; wrap: word-wrap; opacity: 0.76; }
+
+                Text { text: "whisper.cpp CLI"; font-size: 16px; font-weight: 700; }
+                Text { text: root.runtime-whisper-text; wrap: word-wrap; opacity: 0.76; }
+
+                Text { text: "Whisper model — large-v3-turbo"; font-size: 16px; font-weight: 700; }
+                Text { text: root.runtime-model-text; wrap: word-wrap; opacity: 0.76; }
+
+                Rectangle {
+                    min-height: 1px;
+                    max-height: 1px;
+                    background: Palette.border;
+                    opacity: 0.5;
+                }
+
                 Text {
-                    text: "tools\\ffmpeg.exe next to StoryTeller-Lite.exe, or ffmpeg available on PATH. STORYTELLER_FFMPEG may also point to an executable.";
+                    text: "Automatic downloads are opt-in. ffmpeg and whisper.cpp archives are SHA-256 verified before installation. The default Whisper model is about 1.62 GB and is verified against its published SHA-256 before it is moved into models\\.";
                     wrap: word-wrap;
                     opacity: 0.72;
                 }
 
-                Text { text: "whisper.cpp CLI"; font-weight: 700; }
-                Text {
-                    text: "tools\\whisper-cli.exe next to StoryTeller-Lite.exe, or whisper-cli available on PATH. STORYTELLER_WHISPER may also point to an executable.";
+                if root.runtime-install-status-text != "" : Text {
+                    text: root.runtime-install-status-text;
+                    font-weight: root.runtime-busy ? 700 : 500;
                     wrap: word-wrap;
-                    opacity: 0.72;
-                }
-
-                Text { text: "Whisper model"; font-weight: 700; }
-                Text {
-                    text: "Default: models\\ggml-large-v3-turbo.bin next to StoryTeller-Lite.exe. STORYTELLER_WHISPER_MODEL may point directly to another model file.";
-                    wrap: word-wrap;
-                    opacity: 0.72;
                 }
             }
         }
 
         Text {
-            text: "CURRENT DEFAULTS";
-            font-size: 14px;
-            font-weight: 700;
-            opacity: 0.72;
-        }
-
-        Rectangle {
-            min-height: 170px;
-            border-width: 1px;
-            border-color: Palette.border;
-            border-radius: 10px;
-
-            VerticalBox {
-                padding: 18px;
-                spacing: 10px;
-                Text { text: "Whisper model: large-v3-turbo"; }
-                Text { text: "Language: Auto"; }
-                Text { text: "Output location: Next to source EPUB"; }
-                Text { text: "Audio encoding: Choose per book on the main screen"; }
-                Text {
-                    text: "Runtime download/install controls and persistent path pickers are not implemented yet; this page reports the configuration the current backend actually uses.";
-                    wrap: word-wrap;
-                    opacity: 0.72;
-                }
-            }
+            text: "New downloads are placed beside this portable app: tools\\ffmpeg.exe, tools\\whisper-cli.exe (with its DLLs), and models\\ggml-large-v3-turbo.bin. Existing working dependencies elsewhere on the PC are reused instead of downloaded.";
+            wrap: word-wrap;
+            opacity: 0.68;
         }
 
         Rectangle { vertical-stretch: 1; }
 
         HorizontalBox {
+            spacing: 10px;
+            Button {
+                text: "Re-scan";
+                enabled: !root.runtime-busy;
+                clicked => { root.runtime-refresh-requested = true; }
+            }
             Rectangle { horizontal-stretch: 1; }
             Button {
+                text: root.runtime-busy ? "Downloading…" : root.runtime-ready ? "Dependencies ready" : "Download missing";
+                primary: !root.runtime-ready;
+                enabled: !root.runtime-busy && !root.runtime-ready;
+                clicked => { root.runtime-install-requested = true; }
+            }
+            Button {
                 text: "Done";
-                primary: true;
+                enabled: !root.runtime-busy;
                 clicked => { root.settings-open = false; }
             }
         }
