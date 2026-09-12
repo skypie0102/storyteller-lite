@@ -36,6 +36,7 @@ export component AppWindow inherits Window {
     in-out property <string> audio-source-name: "";
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
+    in-out property <string> whisper-workers-text: "1";
     in-out property <bool> settings-open: false;
     in-out property <bool> runtime-refresh-requested: false;
     in-out property <bool> runtime-install-requested: false;
@@ -410,8 +411,8 @@ export component AppWindow inherits Window {
                         Text { text: row.status; vertical-alignment: center; opacity: 0.68; }
                         if row.waiting : Button { text: "↑"; enabled: row.can-move-up; clicked => { root.move-waiting(row.id, true); } }
                         if row.waiting : Button { text: "↓"; enabled: row.can-move-down; clicked => { root.move-waiting(row.id, false); } }
-                        if row.retryable : Button { text: "Retry from start"; clicked => { root.retry-from-start(row.id); } }
-                        Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
+                        if row.retryable : Button { text: "Retry from start"; clicked => { root.retry_from_start(row.id); } }
+                        Button { text: "Remove"; clicked => { root.remove_job(row.id); } }
                     }
                 }
             }
@@ -445,6 +446,45 @@ export component AppWindow inherits Window {
             opacity: 0.5;
         }
 
+        Text {
+            text: "PROCESSING";
+            font-size: 14px;
+            font-weight: 700;
+            opacity: 0.72;
+        }
+
+        Rectangle {
+            min-height: 84px;
+            max-height: 84px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            HorizontalBox {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 12px;
+                Text {
+                    text: "Whisper workers";
+                    font-size: 16px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                ComboBox {
+                    model: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
+                    current-index: 0;
+                    selected(value) => { root.whisper-workers-text = value; }
+                }
+                Text {
+                    text: "whisper.cpp processor count (-p). CPU thread allocation remains automatic.";
+                    vertical-alignment: center;
+                    opacity: 0.72;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
         HorizontalBox {
             spacing: 10px;
             Text {
@@ -463,7 +503,7 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            min-height: 405px;
+            min-height: 305px;
             border-width: 1px;
             border-color: Palette.border;
             border-radius: 10px;
