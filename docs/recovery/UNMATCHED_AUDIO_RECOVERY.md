@@ -30,6 +30,35 @@ Therefore Lite should not interpret “remove permanent OCR” as “remove OCR 
 
 Likewise, “streamlined allocator” means remove editor complexity, not necessarily remove the ability to recognize/assign Introduction, Credits, Graphic Readout, or other extra audio when useful.
 
+## Exact old `edgeMode` semantics
+
+The old serialized enum and recovered serializer jump table establish these discriminants and labels exactly:
+
+- `0` → `manual` — UI: **Manual allocation — recommended**
+- `1` → `automatic_player` — UI: **Automatic audio-player pages**
+- `2` → `automatic_transcript` — UI: **Automatic synchronized transcript**
+- `3` → `off` — UI: **Do not preserve**
+
+The finishing command builder behaved as follows:
+
+- every mode except `off` added `--preserve-unmatched-audio`;
+- `automatic_transcript` selected `--unmatched-page-mode transcript`;
+- the other preserving paths selected `--unmatched-page-mode player`;
+- manual review additionally supplied `--manual-allocations <json>` once the user had made decisions.
+
+This old four-mode selector is historical evidence only. Lite's recovered plan intentionally reduces it to **Smart / ReviewAll** plus a streamlined review screen.
+
+### Old OCR wiring mismatch
+
+Disassembly also confirms that the v0.39.0 desktop backend forwarded `--graphics-ocr` only when:
+
+- `useGraphicsOcr == true`; **and**
+- `edgeMode == automatic_transcript`.
+
+However, the bundled helper itself contains OCR-based Graphic Readout separation for `player` mode too. The old UI presented the OCR toggle generically rather than only for transcript mode.
+
+That is evidence of an old wiring mismatch/unused path, not a behavior Lite should copy. Lite should wire lazy OCR according to the current Smart classifier's needs, independent of this historical quirk.
+
 ## What the old installer reveals about lazy OCR
 
 The bundled Sigil-derived helper did not OCR the entire book indiscriminately.
@@ -63,7 +92,7 @@ This is genuinely **lazy/bounded OCR**, even though the old UI exposed a permane
 
 ## Graphic-readout classification evidence
 
-The old automatic player path attempted to detect when narration was reading text contained in an image.
+The old helper had an OCR-driven automatic-player path capable of detecting when narration was reading text contained in an image.
 
 High-level behavior:
 
@@ -89,16 +118,58 @@ These constants are **historical test vectors**, not mandatory Lite tuning value
 
 ## Old edge discovery behavior
 
-The old helper's automatic unmatched discovery was primarily an **edge-audio** system:
+The old helper's unmatched discovery was primarily an **edge-audio** system:
 
 - before the first safely aligned audio range → Introduction candidate;
 - after the last safely aligned audio range → Credits candidate;
 - whole processed tracks before/after the matched track range could also become edge candidates;
 - edge regions totaling under roughly 2 seconds were ignored;
-- the helper checked SMIL/chapter alignment evidence before deciding an edge boundary was safe to preserve;
-- some boundaries were refined using transcript/audio evidence.
+- the helper checked SMIL/chapter alignment evidence before deciding an edge boundary was safe to preserve.
+
+A first partial track was considered safe when existing SMIL coverage existed or the corresponding chapter's first matched sentence was sentence 0. A final partial track was considered safe when existing SMIL coverage existed or the final matched sentence reached the end of the chapter.
 
 That model should not replace Lite's newer general unmatched-segment alignment review. It is useful for understanding edge trimming/classification and read-aloud page behavior only.
+
+## Exact old edge-boundary refinement
+
+The helper did more than trust the raw alignment boundary.
+
+Historical constants:
+
+- transcript-boundary search radius: **6.0 s**
+- acceptable inter-cue silence for transcript refinement: **0.65–8.0 s**
+- physical audio search after a final boundary: **15.0 s**
+- physical transition silence: **2.0 s**
+
+### Transcript refinement
+
+Around a nominal boundary, the helper inspected neighboring timed transcript spans. It preferred the midpoint of a qualifying silence gap within 6 seconds of the nominal point:
+
+- Introduction preferred a gap midpoint at or before the nominal boundary.
+- Credits preferred a gap midpoint at or after the nominal boundary.
+
+If no qualifying gap existed, it fell back to nearby cue starts/ends/overlap edges rather than arbitrarily cutting through a spoken cue.
+
+### Final physical-audio refinement
+
+For a safely aligned final chapter boundary, a second path scanned from roughly `nominal - 0.5 s` through `nominal + 15 s` with FFmpeg `silencedetect` at approximately `-40 dB` and a minimum **2.0 s** silence.
+
+If a qualifying silence started no earlier than about `nominal - 0.10 s`, the helper moved the credits boundary to the midpoint of the first such silence, never before the nominal boundary. If detection failed, transcript refinement was the fallback.
+
+This is useful evidence for Lite's planned “automatic edge trimming”: choose a conservative silence/cue boundary near an already-safe alignment edge, rather than treating silence detection alone as proof that narration may be deleted.
+
+## Existing-overlay/audio trimming behavior
+
+When preserving edge audio separately, the helper prevented the existing Media Overlay from also claiming that edge region:
+
+- SMIL audio clips completely before the Introduction boundary or after the Credits boundary were removed;
+- clips straddling a boundary were shortened to that boundary;
+- the tolerance around these comparisons was roughly **0.0005 s**;
+- empty nested SMIL sequences were cleaned up afterward.
+
+The manual-allocation path additionally physically trimmed the packaged aligned **tail audio file** at the credits boundary when FFmpeg was available, then audited that the resulting file did not extend more than roughly **0.12 s** beyond the requested cut.
+
+The automatic preserve path did not use that same physical-tail trim in every case, so Lite should preserve the invariant (no duplicated/ambiguous referenced timing) rather than copying the exact old file-rewrite asymmetry.
 
 ## Manual inspection remained lazy
 
@@ -108,6 +179,8 @@ When opening the old manual allocator, the helper returned:
 - eligible image/document pairs near the edge.
 
 It did **not** need to pre-run full-book OCR merely to open the allocator. Image preview and classification work could be done only for the relevant candidate resources.
+
+Manual preview silence markers used FFmpeg `silencedetect` at approximately **-38 dB** with a minimum **0.35 s** silence.
 
 This is a good model for Lite: keep review startup cheap and perform image/OCR work only when Smart classification or the current segment actually needs it.
 
