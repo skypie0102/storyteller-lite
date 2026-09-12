@@ -1,6 +1,6 @@
 name: Windows test build
 
-# One-shot packaging trigger for the current Settings fix.
+# One-shot packaging trigger for the current Settings-page fix.
 # After the artifact is produced this workflow will be returned to manual-only.
 on:
   push:
