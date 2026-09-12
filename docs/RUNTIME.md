@@ -1,6 +1,6 @@
 # Runtime tooling
 
-Storyteller Lite keeps heavyweight media/ML tools outside the Rust UI process. The current Analyze backend expects `ffmpeg`, `whisper-cli` from whisper.cpp, and a ggml Whisper model.
+Storyteller Lite keeps heavyweight media/ML tools outside the Rust UI process. The current Analyze backend expects `ffmpeg`, a whisper.cpp CLI (`whisper-cli` or the legacy `main` executable), and a ggml Whisper model.
 
 ## Default Whisper model
 
@@ -16,40 +16,45 @@ A different model name may be supplied by `JobSettings` as model selection is ex
 
 ### ffmpeg
 
-The backend checks, in order:
+The runtime checks an explicit `STORYTELLER_FFMPEG` override first, then the portable application/tool folders and `PATH`. Settings probes the resolved executable with `ffmpeg -version` before reporting it ready.
 
-1. `STORYTELLER_FFMPEG`
-2. `tools/ffmpeg.exe` next to the application on Windows (`tools/ffmpeg` elsewhere)
-3. `ffmpeg.exe` next to the application on Windows (`ffmpeg` elsewhere)
-4. `ffmpeg` from `PATH`
+### whisper.cpp CLI and CUDA builds
 
-The Settings runtime scan probes a discovered executable with `ffmpeg -version` before reporting it ready.
+`STORYTELLER_WHISPER` is an explicit override and wins when it points to a working CLI. Automatic discovery accepts both modern `whisper-cli.exe` and the older `main.exe` naming used by previous whisper.cpp packages.
 
-### whisper.cpp CLI
+On Windows, automatic discovery searches:
 
-The backend checks, in order:
+- the portable StoryTeller application and `tools/` folders;
+- `PATH`;
+- bounded persistent-runtime searches under `%LOCALAPPDATA%`, `%APPDATA%`, `%PROGRAMDATA%`, the user's profile, and `.cache`;
+- known StoryTeller/whisper folder names and direct child folders whose names contain StoryTeller, whisper, or historical project/vendor hints.
 
-1. `STORYTELLER_WHISPER`
-2. `tools/whisper-cli.exe` next to the application on Windows (`tools/whisper-cli` elsewhere)
-3. `whisper-cli.exe` next to the application on Windows (`whisper-cli` elsewhere)
-4. `whisper-cli` from `PATH`
+The persistent search is intentionally bounded (depth and entry count) rather than scanning the entire PC. Candidates must successfully run with `--help` before they are considered usable.
 
-The Settings runtime scan probes a discovered executable with `whisper-cli --help` before reporting it ready.
+When multiple working auto-discovered whisper.cpp executables exist, a CUDA-capable build is preferred. CUDA capability is recognized from CUDA/cuBLAS path names or neighboring runtime libraries such as `ggml-cuda`, `cublas64`, `cublasLt64`, and `cudart64`.
+
+The runtime also recognizes the historical package naming pattern used by the former StoryTeller app, including:
+
+```text
+whisper-cpp-windows-x64-cuda-13.1.0.tar.gz
+whisper-cpp-windows-x64-cuda-*.tar.gz
+whisper-cpp-windows-x64-cuda-*.tgz
+whisper-cpp-windows-x64-cuda-*.zip
+```
+
+If a compatible cached archive is found but no runnable CLI is available, **Download missing** tries to reuse/extract that archive into the current portable `tools/` folder before downloading a replacement. Both `whisper-cli.exe` and legacy `main.exe` archive layouts are supported, and sibling runtime DLLs/resources are copied with the executable.
+
+Immediately before a processing worker starts, StoryTeller Lite re-runs runtime discovery and binds the exact resolved ffmpeg, whisper.cpp, and model paths into the backend environment. Therefore the CUDA/CPU executable shown by Settings is the executable Analyze will launch, unless the user supplied an explicit override.
 
 ### Whisper model
 
-`STORYTELLER_WHISPER_MODEL` may point directly to a non-empty model file. Otherwise the backend and Settings scan check conventional model folders for `ggml-<model>.bin`:
-
-- `%LOCALAPPDATA%/Storyteller OneClick Lite/models/` on Windows
-- `models/` next to the application
-- `tools/models/` next to the application
-- `models/` under the current working directory (development convenience)
+`STORYTELLER_WHISPER_MODEL` may point directly to a non-empty model file. Otherwise discovery checks the current StoryTeller model folders and the same bounded historical runtime locations for `ggml-<model>.bin`.
 
 A model is reported ready only when the candidate is a non-empty regular file.
 
 ## Settings runtime manager
 
-Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. If anything is missing, **Download missing** offers an explicit, user-initiated portable install on Windows. Processing never silently starts a multi-gigabyte model download.
+Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. The whisper row identifies a detected CUDA build explicitly. If anything is missing, **Download missing** offers an explicit, user-initiated portable install on Windows. Processing never silently starts a multi-gigabyte model download.
 
 Downloads are performed on a background thread so the Slint UI remains responsive. Missing dependencies are installed beside the portable application:
 
@@ -59,15 +64,14 @@ tools/whisper-cli.exe
 models/ggml-large-v3-turbo.bin
 ```
 
-The whisper.cpp package's sibling runtime DLLs are copied into `tools/` with `whisper-cli.exe`.
+Current download behavior and integrity checks:
 
-Current download sources and integrity checks:
+- ffmpeg: Gyan Windows Essentials ZIP plus the provider's published `.sha256`; the archive hash must match before extraction.
+- whisper.cpp: official `ggml-org/whisper.cpp` GitHub Windows x64 release assets; the GitHub asset must publish a `sha256:` digest and the downloaded archive must match it.
+- If `nvidia-smi` confirms an NVIDIA GPU and whisper.cpp is missing, the downloader prefers an official CUDA/cuBLAS-enabled Windows x64 asset, falling back to the CPU x64 asset only if a compatible CUDA asset is unavailable.
+- `large-v3-turbo`: the canonical whisper.cpp model download; the staged file must match the pinned SHA-256 before it is moved into `models/`.
 
-- ffmpeg: the Gyan Windows Essentials ZIP plus the provider's published `.sha256`; the archive hash must match before extraction.
-- whisper.cpp: an official `ggml-org/whisper.cpp` GitHub release asset named `whisper-bin-x64.zip`; the GitHub asset must publish a `sha256:` digest and the downloaded archive must match it.
-- `large-v3-turbo`: the canonical whisper.cpp model download; the downloaded file is staged as a temporary partial file and must match the pinned SHA-256 before it is moved into `models/`.
-
-After installation, Storyteller Lite probes ffmpeg and whisper-cli again and re-runs dependency detection before displaying **Dependencies ready**. If one dependency succeeds and a later dependency fails, the successful portable file is retained and the next attempt downloads only what is still missing.
+After installation, StoryTeller Lite probes ffmpeg and whisper.cpp again and re-runs dependency detection before displaying the final state. If one dependency succeeds and a later dependency fails, the successful portable file is retained and the next attempt downloads only what is still missing.
 
 Automatic installation is currently Windows-focused and uses PowerShell. The portable application directory must be writable; a build placed under a protected directory such as `Program Files` may need to be moved to a user-writable folder before installing dependencies. The current downloader does not expose mid-download cancellation yet.
 
