@@ -5,6 +5,7 @@ use std::{
     process::Command,
     sync::{mpsc, Arc, Mutex},
     thread,
+    time::Duration,
 };
 use storyteller_core::{
     merge_chunk_transcripts, plan_transcription_chunks, read_whisper_transcript,
@@ -151,6 +152,7 @@ fn run_chunk_workers(
     observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
 ) -> Result<Vec<(TranscriptionChunk, WhisperTranscript)>, String> {
     let queue = Arc::new(Mutex::new(VecDeque::from(chunks.to_vec())));
+    let worker_cancellation = CancellationToken::default();
     let (sender, receiver) = mpsc::channel::<WorkerEvent>();
     let mut handles = Vec::with_capacity(effective_workers);
 
@@ -160,15 +162,15 @@ fn run_chunk_workers(
         let source = source.to_path_buf();
         let temporary_dir = temporary_dir.to_path_buf();
         let config = config.clone();
-        let cancellation = cancellation.clone();
+        let worker_cancellation = worker_cancellation.clone();
         handles.push(thread::spawn(move || loop {
-            if cancellation.is_requested() {
+            if worker_cancellation.is_requested() {
                 return;
             }
             let chunk = match queue.lock() {
                 Ok(mut queue) => queue.pop_front(),
                 Err(_) => {
-                    cancellation.request();
+                    worker_cancellation.request();
                     let _ = sender.send(WorkerEvent::Failed(
                         "Transcription worker queue lock was poisoned.".into(),
                     ));
@@ -184,7 +186,7 @@ fn run_chunk_workers(
                 chunk,
                 &config,
                 per_worker_threads,
-                &cancellation,
+                &worker_cancellation,
                 &sender,
             ) {
                 Ok(transcript) => {
@@ -196,7 +198,7 @@ fn run_chunk_workers(
                     }
                 }
                 Err(error) => {
-                    cancellation.request();
+                    worker_cancellation.request();
                     let _ = sender.send(WorkerEvent::Failed(error));
                     return;
                 }
@@ -211,9 +213,15 @@ fn run_chunk_workers(
     let mut first_error = None::<String>;
 
     while completed < chunks.len() && first_error.is_none() {
-        let event = match receiver.recv() {
+        let event = match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(event) => event,
-            Err(_) => {
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if cancellation.is_requested() {
+                    worker_cancellation.request();
+                }
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
                 first_error = Some("Transcription workers stopped before all chunks completed.".into());
                 break;
             }
@@ -235,7 +243,7 @@ fn run_chunk_workers(
                     percent: overall.min(100) as u8,
                     backend,
                 }) {
-                    cancellation.request();
+                    worker_cancellation.request();
                     first_error = Some(error);
                 }
             }
@@ -251,11 +259,12 @@ fn run_chunk_workers(
                     percent: overall.min(100) as u8,
                     backend: None,
                 }) {
-                    cancellation.request();
+                    worker_cancellation.request();
                     first_error = Some(error);
                 }
             }
             WorkerEvent::Failed(error) => {
+                worker_cancellation.request();
                 first_error = Some(error);
             }
         }
@@ -266,11 +275,11 @@ fn run_chunk_workers(
             first_error = Some("A transcription worker thread panicked.".into());
         }
     }
-    if let Some(error) = first_error {
-        return Err(error);
-    }
     if cancellation.is_requested() {
         return Err("Transcription was cancelled.".into());
+    }
+    if let Some(error) = first_error {
+        return Err(error);
     }
 
     parts
