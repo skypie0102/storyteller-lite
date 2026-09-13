@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    merge_chunk_transcripts, plan_transcription_chunks, read_whisper_transcript,
+    merge_chunk_transcripts, plan_transcription_chunks, read_whisper_transcript_chunk,
     run_cancellable_command, validate_chunk_plan, write_whisper_transcript, CancellationToken,
     CommandOutput, CommandRunError, CommandStream, TranscriptionChunk, WhisperTranscript,
     DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
@@ -370,7 +370,7 @@ fn transcribe_one_chunk(
         Err(error) => return Err(format!("Could not transcribe audio chunk: {error}")),
     }
     validate_nonempty_file(&raw_transcript, "Whisper chunk transcript")?;
-    let transcript = read_whisper_transcript(&raw_transcript)?;
+    let transcript = read_whisper_transcript_chunk(&raw_transcript)?;
     let _ = fs::remove_file(&wav_path);
     let _ = fs::remove_file(&raw_transcript);
     Ok(transcript)
