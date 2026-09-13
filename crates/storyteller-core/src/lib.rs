@@ -44,7 +44,7 @@ pub use epub_validate::{
 };
 pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,
-    JobStatus,
+    JobStatus, MAX_WHISPER_WORKERS, MIN_WHISPER_WORKERS,
 };
 pub use progress::{LiveMetrics, PipelineProgress, PipelineStage, StageProgress, StageStatus};
 pub use queue::{JobQueue, QueueMove, QueueState};
