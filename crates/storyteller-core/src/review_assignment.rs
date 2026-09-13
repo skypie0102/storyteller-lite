@@ -458,6 +458,8 @@ mod tests {
                 audio_end_ms: 2000,
                 transcript_text: "bravo middle".into(),
                 suggestion: None,
+                edge: None,
+                silence: None,
                 decision,
             }],
             accepted_unmatched_exclusion: false,

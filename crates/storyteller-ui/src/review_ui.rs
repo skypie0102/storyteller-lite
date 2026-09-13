@@ -9,8 +9,9 @@ use std::{
 };
 use storyteller_core::{
     apply_audio_review_decision, prepared_job_sources, read_epub_corpus, review_text_candidates,
-    AlignmentDocument, AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination, Job,
-    JobQueue, JobStatus, PipelineStage, DEFAULT_REVIEW_CANDIDATE_LIMIT,
+    AlignmentDocument, AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination,
+    AudioReviewEdge, AudioReviewItem, Job, JobQueue, JobStatus, PipelineStage,
+    DEFAULT_REVIEW_CANDIDATE_LIMIT,
 };
 
 const UI_CANDIDATE_LIMIT: usize = 4;
@@ -330,7 +331,7 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
         .into(),
     );
     ui.set_review_item_transcript_text(item.transcript_text.clone().into());
-    ui.set_review_item_decision_text(decision_text(&item.decision).into());
+    ui.set_review_item_decision_text(review_context_text(item).into());
     ui.set_review_seek_text(
         format!(
             "Seek {} / {}",
@@ -509,6 +510,30 @@ fn ffplay_file_name() -> &'static str {
     } else {
         "ffplay"
     }
+}
+
+fn review_context_text(item: &AudioReviewItem) -> String {
+    let decision = decision_text(&item.decision);
+    let edge = match item.edge {
+        Some(AudioReviewEdge::Introduction) => {
+            Some("Smart evidence: leading edge / Introduction candidate")
+        }
+        Some(AudioReviewEdge::Credits) => Some("Smart evidence: trailing edge / Credits candidate"),
+        None => None,
+    };
+    let silence = item.silence.map(|evidence| {
+        format!(
+            "Silence evidence: {}% silent at {} dB (minimum gap {:.2}s)",
+            evidence.silence_percent(),
+            evidence.threshold_db,
+            evidence.minimum_silence_ms as f64 / 1000.0
+        )
+    });
+    [Some(decision), edge.map(str::to_string), silence]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" — ")
 }
 
 fn decision_text(decision: &AudioReviewDecision) -> String {

@@ -34,9 +34,10 @@ pub use audio_encode::{
 pub use audio_review::{
     accept_unmatched_audio_exclusion, accept_unmatched_audio_exclusion_with_draft,
     apply_audio_review_decision, create_audio_review_report, create_audio_review_report_with_draft,
-    read_audio_review_report, AudioReviewClassification, AudioReviewDecision,
-    AudioReviewDecisionSource, AudioReviewDestination, AudioReviewItem, AudioReviewPolicy,
-    AudioReviewReport, AudioReviewSuggestion, AudioReviewSummary,
+    read_audio_review_report, set_audio_review_silence_evidence, AudioReviewClassification,
+    AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination, AudioReviewEdge,
+    AudioReviewItem, AudioReviewPolicy, AudioReviewReport, AudioReviewSilenceEvidence,
+    AudioReviewSuggestion, AudioReviewSummary,
 };
 pub use cancellation::CancellationToken;
 pub use command::{run_cancellable_command, CommandOutput, CommandRunError, CommandStream};

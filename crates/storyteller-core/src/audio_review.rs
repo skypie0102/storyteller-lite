@@ -22,6 +22,30 @@ pub enum AudioReviewDecisionSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum AudioReviewEdge {
+    Introduction,
+    Credits,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioReviewSilenceEvidence {
+    pub silent_ms: u64,
+    pub duration_ms: u64,
+    pub threshold_db: i16,
+    pub minimum_silence_ms: u64,
+}
+
+impl AudioReviewSilenceEvidence {
+    pub fn silence_percent(&self) -> u8 {
+        if self.duration_ms == 0 {
+            return 0;
+        }
+        ((self.silent_ms.saturating_mul(100) / self.duration_ms).min(100)) as u8
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AudioReviewClassification {
     Introduction,
     Credits,
@@ -110,6 +134,10 @@ pub struct AudioReviewItem {
     #[serde(default)]
     pub suggestion: Option<AudioReviewSuggestion>,
     #[serde(default)]
+    pub edge: Option<AudioReviewEdge>,
+    #[serde(default)]
+    pub silence: Option<AudioReviewSilenceEvidence>,
+    #[serde(default)]
     pub decision: AudioReviewDecision,
 }
 
@@ -187,13 +215,16 @@ pub fn create_audio_review_report_with_draft(
                 &segment.transcript_text,
             );
             let decision = saved_decisions.get(&id).cloned().unwrap_or_default();
+            let edge = edge_kind(alignment_index, first_matched, last_matched);
             AudioReviewItem {
                 id,
                 alignment_index,
                 audio_start_ms: segment.audio_start_ms,
                 audio_end_ms: segment.audio_end_ms,
                 transcript_text: segment.transcript_text.clone(),
-                suggestion: edge_suggestion(alignment_index, first_matched, last_matched),
+                suggestion: edge.map(edge_suggestion),
+                edge,
+                silence: None,
                 decision,
             }
         })
@@ -271,6 +302,25 @@ pub fn apply_audio_review_decision(
     validate_audio_review_report(&report)?;
     write_audio_review_report(report_path, &report)?;
     write_review_draft(draft_path, &report)
+}
+
+pub fn set_audio_review_silence_evidence(
+    report_path: &Path,
+    item_id: &str,
+    evidence: AudioReviewSilenceEvidence,
+) -> Result<(), String> {
+    if evidence.duration_ms == 0 || evidence.silent_ms > evidence.duration_ms {
+        return Err("Audio review silence evidence contains an invalid duration.".into());
+    }
+    let mut report = read_audio_review_report(report_path)?;
+    let item = report
+        .unmatched
+        .iter_mut()
+        .find(|item| item.id == item_id)
+        .ok_or_else(|| format!("Audio review item {item_id} was not found."))?;
+    item.silence = Some(evidence);
+    validate_audio_review_report(&report)?;
+    write_audio_review_report(report_path, &report)
 }
 
 pub fn accept_unmatched_audio_exclusion(path: &Path) -> Result<(), String> {
@@ -451,21 +501,28 @@ fn review_item_id(
     format!("review-{:x}", hasher.finalize())
 }
 
-fn edge_suggestion(
+fn edge_kind(
     alignment_index: usize,
     first_matched: Option<usize>,
     last_matched: Option<usize>,
-) -> Option<AudioReviewSuggestion> {
+) -> Option<AudioReviewEdge> {
     match (first_matched, last_matched) {
-        (Some(first), _) if alignment_index < first => Some(AudioReviewSuggestion {
+        (Some(first), _) if alignment_index < first => Some(AudioReviewEdge::Introduction),
+        (_, Some(last)) if alignment_index > last => Some(AudioReviewEdge::Credits),
+        _ => None,
+    }
+}
+
+fn edge_suggestion(edge: AudioReviewEdge) -> AudioReviewSuggestion {
+    match edge {
+        AudioReviewEdge::Introduction => AudioReviewSuggestion {
             classification: AudioReviewClassification::Introduction,
             reason: "Unmatched narration occurs before the first matched book segment.".into(),
-        }),
-        (_, Some(last)) if alignment_index > last => Some(AudioReviewSuggestion {
+        },
+        AudioReviewEdge::Credits => AudioReviewSuggestion {
             classification: AudioReviewClassification::Credits,
             reason: "Unmatched narration occurs after the last matched book segment.".into(),
-        }),
-        _ => None,
+        },
     }
 }
 

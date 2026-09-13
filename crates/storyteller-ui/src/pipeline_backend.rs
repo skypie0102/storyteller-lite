@@ -7,16 +7,19 @@ use chunked_transcription::{
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    process::Command,
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
     align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report_with_draft,
     encode_audiobook, extract_epub_corpus, materialize_reviewed_alignment, prepare_job_sources,
     prepared_job_sources, publish_validated_epub, read_audio_review_report,
+    run_cancellable_command, set_audio_review_silence_evidence,
     spawn_pipeline_worker_with_preflight, validate_readaloud_epub, write_validation_report,
-    AudioCodec, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
-    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
-    RuntimeCoordinator, StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    AudioCodec, AudioReviewEdge, AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace,
+    LiveMetrics, PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle,
+    ResourceRequest, ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext,
+    StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -285,6 +288,48 @@ impl LitePipelineBackend {
             context.job().settings.audio_review_policy,
         )
         .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        if summary.unmatched_segments > 0 {
+            let prepared = prepared_job_sources(context.job(), context.workspace())
+                .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+            let report = read_audio_review_report(&report_path)
+                .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+            let ffmpeg = resolve_executable("STORYTELLER_FFMPEG", "ffmpeg");
+            let cancellation = context.cancellation_token();
+            for item in report.unmatched.iter().filter(|item| item.edge.is_some()) {
+                context
+                    .set_activity(
+                        match item.edge {
+                            Some(AudioReviewEdge::Introduction) => {
+                                "Checking leading unmatched audio evidence"
+                            }
+                            Some(AudioReviewEdge::Credits) => {
+                                "Checking trailing unmatched audio evidence"
+                            }
+                            None => "Checking unmatched audio evidence",
+                        },
+                        self.elapsed_millis(),
+                    )
+                    .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+                match detect_review_silence(
+                    &ffmpeg,
+                    prepared.audiobook(),
+                    item.audio_start_ms,
+                    item.audio_end_ms,
+                    &cancellation,
+                ) {
+                    Ok(evidence) => {
+                        set_audio_review_silence_evidence(&report_path, &item.id, evidence)
+                            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?
+                    }
+                    Err(error) if cancellation.is_requested() => {
+                        return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+                    }
+                    Err(_) => {
+                        // Silence evidence is advisory. A failed probe must not erase or auto-resolve review work.
+                    }
+                }
+            }
+        }
         context.set_metrics(
             LiveMetrics {
                 match_percent: Some(summary.match_percent),
@@ -721,6 +766,96 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         effective_language: effective_language(job),
         effective_whisper_model,
     }
+}
+
+const REVIEW_SILENCE_THRESHOLD_DB: i16 = -38;
+const REVIEW_MINIMUM_SILENCE_MS: u64 = 350;
+
+fn detect_review_silence(
+    ffmpeg: &Path,
+    audiobook: &Path,
+    start_ms: u64,
+    end_ms: u64,
+    cancellation: &storyteller_core::CancellationToken,
+) -> Result<AudioReviewSilenceEvidence, String> {
+    let duration_ms = end_ms.saturating_sub(start_ms);
+    if duration_ms == 0 {
+        return Err("Audio review segment has no duration.".into());
+    }
+    let filter = format!(
+        "asetpts=PTS-STARTPTS,silencedetect=noise={}dB:d={:.3}",
+        REVIEW_SILENCE_THRESHOLD_DB,
+        REVIEW_MINIMUM_SILENCE_MS as f64 / 1000.0
+    );
+    let mut command = Command::new(ffmpeg);
+    command
+        .arg("-hide_banner")
+        .arg("-nostdin")
+        .arg("-loglevel")
+        .arg("info")
+        .arg("-ss")
+        .arg(format_seconds(start_ms))
+        .arg("-t")
+        .arg(format_seconds(duration_ms))
+        .arg("-i")
+        .arg(audiobook)
+        .arg("-af")
+        .arg(filter)
+        .arg("-f")
+        .arg("null")
+        .arg("-");
+    let output = run_cancellable_command(&mut command, cancellation, |_, _| {})
+        .map_err(|error| error.to_string())?;
+    if !output.success {
+        return Err(format!(
+            "FFmpeg silence probe failed with exit code {:?}.",
+            output.exit_code
+        ));
+    }
+    Ok(AudioReviewSilenceEvidence {
+        silent_ms: parse_silence_duration_ms(&output.stderr, duration_ms),
+        duration_ms,
+        threshold_db: REVIEW_SILENCE_THRESHOLD_DB,
+        minimum_silence_ms: REVIEW_MINIMUM_SILENCE_MS,
+    })
+}
+
+fn parse_silence_duration_ms(stderr: &str, duration_ms: u64) -> u64 {
+    let mut open_start = None::<f64>;
+    let mut intervals = Vec::<(f64, f64)>::new();
+    for line in stderr.lines() {
+        if let Some(value) = value_after_marker(line, "silence_start:") {
+            open_start = value.parse::<f64>().ok();
+        }
+        if let Some(value) = value_after_marker(line, "silence_end:") {
+            if let (Some(start), Ok(end)) = (open_start.take(), value.parse::<f64>()) {
+                intervals.push((start, end));
+            }
+        }
+    }
+    if let Some(start) = open_start {
+        intervals.push((start, duration_ms as f64 / 1000.0));
+    }
+    intervals
+        .into_iter()
+        .map(|(start, end)| {
+            let start_ms = (start.max(0.0) * 1000.0).round() as u64;
+            let end_ms = (end.max(0.0) * 1000.0).round() as u64;
+            end_ms
+                .min(duration_ms)
+                .saturating_sub(start_ms.min(duration_ms))
+        })
+        .fold(0u64, u64::saturating_add)
+        .min(duration_ms)
+}
+
+fn value_after_marker<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    let (_, value) = line.split_once(marker)?;
+    value.split_whitespace().next()
+}
+
+fn format_seconds(milliseconds: u64) -> String {
+    format!("{}.{:03}", milliseconds / 1000, milliseconds % 1000)
 }
 
 fn effective_language(job: &Job) -> String {
