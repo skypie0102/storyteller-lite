@@ -1,0 +1,41 @@
+name: Whisper chunk workers validation
+
+on:
+  push:
+    branches:
+      - feature/whisper-chunk-workers
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whisper-chunk-workers-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build native Slint shell
+        run: cargo build -p storyteller-ui
