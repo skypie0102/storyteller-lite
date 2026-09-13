@@ -8,8 +8,9 @@ Read this file before making substantial changes.
 - Active recovered code branch: `recovery/rust-slint`
 - Default branch `main` is **not** the Rust + Slint implementation branch and must not be used as current code truth.
 - P1 Whisper chunk workers are integrated and Windows-validated.
-- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, and real supplemental Introduction/Credits rendering.
-- The supplemental edge-page source slice passed Windows validation on GitHub Actions run `34738027167`; validated source commit `cea590ada02c7942a8fda7226631f22d503e55b1` is included in recovery.
+- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, real supplemental Introduction/Credits rendering, and behaviorally distinct Smart/ReviewAll edge handling.
+- Supplemental edge-page rendering passed Windows validation on run `34738027167`; validated source commit `cea590ada02c7942a8fda7226631f22d503e55b1` is included in recovery.
+- Smart edge preservation passed Windows validation on run `34745516558`; validated source commit `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c` is included in recovery.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
@@ -117,23 +118,21 @@ Current allocator/core behavior:
 - Review cannot finish while any item is Pending.
 - Effective alignment materialization converts validated manual text assignments into matched blocks while retaining the original automatic alignment as source truth.
 
-Current edge evidence behavior:
+Current edge evidence and Smart behavior:
 
 - Unmatched segments before the first matched segment are marked Introduction candidates; those after the final matched segment are marked Credits candidates.
 - Only those already-bounded edge segments are probed with FFmpeg `silencedetect`.
 - Review evidence currently uses approximately `-38 dB` and `0.35 s`, matching the recovered manual-inspection evidence.
 - Silence percentage is advisory. Probe failure does not erase review work and silence alone does not authorize deletion.
-- Spoken edge audio is not automatically resolved yet.
-
-Current `Smart / ReviewAll` caveat:
-
-- The setting is fully wired into queued job settings and passed to report creation.
-- The report builder currently does **not** apply policy-specific automatic decisions; `Smart` and `ReviewAll` therefore do not yet behaviorally diverge.
-- Do not describe Smart auto-classification as complete until that changes and is regression-tested.
+- `Smart` now automatically preserves leading/trailing unmatched narration as supplemental Introduction/Credits pages when there is a concrete matched EPUB anchor.
+- `ReviewAll` leaves those same edge regions Pending for user inspection/override.
+- Smart is deliberately non-destructive here: it never auto-excludes these unmatched edge segments.
+- Existing **manual** draft decisions always win over Smart. Existing **automatic** decisions are recomputed according to the active policy, so a ReviewAll rebuild cannot silently retain a previous Smart assignment.
+- Internal/non-edge unmatched segments remain Pending; Smart does not invent a destination for them.
 
 ### Supplemental Introduction/Credits rendering — implemented and Windows-validated
 
-A leading/trailing review item can now be manually preserved as a real read-aloud page instead of being forced onto an existing paragraph.
+A leading/trailing review item can now be preserved as a real read-aloud page instead of being forced onto an existing paragraph. Preservation can be manual or, in Smart mode, automatic for anchored edge narration.
 
 Behavior:
 
@@ -141,21 +140,23 @@ Behavior:
 - Credits creates a supplemental destination anchored **after** the last matched EPUB spine document.
 - The durable destination model records `BeforeAnchor` / `AfterAnchor` separately from normal text/image destinations.
 - Supplemental decisions stay out of ordinary text alignment materialization; the EPUB builder consumes them separately from `review.json`.
-- Build EPUB generates one XHTML page and one SMIL overlay for each reviewed supplemental item, using the real transcript text and real audiobook clip interval.
+- Build EPUB generates one XHTML page and one SMIL overlay for each supplemental item, using the real transcript text and real audiobook clip interval.
 - The generated XHTML and SMIL are added to the OPF manifest, the page receives `media-overlay`, a spine itemref is inserted around the chosen anchor, and per-overlay duration metadata is written.
 - Total Media Overlay duration includes supplemental clips.
-- Build EPUB semantic fingerprint was bumped to `storyteller:epub-media-overlay-v2-supplemental-edge` so older build checkpoints are not reused silently.
-- The allocator exposes **Preserve as Introduction** / **Preserve as Credits** only for corresponding edge candidates.
+- Build EPUB semantic fingerprint is `storyteller:epub-media-overlay-v2-supplemental-edge`, so older build checkpoints are not reused silently.
+- The allocator still exposes **Preserve as Introduction** / **Preserve as Credits** for corresponding edge candidates so ReviewAll/manual override remains available.
 
-Validation run `34738027167` passed:
+Supplemental rendering validation run `34738027167` passed:
 
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
 - `cargo build -p storyteller-ui`
 
-Validated source commit: `cea590ada02c7942a8fda7226631f22d503e55b1`.
+Validated supplemental source commit: `cea590ada02c7942a8fda7226631f22d503e55b1`.
 
-Important remaining validation debt: add dedicated regression fixtures for supplemental OPF manifest/spine ordering, generated XHTML+SMIL clip relationships, duration metadata, and Smart/manual mixtures. Existing workspace tests/build gates passed, but this new path deserves explicit feature fixtures before P2 is considered complete.
+Smart edge-policy validation run `34745516558` passed the same three gates. Validated Smart source commit: `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c`.
+
+Important remaining validation debt: add dedicated regression fixtures for supplemental OPF manifest/spine ordering, generated XHTML+SMIL clip relationships, duration metadata, review-draft restoration, and Smart/manual mixtures. Existing workspace tests/build gates passed, but this path deserves explicit feature fixtures before P2 is considered complete.
 
 ### Build/Validate boundaries that remain
 
@@ -170,10 +171,10 @@ Queue failure behavior already matches recovered OneClick: terminal worker resul
 - Old OneClick had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings.
 - Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs; historical backend defaults are not Lite compatibility requirements.
 - Old alignment launched Whisper with `--processors 1` separately from `--parallel-transcribes`, proving parallel transcribes was higher-level work concurrency rather than whisper.cpp processor count.
-- Old manual allocation persisted `manualDrafts`; durable review decisions were separate from disposable/rebuildable preview workspaces. Lite now preserves this boundary with `review-draft.json`.
+- Old manual allocation persisted `manualDrafts`; durable review decisions were separate from disposable/rebuildable preview workspaces. Lite preserves this boundary with `review-draft.json`.
 - Historical OCR was bounded/lazy: narrow nearby candidates first, embedded text hints where possible, OCR only when needed.
 - Old edge handling refined already-safe boundaries around transcript/silence evidence; silence detection alone was not proof that narration could be discarded.
-- Introduction/Credits could become supplemental XHTML+SMIL pages; Lite now implements the reduced manual form of this behavior.
+- Introduction/Credits could become supplemental XHTML+SMIL pages; Lite now implements both manual and conservative Smart preservation through that reduced rendering path.
 - Graphic Readout narration could attach to an existing image page when validated; this remains pending in Lite.
 - Old finishing logic required complete non-overlapping coverage and explicit targets, followed by a final independent audit.
 - Old zero-length SMIL repair was narrowly `clipEnd = clipBegin + 0.001s`; the final audit could still reject invalid/overlapping output.
@@ -185,14 +186,13 @@ Queue failure behavior already matches recovered OneClick: terminal worker resul
 
 Do these next, in order unless a concrete failure requires a smaller prerequisite:
 
-1. **Make Smart and ReviewAll behaviorally different.** ReviewAll must surface every region that Smart would otherwise resolve. Smart may act only on deterministic, auditable high-confidence rules.
-2. **Add conservative automatic edge handling now that supplemental rendering exists.** Use edge identity plus tested timing/silence/transcript rules. Do not auto-delete spoken Introduction/Credits merely because silence is present nearby.
-3. **Add dedicated supplemental regression fixtures** for OPF manifest/spine ordering, XHTML+SMIL clip timing, duration metadata, review draft restoration, and mixed automatic/manual decisions.
-4. **Add bounded image candidate discovery** near the relevant reading-order edge/current segment. Consume embedded `alt`, `title`, SVG text hints before OCR.
-5. **Add lazy OCR** only when Smart or the current unresolved review item actually needs image text evidence. Do not restore a permanent OCR setting.
-6. **Implement high-confidence Graphic Readout assignment** to a validated image/page destination, preventing overlapping/double allocation.
-7. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
-8. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
+1. **Add dedicated supplemental/Smart regression fixtures** for OPF manifest/spine ordering, XHTML+SMIL clip timing, duration metadata, review-draft restoration, and mixed automatic/manual decisions.
+2. **Add bounded image candidate discovery** near the relevant reading-order edge/current segment. Consume embedded `alt`, `title`, and SVG text hints before OCR.
+3. **Add lazy OCR** only when Smart or the current unresolved review item actually needs image text evidence. Do not restore a permanent OCR setting.
+4. **Implement high-confidence Graphic Readout assignment** to a validated image/page destination, preventing overlapping/double allocation.
+5. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
+6. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
+7. Keep weak/ambiguous/non-edge regions Pending unless a deterministic auditable rule is added and regression-tested.
 
 Historical classifier thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are useful test vectors, not mandatory Lite constants. Reimplement/test behavior in Rust rather than copying the GPL helper.
 
