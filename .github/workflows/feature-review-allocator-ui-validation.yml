@@ -31,6 +31,15 @@ jobs:
       - name: Wire review allocator UI
         run: python .github/scripts/patch-review-allocator-ui.py
 
+      - name: Fix allocator controller compile details
+        shell: pwsh
+        run: |
+          $path = 'crates/storyteller-ui/src/review_ui.rs'
+          $content = Get-Content -Raw $path
+          $content = $content.Replace('path::{Path, PathBuf},', 'path::PathBuf,')
+          $content = $content.Replace('                .collect(),', '                .collect::<Vec<_>>(),')
+          Set-Content -NoNewline -Path $path -Value $content
+
       - name: Apply Rust formatting
         run: cargo fmt --all
 
