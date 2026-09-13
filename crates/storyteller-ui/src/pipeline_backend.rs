@@ -1,17 +1,22 @@
+#[path = "chunked_transcription.rs"]
+mod chunked_transcription;
+
+use chunked_transcription::{
+    transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, ChunkedTranscriptionProgress,
+};
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
     align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report, encode_audiobook,
     extract_epub_corpus, prepare_job_sources, prepared_job_sources, publish_validated_epub,
-    read_audio_review_report, run_cancellable_command, spawn_pipeline_worker_with_preflight,
-    validate_readaloud_epub, write_validation_report, AudioCodec, CommandOutput, CommandRunError,
-    CommandStream, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
-    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
-    RuntimeCoordinator, StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    read_audio_review_report, spawn_pipeline_worker_with_preflight, validate_readaloud_epub,
+    write_validation_report, AudioCodec, HardwareProfile, Job, JobWorkspace, LiveMetrics,
+    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
+    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
+    StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -90,130 +95,87 @@ impl LitePipelineBackend {
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         }
 
-        let wav_path = stage_dir.join("audio.wav");
-        context
-            .set_activity(
-                "Converting audiobook to 16 kHz mono PCM",
-                self.elapsed_millis(),
-            )
-            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        let mut ffmpeg = Command::new(&runtime.ffmpeg);
-        ffmpeg
-            .arg("-hide_banner")
-            .arg("-nostdin")
-            .arg("-y")
-            .arg("-i")
-            .arg(prepared.audiobook())
-            .arg("-ar")
-            .arg("16000")
-            .arg("-ac")
-            .arg("1")
-            .arg("-c:a")
-            .arg("pcm_s16le")
-            .arg(&wav_path);
-        let conversion = run_cancellable_command(&mut ffmpeg, &cancellation, |_, _| {});
-        match conversion {
-            Ok(output) if output.success => {}
-            Ok(output) => {
-                return Err(StageRunError::failed(
-                    command_failure("ffmpeg audio conversion", &output),
-                    self.elapsed_millis(),
-                ));
-            }
-            Err(CommandRunError::Cancelled) => {
-                return Err(StageRunError::cancelled(
-                    "Audio conversion was cancelled.",
-                    self.elapsed_millis(),
-                ));
-            }
-            Err(error) => {
-                return Err(StageRunError::failed(
-                    format!("Could not run ffmpeg audio conversion: {error}"),
-                    self.elapsed_millis(),
-                ));
-            }
-        }
-        validate_nonempty_file(&wav_path, "Converted transcription audio")
-            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-
+        let workers = context.job().settings.whisper_workers;
+        let transcript_path = stage_dir.join("transcript.json");
+        let config = ChunkedTranscriptionConfig {
+            ffmpeg: runtime.ffmpeg.clone(),
+            whisper_cli: runtime.whisper_cli.clone(),
+            whisper_model: runtime.whisper_model.clone(),
+            language: runtime.language.clone(),
+            workers,
+            total_cpu_threads: self.cpu_threads,
+        };
         let mut metrics = LiveMetrics {
-            backend: Some("whisper.cpp CLI".into()),
+            backend: Some("whisper.cpp CLI / chunk workers".into()),
             model: Some(runtime.model_name.clone()),
             ..LiveMetrics::default()
         };
         context.set_metrics(metrics.clone(), self.elapsed_millis());
         context
             .set_activity(
-                "Transcribing audiobook with whisper.cpp",
+                format!(
+                    "Planning and transcribing audiobook with {workers} Whisper worker{}",
+                    if workers == 1 { "" } else { "s" }
+                ),
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
-        let output_prefix = stage_dir.join("transcript");
-        let transcript_path = output_prefix.with_extension("json");
-        let mut whisper = Command::new(&runtime.whisper_cli);
-        whisper
-            .arg("-m")
-            .arg(&runtime.whisper_model)
-            .arg("-f")
-            .arg(&wav_path)
-            .arg("-l")
-            .arg(&runtime.language)
-            .arg("-ojf")
-            .arg("-of")
-            .arg(&output_prefix)
-            .arg("-pp")
-            .arg("-t")
-            .arg(self.cpu_threads.to_string());
-
-        let mut progress_error = None;
-        let transcription = run_cancellable_command(&mut whisper, &cancellation, |stream, line| {
-            if stream != CommandStream::Stderr {
-                return;
-            }
-            if let Some(percent) = parse_whisper_progress(line) {
-                if let Err(error) = context.set_stage_percent(percent, 0) {
-                    if progress_error.is_none() {
-                        progress_error = Some(error);
-                    }
+        let result = transcribe_audiobook_in_chunks(
+            prepared.audiobook(),
+            &stage_dir,
+            &transcript_path,
+            &config,
+            &cancellation,
+            &mut |progress: ChunkedTranscriptionProgress| {
+                metrics.current_item = Some(progress.completed_chunks as u64);
+                metrics.total_items = Some(progress.total_chunks as u64);
+                if let Some(backend) = progress.backend {
+                    metrics.backend = Some(backend);
                 }
-            }
-            if let Some(backend) = parse_whisper_backend(line) {
-                metrics.backend = Some(backend);
                 context.set_metrics(metrics.clone(), 0);
+                context.set_stage_percent(progress.percent, 0)
+            },
+        );
+        let summary = match result {
+            Ok(summary) => summary,
+            Err(error) if cancellation.is_requested() => {
+                return Err(StageRunError::cancelled(error, self.elapsed_millis()));
             }
-        });
-        if let Some(error) = progress_error {
-            return Err(StageRunError::failed(error, self.elapsed_millis()));
-        }
-        match transcription {
-            Ok(output) if output.success => {}
-            Ok(output) => {
-                return Err(StageRunError::failed(
-                    command_failure("whisper.cpp transcription", &output),
-                    self.elapsed_millis(),
-                ));
-            }
-            Err(CommandRunError::Cancelled) => {
-                return Err(StageRunError::cancelled(
-                    "Transcription was cancelled.",
-                    self.elapsed_millis(),
-                ));
-            }
-            Err(error) => {
-                return Err(StageRunError::failed(
-                    format!("Could not run whisper.cpp transcription: {error}"),
-                    self.elapsed_millis(),
-                ));
-            }
-        }
-        validate_nonempty_file(&transcript_path, "Whisper transcript")
+            Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
+        };
+        validate_nonempty_file(&transcript_path, "Merged Whisper transcript")
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        validate_nonempty_file(&stage_dir.join("transcription-plan.json"), "Transcription plan")
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+        metrics.current_item = Some(summary.chunks as u64);
+        metrics.total_items = Some(summary.chunks as u64);
+        metrics.total_audio_seconds = Some(summary.duration_ms as f64 / 1000.0);
+        context.set_metrics(metrics, self.elapsed_millis());
+        let effective_workers = workers.min(summary.chunks).max(1);
+        context
+            .set_activity(
+                format!(
+                    "Transcribed {} chunk{} with {} worker{} × {} CPU thread{}",
+                    summary.chunks,
+                    if summary.chunks == 1 { "" } else { "s" },
+                    effective_workers,
+                    if effective_workers == 1 { "" } else { "s" },
+                    summary.per_worker_threads,
+                    if summary.per_worker_threads == 1 { "" } else { "s" }
+                ),
+                self.elapsed_millis(),
+            )
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        context
+            .set_stage_percent(100, self.elapsed_millis())
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
             vec![
                 PathBuf::from("book-corpus.json"),
-                PathBuf::from("audio.wav"),
+                PathBuf::from("transcription-plan.json"),
                 PathBuf::from("transcript.json"),
             ],
             stage_started.elapsed().as_secs(),
@@ -717,9 +679,10 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         AudioCodec::Copy => "storyteller:cancellable-file-copy-v1".into(),
         AudioCodec::Opus | AudioCodec::Aac => file_identity("ffmpeg", &ffmpeg),
     };
+    let whisper_identity = file_identity("whisper.cpp-cli", &whisper_cli);
 
     PipelineEnvironment {
-        whisper_backend: file_identity("whisper.cpp-cli", &whisper_cli),
+        whisper_backend: format!("storyteller:chunked-whisper-v1|{whisper_identity}"),
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
         ocr_backend: "not-used:ocr".into(),
@@ -856,82 +819,10 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_whisper_progress(line: &str) -> Option<u8> {
-    let (_, remainder) = line.split_once("progress =")?;
-    let (percent, _) = remainder.split_once('%')?;
-    percent
-        .trim()
-        .parse::<u8>()
-        .ok()
-        .filter(|value| *value <= 100)
-}
-
-fn parse_whisper_backend(line: &str) -> Option<String> {
-    let marker = "backend_init_gpu: using ";
-    let (_, backend) = line.split_once(marker)?;
-    let backend = backend.trim();
-    if backend.is_empty() {
-        None
-    } else {
-        Some(format!("whisper.cpp / {backend}"))
-    }
-}
-
-fn command_failure(label: &str, output: &CommandOutput) -> String {
-    let diagnostics = diagnostic_tail(if output.stderr.trim().is_empty() {
-        &output.stdout
-    } else {
-        &output.stderr
-    });
-    let exit = output
-        .exit_code
-        .map(|code| code.to_string())
-        .unwrap_or_else(|| "unknown".into());
-    if diagnostics.is_empty() {
-        format!("{label} failed with exit code {exit}.")
-    } else {
-        format!("{label} failed with exit code {exit}: {diagnostics}")
-    }
-}
-
-fn diagnostic_tail(text: &str) -> String {
-    let mut lines = text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .rev()
-        .take(8)
-        .collect::<Vec<_>>();
-    lines.reverse();
-    lines.join(" | ")
-}
-
 fn workspace_base() -> PathBuf {
     env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(env::temp_dir)
         .join("Storyteller OneClick Lite")
         .join("jobs")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn whisper_progress_parser_accepts_real_cli_shape() {
-        assert_eq!(
-            parse_whisper_progress("whisper_print_progress_callback: progress =  42%"),
-            Some(42)
-        );
-        assert_eq!(parse_whisper_progress("not progress"), None);
-    }
-
-    #[test]
-    fn whisper_backend_parser_only_reports_observed_backend() {
-        assert_eq!(
-            parse_whisper_backend("whisper_backend_init_gpu: using CUDA0 backend"),
-            Some("whisper.cpp / CUDA0 backend".into())
-        );
-        assert_eq!(parse_whisper_backend("system_info: CPU only"), None);
-    }
 }
