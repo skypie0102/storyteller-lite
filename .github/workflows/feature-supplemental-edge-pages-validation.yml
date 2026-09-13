@@ -31,6 +31,9 @@ jobs:
       - name: Wire supplemental edge pages
         run: python .github/scripts/patch-supplemental-edge-pages.py
 
+      - name: Fix supplemental validation transform
+        run: python .github/scripts/fix-supplemental-edge-pages-validation.py
+
       - name: Apply Rust formatting
         run: cargo fmt --all
 
