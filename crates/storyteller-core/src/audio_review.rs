@@ -92,7 +92,10 @@ impl AudioReviewReport {
     pub fn is_complete(&self) -> bool {
         self.unmatched.is_empty()
             || self.accepted_unmatched_exclusion
-            || self.unmatched.iter().all(|item| !item.decision.is_pending())
+            || self
+                .unmatched
+                .iter()
+                .all(|item| !item.decision.is_pending())
     }
 }
 
@@ -309,10 +312,18 @@ fn read_review_draft(path: &Path) -> Result<BTreeMap<String, AudioReviewDecision
     if !path.exists() {
         return Ok(BTreeMap::new());
     }
-    let data = fs::read(path)
-        .map_err(|error| format!("Could not read audio review draft {}: {error}", path.display()))?;
-    let draft: AudioReviewDraft = serde_json::from_slice(&data)
-        .map_err(|error| format!("Could not parse audio review draft {}: {error}", path.display()))?;
+    let data = fs::read(path).map_err(|error| {
+        format!(
+            "Could not read audio review draft {}: {error}",
+            path.display()
+        )
+    })?;
+    let draft: AudioReviewDraft = serde_json::from_slice(&data).map_err(|error| {
+        format!(
+            "Could not parse audio review draft {}: {error}",
+            path.display()
+        )
+    })?;
     if draft.version != REVIEW_DRAFT_VERSION {
         return Err(format!(
             "Audio review draft {} uses unsupported version {}.",
@@ -346,8 +357,12 @@ fn write_review_draft(path: &Path, report: &AudioReviewReport) -> Result<(), Str
     };
     let json = serde_json::to_vec_pretty(&draft)
         .map_err(|error| format!("Could not serialize audio review draft: {error}"))?;
-    fs::write(path, json)
-        .map_err(|error| format!("Could not write audio review draft {}: {error}", path.display()))
+    fs::write(path, json).map_err(|error| {
+        format!(
+            "Could not write audio review draft {}: {error}",
+            path.display()
+        )
+    })
 }
 
 fn write_audio_review_report(path: &Path, report: &AudioReviewReport) -> Result<(), String> {

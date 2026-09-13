@@ -10,13 +10,13 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report, encode_audiobook,
-    extract_epub_corpus, prepare_job_sources, prepared_job_sources, publish_validated_epub,
-    read_audio_review_report, spawn_pipeline_worker_with_preflight, validate_readaloud_epub,
-    write_validation_report, AudioCodec, HardwareProfile, Job, JobWorkspace, LiveMetrics,
-    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
-    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
-    StageRunOutput,
+    align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report_with_draft,
+    encode_audiobook, extract_epub_corpus, prepare_job_sources, prepared_job_sources,
+    publish_validated_epub, read_audio_review_report, spawn_pipeline_worker_with_preflight,
+    validate_readaloud_epub, write_validation_report, AudioCodec, AudioReviewPolicy,
+    HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
+    PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
+    StagePlan, StageRunContext, StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -270,6 +270,7 @@ impl LitePipelineBackend {
         reset_stage_dir(&stage_dir, PipelineStage::ReviewAudio)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let report_path = stage_dir.join("review.json");
+        let draft_path = context.workspace().root().join("review-draft.json");
 
         context
             .set_activity(
@@ -277,8 +278,13 @@ impl LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        let summary = create_audio_review_report(&alignment_path, &report_path)
-            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let summary = create_audio_review_report_with_draft(
+            &alignment_path,
+            &report_path,
+            Some(&draft_path),
+            AudioReviewPolicy::Smart,
+        )
+        .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         context.set_metrics(
             LiveMetrics {
                 match_percent: Some(summary.match_percent),
@@ -296,10 +302,14 @@ impl LitePipelineBackend {
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         );
-        if summary.unmatched_segments == 0 {
+        if summary.pending_segments == 0 {
             context
                 .set_activity(
-                    "No unmatched audio segments require review",
+                    if summary.unmatched_segments == 0 {
+                        "No unmatched audio segments require review"
+                    } else {
+                        "Saved audio review decisions restored"
+                    },
                     self.elapsed_millis(),
                 )
                 .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
@@ -309,8 +319,8 @@ impl LitePipelineBackend {
                 .set_activity(
                     format!(
                         "{} unmatched audio segment{} need review",
-                        summary.unmatched_segments,
-                        if summary.unmatched_segments == 1 {
+                        summary.pending_segments,
+                        if summary.pending_segments == 1 {
                             ""
                         } else {
                             "s"
@@ -336,7 +346,7 @@ impl LitePipelineBackend {
             .join("review.json");
         let review = read_audio_review_report(&review_path)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        if !review.unmatched.is_empty() && !review.accepted_unmatched_exclusion {
+        if !review.is_complete() {
             return Err(StageRunError::failed(
                 "Unmatched audio must be reviewed before encoding can continue.",
                 self.elapsed_millis(),

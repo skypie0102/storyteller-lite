@@ -15,8 +15,8 @@ use std::{
     thread::{self, JoinHandle},
 };
 use storyteller_core::{
-    accept_unmatched_audio_exclusion, read_audio_review_report, AudioReviewReport, Job, JobOutcome,
-    JobQueue, JobStatus, PipelineRunState, PipelineStage, PipelineWorkerHandle,
+    accept_unmatched_audio_exclusion_with_draft, read_audio_review_report, AudioReviewReport, Job,
+    JobOutcome, JobQueue, JobStatus, PipelineRunState, PipelineStage, PipelineWorkerHandle,
 };
 
 enum RuntimeInstallEvent {
@@ -289,6 +289,12 @@ fn apply_runtime_status(ui: &AppWindow, status: &RuntimeStatus) {
     ui.set_runtime_ready(status.ready());
 }
 
+fn audio_review_draft_path(job: &Job) -> std::path::PathBuf {
+    pipeline_backend::job_workspace(job)
+        .root()
+        .join("review-draft.json")
+}
+
 fn audio_review_path(job: &Job) -> std::path::PathBuf {
     pipeline_backend::job_workspace(job)
         .stage_dir(PipelineStage::ReviewAudio)
@@ -300,7 +306,10 @@ pub(crate) fn load_audio_review_report(job: &Job) -> Result<AudioReviewReport, S
 }
 
 pub(crate) fn accept_audio_review_exclusion(job: &Job) -> Result<(), String> {
-    accept_unmatched_audio_exclusion(&audio_review_path(job))
+    accept_unmatched_audio_exclusion_with_draft(
+        &audio_review_path(job),
+        &audio_review_draft_path(job),
+    )
 }
 
 fn mark_worker_start_failed(

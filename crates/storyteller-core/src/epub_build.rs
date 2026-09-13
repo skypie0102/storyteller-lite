@@ -67,7 +67,7 @@ fn build_readaloud_epub_inner(
     let corpus = read_epub_corpus(corpus_path)?;
     let alignment = read_alignment(alignment_path)?;
     let review = read_audio_review_report(review_path)?;
-    if !review.unmatched.is_empty() && !review.accepted_unmatched_exclusion {
+    if !review.is_complete() {
         return Err("Unmatched audio must be reviewed before the EPUB can be built.".into());
     }
     let audio = read_encoded_audio_descriptor(encoded_audio_descriptor_path)?;
