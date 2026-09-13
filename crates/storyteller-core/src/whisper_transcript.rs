@@ -46,6 +46,14 @@ impl TranscriptionChunk {
 }
 
 pub fn read_whisper_transcript(path: &Path) -> Result<WhisperTranscript, String> {
+    read_transcript(path, true)
+}
+
+pub fn read_whisper_transcript_chunk(path: &Path) -> Result<WhisperTranscript, String> {
+    read_transcript(path, false)
+}
+
+fn read_transcript(path: &Path, require_nonempty: bool) -> Result<WhisperTranscript, String> {
     let data = fs::read(path).map_err(|error| {
         format!(
             "Could not read Whisper transcript {}: {error}",
@@ -69,12 +77,12 @@ pub fn read_whisper_transcript(path: &Path) -> Result<WhisperTranscript, String>
     } else {
         parse_whisper_json_full(&root)?
     };
-    validate_transcript(&transcript)?;
+    validate_transcript(&transcript, require_nonempty)?;
     Ok(transcript)
 }
 
 pub fn write_whisper_transcript(path: &Path, transcript: &WhisperTranscript) -> Result<(), String> {
-    validate_transcript(transcript)?;
+    validate_transcript(transcript, true)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -183,7 +191,7 @@ pub fn merge_chunk_transcripts(
     let mut segments = Vec::new();
     let mut previous_end_ms = 0u64;
     for (chunk, transcript) in parts {
-        validate_transcript(transcript)?;
+        validate_transcript(transcript, false)?;
         if language.is_none() {
             language = transcript.language.clone();
         }
@@ -222,7 +230,7 @@ pub fn merge_chunk_transcripts(
     }
 
     let merged = WhisperTranscript { language, segments };
-    validate_transcript(&merged)?;
+    validate_transcript(&merged, true)?;
     Ok(merged)
 }
 
@@ -269,7 +277,10 @@ fn parse_whisper_json_full(root: &Value) -> Result<WhisperTranscript, String> {
     Ok(WhisperTranscript { language, segments })
 }
 
-fn validate_transcript(transcript: &WhisperTranscript) -> Result<(), String> {
+fn validate_transcript(
+    transcript: &WhisperTranscript,
+    require_nonempty: bool,
+) -> Result<(), String> {
     let mut previous_end_ms = 0u64;
     let mut seen = 0usize;
     for (index, segment) in transcript.segments.iter().enumerate() {
@@ -295,7 +306,7 @@ fn validate_transcript(transcript: &WhisperTranscript) -> Result<(), String> {
         previous_end_ms = segment.end_ms;
         seen += 1;
     }
-    if seen == 0 {
+    if require_nonempty && seen == 0 {
         return Err("Whisper transcript contains no timed text segments.".into());
     }
     Ok(())
@@ -323,7 +334,7 @@ mod tests {
             ]
         });
         let transcript = parse_whisper_json_full(&value).unwrap();
-        validate_transcript(&transcript).unwrap();
+        validate_transcript(&transcript, true).unwrap();
         assert_eq!(transcript.language.as_deref(), Some("en"));
         assert_eq!(transcript.segment_count(), 2);
         assert_eq!(transcript.duration_ms(), 5170);
@@ -348,7 +359,7 @@ mod tests {
                 text: "Zero duration".into(),
             }],
         };
-        assert!(validate_transcript(&zero).is_err());
+        assert!(validate_transcript(&zero, true).is_err());
 
         let overlap = WhisperTranscript {
             language: None,
@@ -365,7 +376,7 @@ mod tests {
                 },
             ],
         };
-        assert!(validate_transcript(&overlap).is_err());
+        assert!(validate_transcript(&overlap, true).is_err());
     }
 
     #[test]
@@ -410,5 +421,49 @@ mod tests {
         assert_eq!(merged.segments[0].start_ms, 1_000);
         assert_eq!(merged.segments[1].start_ms, 62_000);
         assert_eq!(merged.segments[1].end_ms, 68_000);
+    }
+
+    #[test]
+    fn merge_allows_a_silent_chunk_but_not_an_empty_final_transcript() {
+        let chunks = plan_transcription_chunks(120_000, &[], 60_000).unwrap();
+        let parts = vec![
+            (
+                chunks[0],
+                WhisperTranscript {
+                    language: Some("en".into()),
+                    segments: Vec::new(),
+                },
+            ),
+            (
+                chunks[1],
+                WhisperTranscript {
+                    language: Some("en".into()),
+                    segments: vec![TranscriptSegment {
+                        start_ms: 1_000,
+                        end_ms: 2_000,
+                        text: "Speech".into(),
+                    }],
+                },
+            ),
+        ];
+        assert!(merge_chunk_transcripts(120_000, &parts).is_ok());
+
+        let all_silent = vec![
+            (
+                chunks[0],
+                WhisperTranscript {
+                    language: None,
+                    segments: Vec::new(),
+                },
+            ),
+            (
+                chunks[1],
+                WhisperTranscript {
+                    language: None,
+                    segments: Vec::new(),
+                },
+            ),
+        ];
+        assert!(merge_chunk_transcripts(120_000, &all_silent).is_err());
     }
 }
