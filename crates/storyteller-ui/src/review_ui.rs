@@ -9,8 +9,9 @@ use std::{
 };
 use storyteller_core::{
     apply_audio_review_decision, prepared_job_sources, read_epub_corpus, review_text_candidates,
-    AlignmentDocument, AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination,
-    AudioReviewEdge, AudioReviewItem, Job, JobQueue, JobStatus, PipelineStage,
+    AlignmentDocument, AlignmentStatus, AudioReviewClassification, AudioReviewDecision,
+    AudioReviewDecisionSource, AudioReviewDestination, AudioReviewEdge, AudioReviewItem,
+    AudioReviewSupplementalPlacement, Job, JobQueue, JobStatus, PipelineStage,
     DEFAULT_REVIEW_CANDIDATE_LIMIT,
 };
 
@@ -179,6 +180,7 @@ pub(crate) fn install_review_ui(
                                 href: href.to_string(),
                                 line_index: Some(line_index),
                                 image_href: None,
+                                supplemental: None,
                             },
                             classification: None,
                             source: AudioReviewDecisionSource::Manual,
@@ -188,6 +190,56 @@ pub(crate) fn install_review_ui(
             match result {
                 Ok(()) => {
                     ui.set_status_text("Text block assigned to audio segment.".into());
+                    select_next_pending(&queue.borrow(), &mut controller);
+                }
+                Err(error) => ui.set_status_text(error.into()),
+            }
+            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+        });
+    }
+
+    {
+        let controller = Rc::clone(&controller);
+        let queue = Rc::clone(&queue);
+        let ui_weak = ui.as_weak();
+        ui.on_review_preserve_edge(move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let mut controller = controller.borrow_mut();
+            controller.stop_preview();
+            let result = review_job(&queue.borrow())
+                .ok_or_else(|| "No book is waiting for audio review.".to_string())
+                .and_then(|job| {
+                    let report = worker_bridge::load_audio_review_report(job)?;
+                    let item = report
+                        .unmatched
+                        .get(controller.selected_index)
+                        .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
+                    let (anchor_href, placement, classification) =
+                        edge_page_destination(job, item)?;
+                    apply_audio_review_decision(
+                        &worker_bridge::audio_review_path(job),
+                        &worker_bridge::audio_review_draft_path(job),
+                        &item.id,
+                        AudioReviewDecision::Assigned {
+                            destination: AudioReviewDestination {
+                                href: anchor_href,
+                                line_index: None,
+                                image_href: None,
+                                supplemental: Some(placement),
+                            },
+                            classification: Some(classification),
+                            source: AudioReviewDecisionSource::Manual,
+                        },
+                    )
+                });
+            match result {
+                Ok(()) => {
+                    ui.set_status_text(
+                        "Edge narration will be preserved on a supplemental read-aloud page."
+                            .into(),
+                    );
                     select_next_pending(&queue.borrow(), &mut controller);
                 }
                 Err(error) => ui.set_status_text(error.into()),
@@ -343,6 +395,13 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
     ui.set_review_can_previous(controller.selected_index > 0);
     ui.set_review_can_next(controller.selected_index + 1 < report.unmatched.len());
     ui.set_review_complete(report.is_complete());
+    let preserve_label = match item.edge {
+        Some(AudioReviewEdge::Introduction) => "Preserve as Introduction",
+        Some(AudioReviewEdge::Credits) => "Preserve as Credits",
+        None => "",
+    };
+    ui.set_review_can_preserve_edge(item.edge.is_some());
+    ui.set_review_preserve_edge_text(preserve_label.into());
     ui.set_review_allocator_status_text(if report.pending_count() == 0 {
         "All unmatched segments have durable decisions. Continue when ready.".into()
     } else {
@@ -384,6 +443,8 @@ fn clear_review_properties(ui: &AppWindow) {
     ui.set_review_preview_status_text("".into());
     ui.set_review_can_previous(false);
     ui.set_review_can_next(false);
+    ui.set_review_can_preserve_edge(false);
+    ui.set_review_preserve_edge_text("".into());
     ui.set_review_complete(false);
 }
 
@@ -408,6 +469,67 @@ fn select_next_pending(queue: &JobQueue, controller: &mut ReviewUiController) {
     {
         controller.selected_index = index;
         controller.seek_ms = 0;
+    }
+}
+
+fn edge_page_destination(
+    job: &Job,
+    item: &AudioReviewItem,
+) -> Result<
+    (
+        String,
+        AudioReviewSupplementalPlacement,
+        AudioReviewClassification,
+    ),
+    String,
+> {
+    let workspace = worker_bridge::job_workspace(job);
+    let alignment_path = workspace
+        .stage_dir(PipelineStage::Align)
+        .join("alignment.json");
+    let data = std::fs::read(&alignment_path).map_err(|error| {
+        format!(
+            "Could not read alignment map {}: {error}",
+            alignment_path.display()
+        )
+    })?;
+    let alignment: AlignmentDocument = serde_json::from_slice(&data).map_err(|error| {
+        format!(
+            "Could not parse alignment map {}: {error}",
+            alignment_path.display()
+        )
+    })?;
+    match item.edge {
+        Some(AudioReviewEdge::Introduction) => {
+            let href = alignment
+                .segments
+                .iter()
+                .find(|segment| segment.status == AlignmentStatus::Matched)
+                .and_then(|segment| segment.book_start.as_ref())
+                .map(|position| position.href.clone())
+                .ok_or_else(|| "Introduction has no matched EPUB anchor.".to_string())?;
+            Ok((
+                href,
+                AudioReviewSupplementalPlacement::BeforeAnchor,
+                AudioReviewClassification::Introduction,
+            ))
+        }
+        Some(AudioReviewEdge::Credits) => {
+            let href = alignment
+                .segments
+                .iter()
+                .rev()
+                .find(|segment| segment.status == AlignmentStatus::Matched)
+                .and_then(|segment| segment.book_end.as_ref())
+                .map(|position| position.href.clone())
+                .ok_or_else(|| "Credits have no matched EPUB anchor.".to_string())?;
+            Ok((
+                href,
+                AudioReviewSupplementalPlacement::AfterAnchor,
+                AudioReviewClassification::Credits,
+            ))
+        }
+        None => Err("Selected segment is not a leading or trailing edge candidate.".into()),
     }
 }
 
@@ -541,10 +663,23 @@ fn decision_text(decision: &AudioReviewDecision) -> String {
         AudioReviewDecision::Pending => {
             "Pending — choose a text block or exclude this segment.".into()
         }
-        AudioReviewDecision::Assigned { destination, .. } => match destination.line_index {
-            Some(line) => format!("Assigned — {} line {}", destination.href, line + 1),
-            None => format!("Assigned — {}", destination.href),
-        },
+        AudioReviewDecision::Assigned {
+            destination,
+            classification,
+            ..
+        } => {
+            if destination.supplemental.is_some() {
+                format!(
+                    "Assigned — {:?} supplemental page anchored at {}",
+                    classification, destination.href
+                )
+            } else {
+                match destination.line_index {
+                    Some(line) => format!("Assigned — {} line {}", destination.href, line + 1),
+                    None => format!("Assigned — {}", destination.href),
+                }
+            }
+        }
         AudioReviewDecision::Excluded { reason, .. } => format!("Excluded — {reason}"),
     }
 }

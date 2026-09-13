@@ -762,7 +762,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
         ocr_backend: "not-used:ocr".into(),
-        epub_backend: "storyteller:epub-media-overlay-v1-block".into(),
+        epub_backend: "storyteller:epub-media-overlay-v2-supplemental-edge".into(),
         effective_language: effective_language(job),
         effective_whisper_model,
     }

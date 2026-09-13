@@ -53,13 +53,24 @@ pub enum AudioReviewClassification {
     ExtraAudio,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioReviewSupplementalPlacement {
+    BeforeAnchor,
+    AfterAnchor,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioReviewDestination {
+    /// Existing EPUB content-document href used either as the direct destination or as
+    /// the spine anchor for a generated supplemental page.
     pub href: String,
     #[serde(default)]
     pub line_index: Option<usize>,
     #[serde(default)]
     pub image_href: Option<String>,
+    #[serde(default)]
+    pub supplemental: Option<AudioReviewSupplementalPlacement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -464,7 +475,11 @@ fn validate_audio_review_report(report: &AudioReviewReport) -> Result<(), String
 fn validate_decision(decision: &AudioReviewDecision) -> Result<(), String> {
     match decision {
         AudioReviewDecision::Pending => Ok(()),
-        AudioReviewDecision::Assigned { destination, .. } => {
+        AudioReviewDecision::Assigned {
+            destination,
+            classification,
+            ..
+        } => {
             if destination.href.trim().is_empty() {
                 return Err("Assigned audio review destination href cannot be blank.".into());
             }
@@ -475,7 +490,34 @@ fn validate_decision(decision: &AudioReviewDecision) -> Result<(), String> {
             {
                 return Err("Assigned audio review image href cannot be blank.".into());
             }
-            Ok(())
+            let destination_kinds = usize::from(destination.line_index.is_some())
+                + usize::from(destination.image_href.is_some())
+                + usize::from(destination.supplemental.is_some());
+            if destination_kinds != 1 {
+                return Err(
+                    "Assigned audio review destination must identify exactly one text, image, or supplemental-page target."
+                        .into(),
+                );
+            }
+            match destination.supplemental {
+                Some(AudioReviewSupplementalPlacement::BeforeAnchor)
+                    if *classification != Some(AudioReviewClassification::Introduction) =>
+                {
+                    Err(
+                        "A supplemental page before the anchor must be classified as Introduction."
+                            .into(),
+                    )
+                }
+                Some(AudioReviewSupplementalPlacement::AfterAnchor)
+                    if *classification != Some(AudioReviewClassification::Credits) =>
+                {
+                    Err(
+                        "A supplemental page after the anchor must be classified as Credits."
+                            .into(),
+                    )
+                }
+                _ => Ok(()),
+            }
         }
         AudioReviewDecision::Excluded { reason, .. } => {
             if reason.trim().is_empty() {

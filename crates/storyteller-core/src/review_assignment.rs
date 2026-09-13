@@ -159,6 +159,19 @@ pub fn apply_audio_review_to_alignment(
             }
             AudioReviewDecision::Excluded { .. } => {}
             AudioReviewDecision::Assigned { destination, .. } => {
+                if destination.supplemental.is_some() {
+                    if !corpus
+                        .sections
+                        .iter()
+                        .any(|section| section.href == destination.href)
+                    {
+                        return Err(format!(
+                            "Supplemental audio review anchor {} is not an EPUB reading-order document.",
+                            destination.href
+                        ));
+                    }
+                    continue;
+                }
                 if destination.image_href.is_some() {
                     return Err(
                         "Graphic/image audio assignments require the dedicated image rendering path, which is not implemented yet."
@@ -486,6 +499,7 @@ mod tests {
                 href: "OPS/ch1.xhtml".into(),
                 line_index: Some(1),
                 image_href: None,
+                supplemental: None,
             },
             classification: None,
             source: AudioReviewDecisionSource::Manual,
@@ -506,6 +520,7 @@ mod tests {
                 href: "OPS/ch2.xhtml".into(),
                 line_index: Some(1),
                 image_href: None,
+                supplemental: None,
             },
             classification: None,
             source: AudioReviewDecisionSource::Manual,
@@ -522,6 +537,7 @@ mod tests {
                 href: "OPS/ch1.xhtml".into(),
                 line_index: None,
                 image_href: Some("OPS/image.png".into()),
+                supplemental: None,
             },
             classification: None,
             source: AudioReviewDecisionSource::Manual,

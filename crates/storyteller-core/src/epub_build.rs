@@ -1,11 +1,12 @@
 use crate::{
     epub_overlay::{
-        annotate_xhtml_blocks, build_smil, join_archive_path, parent_archive_path,
-        relative_archive_path, rewrite_package, scan_package, unique_id, uri_path,
-        OverlaySectionSpec,
+        add_supplemental_package_items, annotate_xhtml_blocks, build_smil, build_supplemental_smil,
+        build_supplemental_xhtml, join_archive_path, parent_archive_path, relative_archive_path,
+        rewrite_package, scan_package, unique_id, uri_path, OverlaySectionSpec,
+        SupplementalOverlaySpec,
     },
     read_audio_review_report, read_encoded_audio_descriptor, read_epub_corpus, AlignmentDocument,
-    AlignmentStatus, CancellationToken,
+    AlignmentStatus, AudioReviewClassification, AudioReviewDecision, CancellationToken,
 };
 use std::{
     collections::HashSet,
@@ -159,11 +160,87 @@ fn build_readaloud_epub_inner(
         return Err("No EPUB spine document received synchronized Media Overlay content.".into());
     }
 
+    let mut supplemental = Vec::<SupplementalOverlaySpec>::new();
+    for (review_index, item) in review.unmatched.iter().enumerate() {
+        let AudioReviewDecision::Assigned {
+            destination,
+            classification: Some(classification),
+            ..
+        } = &item.decision
+        else {
+            continue;
+        };
+        let Some(placement) = destination.supplemental else {
+            continue;
+        };
+        if !matches!(
+            classification,
+            AudioReviewClassification::Introduction | AudioReviewClassification::Credits
+        ) {
+            return Err("Supplemental audio page has an unsupported classification.".into());
+        }
+        let anchor_item_id = scan.xhtml_item_ids.get(&destination.href).ok_or_else(|| {
+            format!(
+                "Supplemental audio anchor {} is not an EPUB manifest XHTML item.",
+                destination.href
+            )
+        })?;
+        let leaf = match classification {
+            AudioReviewClassification::Introduction => "introduction",
+            AudioReviewClassification::Credits => "credits",
+            _ => unreachable!(),
+        };
+        let xhtml_archive_path = join_archive_path(
+            &resource_root,
+            &format!("text/{leaf}-{:04}.xhtml", review_index + 1),
+        );
+        let smil_archive_path = join_archive_path(
+            &resource_root,
+            &format!("overlays/{leaf}-{:04}.smil", review_index + 1),
+        );
+        let xhtml_item_id = unique_id(
+            &format!("stl-extra-page-{:04}", review_index + 1),
+            &mut used_ids,
+        );
+        let overlay_item_id = unique_id(
+            &format!("stl-extra-mo-{:04}", review_index + 1),
+            &mut used_ids,
+        );
+        let paragraph_id = format!("stl-extra-text-{}", review_index + 1);
+        let xhtml =
+            build_supplemental_xhtml(*classification, &item.transcript_text, &paragraph_id)?;
+        let smil_dir = parent_archive_path(&smil_archive_path);
+        let text_href = uri_path(&relative_archive_path(&smil_dir, &xhtml_archive_path));
+        let audio_href = uri_path(&relative_archive_path(&smil_dir, &audio_archive_path));
+        let (smil, duration_ms) = build_supplemental_smil(
+            *classification,
+            &text_href,
+            &paragraph_id,
+            &audio_href,
+            item.audio_start_ms,
+            item.audio_end_ms,
+            review_index,
+        )?;
+        supplemental.push(SupplementalOverlaySpec {
+            xhtml,
+            xhtml_archive_path: xhtml_archive_path.clone(),
+            xhtml_manifest_href: relative_archive_path(&package_dir, &xhtml_archive_path),
+            xhtml_item_id,
+            smil,
+            smil_archive_path: smil_archive_path.clone(),
+            smil_manifest_href: relative_archive_path(&package_dir, &smil_archive_path),
+            overlay_item_id,
+            anchor_item_id: anchor_item_id.clone(),
+            placement,
+            duration_ms,
+        });
+    }
+
     let total_duration_ms = sections
         .iter()
-        .try_fold(0u64, |total, section| {
-            total.checked_add(section.duration_ms)
-        })
+        .map(|section| section.duration_ms)
+        .chain(supplemental.iter().map(|section| section.duration_ms))
+        .try_fold(0u64, |total, duration| total.checked_add(duration))
         .ok_or("Media Overlay duration overflowed.")?;
     let package_rewrite = rewrite_package(
         &package_xml,
@@ -175,6 +252,7 @@ fn build_readaloud_epub_inner(
         &audio.media_type,
         total_duration_ms,
     )?;
+    let package_rewrite = add_supplemental_package_items(&package_rewrite, &supplemental)?;
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -240,6 +318,10 @@ fn build_readaloud_epub_inner(
         write_text_entry(&mut writer, &section.href, &section.xhtml)?;
         write_text_entry(&mut writer, &section.smil_archive_path, &section.smil)?;
     }
+    for section in &supplemental {
+        write_text_entry(&mut writer, &section.xhtml_archive_path, &section.xhtml)?;
+        write_text_entry(&mut writer, &section.smil_archive_path, &section.smil)?;
+    }
 
     writer
         .start_file(
@@ -263,11 +345,12 @@ fn build_readaloud_epub_inner(
     validate_nonempty_file(destination, "Built EPUB candidate")?;
 
     Ok(EpubBuildSummary {
-        overlay_count: sections.len(),
+        overlay_count: sections.len() + supplemental.len(),
         synchronized_segments: sections
             .iter()
             .map(|section| section.synchronized_segments)
-            .sum(),
+            .sum::<usize>()
+            + supplemental.len(),
         media_duration_ms: total_duration_ms,
     })
 }

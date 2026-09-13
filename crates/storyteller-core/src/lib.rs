@@ -37,7 +37,7 @@ pub use audio_review::{
     read_audio_review_report, set_audio_review_silence_evidence, AudioReviewClassification,
     AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination, AudioReviewEdge,
     AudioReviewItem, AudioReviewPolicy, AudioReviewReport, AudioReviewSilenceEvidence,
-    AudioReviewSuggestion, AudioReviewSummary,
+    AudioReviewSuggestion, AudioReviewSummary, AudioReviewSupplementalPlacement,
 };
 pub use cancellation::CancellationToken;
 pub use command::{run_cancellable_command, CommandOutput, CommandRunError, CommandStream};

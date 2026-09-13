@@ -1,4 +1,6 @@
-use crate::{AlignmentSegment, AlignmentStatus};
+use crate::{
+    AlignmentSegment, AlignmentStatus, AudioReviewClassification, AudioReviewSupplementalPlacement,
+};
 use quick_xml::{
     escape::unescape,
     events::{BytesEnd, BytesStart, BytesText, Event},
@@ -16,6 +18,21 @@ pub(crate) struct OverlaySectionSpec {
     pub overlay_item_id: String,
     pub duration_ms: u64,
     pub synchronized_segments: usize,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SupplementalOverlaySpec {
+    pub xhtml: String,
+    pub xhtml_archive_path: String,
+    pub xhtml_manifest_href: String,
+    pub xhtml_item_id: String,
+    pub smil: String,
+    pub smil_archive_path: String,
+    pub smil_manifest_href: String,
+    pub overlay_item_id: String,
+    pub anchor_item_id: String,
+    pub placement: AudioReviewSupplementalPlacement,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +223,225 @@ pub(crate) fn rewrite_package(
     }
     String::from_utf8(writer.into_inner())
         .map_err(|error| format!("Rewritten EPUB package is not UTF-8: {error}"))
+}
+
+pub(crate) fn add_supplemental_package_items(
+    xml: &str,
+    supplements: &[SupplementalOverlaySpec],
+) -> Result<String, String> {
+    if supplements.is_empty() {
+        return Ok(xml.to_string());
+    }
+    let mut before = HashMap::<&str, Vec<&SupplementalOverlaySpec>>::new();
+    let mut after = HashMap::<&str, Vec<&SupplementalOverlaySpec>>::new();
+    for supplement in supplements {
+        match supplement.placement {
+            AudioReviewSupplementalPlacement::BeforeAnchor => before
+                .entry(supplement.anchor_item_id.as_str())
+                .or_default()
+                .push(supplement),
+            AudioReviewSupplementalPlacement::AfterAnchor => after
+                .entry(supplement.anchor_item_id.as_str())
+                .or_default()
+                .push(supplement),
+        }
+    }
+
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(false);
+    let mut writer = Writer::new(Vec::new());
+    let mut seen_anchors = HashSet::<String>::new();
+    let mut start_itemref_after = None::<String>;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                let qname = element.name();
+                if local_name(qname.as_ref()) == b"itemref" {
+                    if let Some(idref) = attribute_value(&element, b"idref")? {
+                        write_supplemental_itemrefs(&mut writer, before.get(idref.as_str()))?;
+                        if before.contains_key(idref.as_str()) || after.contains_key(idref.as_str())
+                        {
+                            seen_anchors.insert(idref.clone());
+                        }
+                        if after.contains_key(idref.as_str()) {
+                            start_itemref_after = Some(idref);
+                        }
+                    }
+                }
+                writer
+                    .write_event(Event::Start(element.into_owned()))
+                    .map_err(|error| format!("Could not rewrite EPUB package element: {error}"))?;
+            }
+            Ok(Event::Empty(element)) => {
+                let qname = element.name();
+                if local_name(qname.as_ref()) == b"itemref" {
+                    if let Some(idref) = attribute_value(&element, b"idref")? {
+                        write_supplemental_itemrefs(&mut writer, before.get(idref.as_str()))?;
+                        writer
+                            .write_event(Event::Empty(element.into_owned()))
+                            .map_err(|error| {
+                                format!("Could not rewrite EPUB package itemref: {error}")
+                            })?;
+                        write_supplemental_itemrefs(&mut writer, after.get(idref.as_str()))?;
+                        if before.contains_key(idref.as_str()) || after.contains_key(idref.as_str())
+                        {
+                            seen_anchors.insert(idref);
+                        }
+                        continue;
+                    }
+                }
+                writer
+                    .write_event(Event::Empty(element.into_owned()))
+                    .map_err(|error| format!("Could not rewrite EPUB package element: {error}"))?;
+            }
+            Ok(Event::End(element)) => {
+                let qname = element.name();
+                let name = local_name(qname.as_ref());
+                let is_manifest = name == b"manifest";
+                let is_metadata = name == b"metadata";
+                let is_itemref = name == b"itemref";
+                if is_manifest {
+                    for supplement in supplements {
+                        write_xhtml_overlay_item(
+                            &mut writer,
+                            &supplement.xhtml_item_id,
+                            &supplement.xhtml_manifest_href,
+                            &supplement.overlay_item_id,
+                        )?;
+                        write_empty_item(
+                            &mut writer,
+                            &supplement.overlay_item_id,
+                            &supplement.smil_manifest_href,
+                            "application/smil+xml",
+                        )?;
+                    }
+                } else if is_metadata {
+                    for supplement in supplements {
+                        let refines = format!("#{}", supplement.overlay_item_id);
+                        write_meta_duration(&mut writer, Some(&refines), supplement.duration_ms)?;
+                    }
+                }
+                writer
+                    .write_event(Event::End(element.into_owned()))
+                    .map_err(|error| format!("Could not close EPUB package element: {error}"))?;
+                if is_itemref {
+                    if let Some(idref) = start_itemref_after.take() {
+                        write_supplemental_itemrefs(&mut writer, after.get(idref.as_str()))?;
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Ok(event) => writer
+                .write_event(event.into_owned())
+                .map_err(|error| format!("Could not rewrite EPUB package document: {error}"))?,
+            Err(error) => return Err(format!("Could not parse EPUB package document: {error}")),
+        }
+    }
+    for supplement in supplements {
+        if !seen_anchors.contains(&supplement.anchor_item_id) {
+            return Err(format!(
+                "Supplemental page anchor {} is not present in the EPUB spine.",
+                supplement.anchor_item_id
+            ));
+        }
+    }
+    String::from_utf8(writer.into_inner())
+        .map_err(|error| format!("Rewritten EPUB package is not UTF-8: {error}"))
+}
+
+fn write_supplemental_itemrefs(
+    writer: &mut Writer<Vec<u8>>,
+    specs: Option<&Vec<&SupplementalOverlaySpec>>,
+) -> Result<(), String> {
+    let Some(specs) = specs else {
+        return Ok(());
+    };
+    for spec in specs {
+        let mut itemref = BytesStart::new("itemref");
+        itemref.push_attribute(("idref", spec.xhtml_item_id.as_str()));
+        writer
+            .write_event(Event::Empty(itemref))
+            .map_err(|error| format!("Could not add supplemental EPUB spine item: {error}"))?;
+    }
+    Ok(())
+}
+
+fn write_xhtml_overlay_item(
+    writer: &mut Writer<Vec<u8>>,
+    id: &str,
+    href: &str,
+    overlay_id: &str,
+) -> Result<(), String> {
+    let mut item = BytesStart::new("item");
+    item.push_attribute(("id", id));
+    item.push_attribute(("href", href));
+    item.push_attribute(("media-type", "application/xhtml+xml"));
+    item.push_attribute(("media-overlay", overlay_id));
+    writer
+        .write_event(Event::Empty(item))
+        .map_err(|error| format!("Could not add supplemental XHTML manifest item: {error}"))
+}
+
+pub(crate) fn build_supplemental_xhtml(
+    classification: AudioReviewClassification,
+    transcript: &str,
+    paragraph_id: &str,
+) -> Result<String, String> {
+    let (title, epub_type) = match classification {
+        AudioReviewClassification::Introduction => ("Introduction", "frontmatter"),
+        AudioReviewClassification::Credits => ("Credits", "backmatter"),
+        _ => {
+            return Err(
+                "Only Introduction or Credits can use a supplemental read-aloud page.".into(),
+            )
+        }
+    };
+    if transcript.trim().is_empty() {
+        return Err("Supplemental read-aloud page requires transcript text.".into());
+    }
+    Ok(format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:epub=\"http://www.idpf.org/2007/ops\" lang=\"en\"><head><title>{}</title><meta charset=\"utf-8\"/></head><body epub:type=\"{}\"><section><h1>{}</h1><p id=\"{}\">{}</p></section></body></html>",
+        title,
+        epub_type,
+        title,
+        escape_xml(paragraph_id),
+        escape_xml(transcript.trim()),
+    ))
+}
+
+pub(crate) fn build_supplemental_smil(
+    classification: AudioReviewClassification,
+    text_href: &str,
+    paragraph_id: &str,
+    audio_href: &str,
+    start_ms: u64,
+    end_ms: u64,
+    sequence: usize,
+) -> Result<(String, u64), String> {
+    if end_ms <= start_ms {
+        return Err("Supplemental audio segment has an invalid duration.".into());
+    }
+    let epub_type = match classification {
+        AudioReviewClassification::Introduction => "frontmatter",
+        AudioReviewClassification::Credits => "backmatter",
+        _ => {
+            return Err(
+                "Only Introduction or Credits can use a supplemental read-aloud page.".into(),
+            )
+        }
+    };
+    let duration = end_ms - start_ms;
+    let xml = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:type=\"{}\"><par id=\"stl-extra-par-{}\"><text src=\"{}#{}\"/><audio src=\"{}\" clipBegin=\"{}\" clipEnd=\"{}\"/></par></seq></body></smil>",
+        epub_type,
+        sequence + 1,
+        escape_xml(text_href),
+        escape_xml(&uri_fragment(paragraph_id)),
+        escape_xml(audio_href),
+        format_clock(start_ms),
+        format_clock(end_ms),
+    );
+    Ok((xml, duration))
 }
 
 pub(crate) fn annotate_xhtml_blocks(

@@ -82,6 +82,8 @@ export component AppWindow inherits Window {
     in-out property <string> review-preview-status-text: "";
     in property <bool> review-can-previous: false;
     in property <bool> review-can-next: false;
+    in property <bool> review-can-preserve-edge: false;
+    in property <string> review-preserve-edge-text: "";
     in property <bool> review-complete: false;
 
     callback browse-epub();
@@ -98,6 +100,7 @@ export component AppWindow inherits Window {
     callback review-play();
     callback review-stop();
     callback review-assign(string, int);
+    callback review-preserve-edge();
     callback review-exclude();
     callback finish-review();
     callback resume-queue();
@@ -389,6 +392,11 @@ export component AppWindow inherits Window {
                                 spacing: 8px;
                                 Text { text: "EPUB TEXT CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
+                                if root.review-can-preserve-edge : Button {
+                                    text: root.review-preserve-edge-text;
+                                    primary: true;
+                                    clicked => { root.review-preserve-edge(); }
+                                }
                                 Button { text: "Exclude segment"; clicked => { root.review-exclude(); } }
                             }
                             for candidate in root.review-candidates : Rectangle {
