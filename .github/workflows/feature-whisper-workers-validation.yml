@@ -39,6 +39,25 @@ jobs:
           $main = $main.Replace('assert!(parse_whisper_workers("17").is_err());', 'assert!(parse_whisper_workers("5").is_err());')
           Set-Content -NoNewline -Path $mainPath -Value $main
 
+          $jobPath = 'crates/storyteller-core/src/job.rs'
+          $job = Get-Content -Raw $jobPath
+          $job = $job -replace 'let mut settings = JobSettings::default\(\);\s*settings\.whisper_workers = MAX_WHISPER_WORKERS;', "let settings = JobSettings {`n            whisper_workers: MAX_WHISPER_WORKERS,`n            ..JobSettings::default()`n        };"
+          $job = $job -replace 'let mut invalid = JobSettings::default\(\);\s*invalid\.whisper_workers = MAX_WHISPER_WORKERS \+ 1;', "let invalid = JobSettings {`n            whisper_workers: MAX_WHISPER_WORKERS + 1,`n            ..JobSettings::default()`n        };"
+          Set-Content -NoNewline -Path $jobPath -Value $job
+
+          $resumePath = 'crates/storyteller-core/src/resume.rs'
+          $resume = Get-Content -Raw $resumePath
+          $resume = $resume -replace 'let mut changed = JobSettings::default\(\);\s*changed\.whisper_workers = MAX_WHISPER_WORKERS;', "let changed = JobSettings {`n            whisper_workers: MAX_WHISPER_WORKERS,`n            ..JobSettings::default()`n        };"
+          $resume = $resume -replace 'let mut changed = JobSettings::default\(\);\s*changed\.audio\s*=\s*AudioEncoding::new\(AudioCodec::Aac, Some\(AudioBitrate::Kbps96\)\)\.unwrap\(\);', "let changed = JobSettings {`n            audio: AudioEncoding::new(AudioCodec::Aac, Some(AudioBitrate::Kbps96)).unwrap(),`n            ..JobSettings::default()`n        };"
+          Set-Content -NoNewline -Path $resumePath -Value $resume
+
+          $chunkPath = 'crates/storyteller-ui/src/chunked_transcription.rs'
+          $chunk = Get-Content -Raw $chunkPath
+          if (-not $chunk.Contains('#[allow(clippy::too_many_arguments)]')) {
+            $chunk = $chunk.Replace('fn run_chunk_workers(', "#[allow(clippy::too_many_arguments)]`nfn run_chunk_workers(")
+          }
+          Set-Content -NoNewline -Path $chunkPath -Value $chunk
+
           $backendPath = 'crates/storyteller-ui/src/pipeline_backend.rs'
           $backend = Get-Content -Raw $backendPath
           $oldIdentity = '    let whisper_identity = file_identity("whisper.cpp-cli", &whisper_cli);'
