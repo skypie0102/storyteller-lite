@@ -148,8 +148,10 @@ mod tests {
     #[test]
     fn worker_count_is_execution_only_for_stage_fingerprints() {
         let first = context(JobSettings::default());
-        let mut changed = JobSettings::default();
-        changed.whisper_workers = MAX_WHISPER_WORKERS;
+        let changed = JobSettings {
+            whisper_workers: MAX_WHISPER_WORKERS,
+            ..JobSettings::default()
+        };
         let second = context(changed);
 
         for stage in PipelineStage::ALL {
@@ -165,9 +167,10 @@ mod tests {
     #[test]
     fn audio_encoding_only_invalidates_encode_and_downstream() {
         let first = context(JobSettings::default());
-        let mut changed = JobSettings::default();
-        changed.audio =
-            AudioEncoding::new(AudioCodec::Aac, Some(AudioBitrate::Kbps96)).unwrap();
+        let changed = JobSettings {
+            audio: AudioEncoding::new(AudioCodec::Aac, Some(AudioBitrate::Kbps96)).unwrap(),
+            ..JobSettings::default()
+        };
         let second = context(changed);
 
         for stage in [
@@ -176,14 +179,20 @@ mod tests {
             PipelineStage::Align,
             PipelineStage::ReviewAudio,
         ] {
-            assert_eq!(first.stage_fingerprint(stage), second.stage_fingerprint(stage));
+            assert_eq!(
+                first.stage_fingerprint(stage),
+                second.stage_fingerprint(stage)
+            );
         }
         for stage in [
             PipelineStage::Encode,
             PipelineStage::BuildEpub,
             PipelineStage::Validate,
         ] {
-            assert_ne!(first.stage_fingerprint(stage), second.stage_fingerprint(stage));
+            assert_ne!(
+                first.stage_fingerprint(stage),
+                second.stage_fingerprint(stage)
+            );
         }
     }
 }

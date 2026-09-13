@@ -520,8 +520,8 @@ fn parse_whisper_workers(value: &str) -> Result<usize, String> {
         .trim()
         .parse::<usize>()
         .map_err(|_| format!("Invalid Whisper worker count: {value}"))?;
-    if !(1..=16).contains(&workers) {
-        return Err("Whisper workers must be between 1 and 16.".into());
+    if !(1..=4).contains(&workers) {
+        return Err("Whisper workers must be between 1 and 4.".into());
     }
     Ok(workers)
 }
@@ -879,9 +879,9 @@ mod tests {
     #[test]
     fn whisper_worker_values_are_bounded() {
         assert_eq!(parse_whisper_workers("1").unwrap(), 1);
-        assert_eq!(parse_whisper_workers("16").unwrap(), 16);
+        assert_eq!(parse_whisper_workers("4").unwrap(), 4);
         assert!(parse_whisper_workers("0").is_err());
-        assert!(parse_whisper_workers("17").is_err());
+        assert!(parse_whisper_workers("5").is_err());
     }
 
     #[test]

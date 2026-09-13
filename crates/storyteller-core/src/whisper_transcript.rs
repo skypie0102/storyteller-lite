@@ -159,7 +159,9 @@ pub fn validate_chunk_plan(duration_ms: u64, chunks: &[TranscriptionChunk]) -> R
         return Err("Transcription chunk plan is empty.".into());
     }
     if chunks[0].start_ms != 0 {
-        return Err("Transcription chunk plan does not begin at the start of the audiobook.".into());
+        return Err(
+            "Transcription chunk plan does not begin at the start of the audiobook.".into(),
+        );
     }
     let mut previous_end = 0u64;
     for (position, chunk) in chunks.iter().enumerate() {

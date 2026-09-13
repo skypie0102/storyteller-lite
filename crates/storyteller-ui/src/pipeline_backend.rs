@@ -146,8 +146,11 @@ impl LitePipelineBackend {
         };
         validate_nonempty_file(&transcript_path, "Merged Whisper transcript")
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        validate_nonempty_file(&stage_dir.join("transcription-plan.json"), "Transcription plan")
-            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        validate_nonempty_file(
+            &stage_dir.join("transcription-plan.json"),
+            "Transcription plan",
+        )
+        .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         metrics.current_item = Some(summary.chunks as u64);
         metrics.total_items = Some(summary.chunks as u64);
@@ -163,7 +166,11 @@ impl LitePipelineBackend {
                     effective_workers,
                     if effective_workers == 1 { "" } else { "s" },
                     summary.per_worker_threads,
-                    if summary.per_worker_threads == 1 { "" } else { "s" }
+                    if summary.per_worker_threads == 1 {
+                        ""
+                    } else {
+                        "s"
+                    }
                 ),
                 self.elapsed_millis(),
             )
@@ -679,10 +686,13 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         AudioCodec::Copy => "storyteller:cancellable-file-copy-v1".into(),
         AudioCodec::Opus | AudioCodec::Aac => file_identity("ffmpeg", &ffmpeg),
     };
+    let ffmpeg_identity = file_identity("ffmpeg-analyze", &ffmpeg);
     let whisper_identity = file_identity("whisper.cpp-cli", &whisper_cli);
 
     PipelineEnvironment {
-        whisper_backend: format!("storyteller:chunked-whisper-v1|{whisper_identity}"),
+        whisper_backend: format!(
+            "storyteller:chunked-whisper-v1|{ffmpeg_identity}|{whisper_identity}"
+        ),
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
         ocr_backend: "not-used:ocr".into(),

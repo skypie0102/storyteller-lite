@@ -87,7 +87,11 @@ pub(crate) fn transcribe_audiobook_in_chunks(
         cancellation,
     )?;
     validate_chunk_plan(metadata.duration_ms, &chunks)?;
-    write_chunk_plan(&stage_dir.join("transcription-plan.json"), metadata.duration_ms, &chunks)?;
+    write_chunk_plan(
+        &stage_dir.join("transcription-plan.json"),
+        metadata.duration_ms,
+        &chunks,
+    )?;
 
     let effective_workers = config.workers.min(chunks.len()).max(1);
     let per_worker_threads = (config.total_cpu_threads / effective_workers).max(1);
@@ -141,6 +145,7 @@ pub(crate) fn transcribe_audiobook_in_chunks(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_chunk_workers(
     source: &Path,
     temporary_dir: &Path,
@@ -222,7 +227,8 @@ fn run_chunk_workers(
                 continue;
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                first_error = Some("Transcription workers stopped before all chunks completed.".into());
+                first_error =
+                    Some("Transcription workers stopped before all chunks completed.".into());
                 break;
             }
         };
@@ -286,7 +292,9 @@ fn run_chunk_workers(
         .into_iter()
         .enumerate()
         .map(|(index, part)| {
-            part.ok_or_else(|| format!("Transcription chunk {} did not return a result.", index + 1))
+            part.ok_or_else(|| {
+                format!("Transcription chunk {} did not return a result.", index + 1)
+            })
         })
         .collect()
 }
@@ -329,7 +337,12 @@ fn transcribe_one_chunk(
         .arg(&wav_path);
     match run_cancellable_command(&mut ffmpeg, cancellation, |_, _| {}) {
         Ok(output) if output.success => {}
-        Ok(output) => return Err(command_failure("ffmpeg transcription chunk conversion", &output)),
+        Ok(output) => {
+            return Err(command_failure(
+                "ffmpeg transcription chunk conversion",
+                &output,
+            ))
+        }
         Err(CommandRunError::Cancelled) => return Err("Transcription was cancelled.".into()),
         Err(error) => return Err(format!("Could not convert transcription chunk: {error}")),
     }
@@ -407,7 +420,9 @@ fn probe_audio_metadata(
             }
             output
         }
-        Err(CommandRunError::Cancelled) => return Err("Audiobook metadata probe was cancelled.".into()),
+        Err(CommandRunError::Cancelled) => {
+            return Err("Audiobook metadata probe was cancelled.".into())
+        }
         Err(error) => return Err(format!("Could not probe audiobook metadata: {error}")),
     };
     let duration_ms = parse_ffmpeg_duration_ms(&output.stderr)
@@ -430,7 +445,10 @@ fn refine_synthetic_boundaries(
     chunks: &mut [TranscriptionChunk],
     cancellation: &CancellationToken,
 ) -> Result<(), String> {
-    let chapters = chapter_boundaries_ms.iter().copied().collect::<HashSet<_>>();
+    let chapters = chapter_boundaries_ms
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
     if chunks.len() <= 1 {
         return Ok(());
     }
@@ -440,7 +458,9 @@ fn refine_synthetic_boundaries(
         if chapters.contains(&target) {
             continue;
         }
-        if let Some(refined) = find_nearby_silence_cut(source, ffmpeg, target, duration_ms, cancellation)? {
+        if let Some(refined) =
+            find_nearby_silence_cut(source, ffmpeg, target, duration_ms, cancellation)?
+        {
             let previous = if index == 0 { 0 } else { boundaries[index - 1] };
             let next = boundaries[index + 1];
             if refined > previous && refined < next {
@@ -497,8 +517,14 @@ fn find_nearby_silence_cut(
     let output = match run_cancellable_command(&mut command, cancellation, |_, _| {}) {
         Ok(output) if output.success => output,
         Ok(output) => return Err(command_failure("ffmpeg silence boundary search", &output)),
-        Err(CommandRunError::Cancelled) => return Err("Silence boundary search was cancelled.".into()),
-        Err(error) => return Err(format!("Could not search for a safe audio boundary: {error}")),
+        Err(CommandRunError::Cancelled) => {
+            return Err("Silence boundary search was cancelled.".into())
+        }
+        Err(error) => {
+            return Err(format!(
+                "Could not search for a safe audio boundary: {error}"
+            ))
+        }
     };
     let intervals = parse_silence_intervals(&output.stderr);
     let target_local_ms = target_ms.saturating_sub(search_start_ms);
@@ -544,7 +570,11 @@ fn parse_ffmetadata_chapter_ends(text: &str) -> Vec<u64> {
     let mut denominator = 1000u64;
     let mut end = None::<u64>;
 
-    let flush = |ends: &mut Vec<u64>, in_chapter: bool, numerator: u64, denominator: u64, end: Option<u64>| {
+    let flush = |ends: &mut Vec<u64>,
+                 in_chapter: bool,
+                 numerator: u64,
+                 denominator: u64,
+                 end: Option<u64>| {
         if !in_chapter || denominator == 0 {
             return;
         }
@@ -601,7 +631,10 @@ fn parse_silence_intervals(text: &str) -> Vec<(u64, u64)> {
             let end = value.parse::<f64>().ok();
             if let (Some(start), Some(end)) = (current_start.take(), end) {
                 if start.is_finite() && end.is_finite() && end > start {
-                    intervals.push(((start * 1000.0).round() as u64, (end * 1000.0).round() as u64));
+                    intervals.push((
+                        (start * 1000.0).round() as u64,
+                        (end * 1000.0).round() as u64,
+                    ));
                 }
             }
         }
@@ -615,9 +648,16 @@ struct ChunkPlanFile<'a> {
     chunks: &'a [TranscriptionChunk],
 }
 
-fn write_chunk_plan(path: &Path, duration_ms: u64, chunks: &[TranscriptionChunk]) -> Result<(), String> {
-    let json = serde_json::to_vec_pretty(&ChunkPlanFile { duration_ms, chunks })
-        .map_err(|error| format!("Could not serialize transcription chunk plan: {error}"))?;
+fn write_chunk_plan(
+    path: &Path,
+    duration_ms: u64,
+    chunks: &[TranscriptionChunk],
+) -> Result<(), String> {
+    let json = serde_json::to_vec_pretty(&ChunkPlanFile {
+        duration_ms,
+        chunks,
+    })
+    .map_err(|error| format!("Could not serialize transcription chunk plan: {error}"))?;
     fs::write(path, json).map_err(|error| {
         format!(
             "Could not write transcription chunk plan {}: {error}",

@@ -318,12 +318,16 @@ mod tests {
 
     #[test]
     fn whisper_worker_count_is_bounded_for_queued_jobs() {
-        let mut settings = JobSettings::default();
-        settings.whisper_workers = MAX_WHISPER_WORKERS;
+        let settings = JobSettings {
+            whisper_workers: MAX_WHISPER_WORKERS,
+            ..JobSettings::default()
+        };
         assert!(Job::new(inputs(), settings).is_ok());
 
-        let mut invalid = JobSettings::default();
-        invalid.whisper_workers = MAX_WHISPER_WORKERS + 1;
+        let invalid = JobSettings {
+            whisper_workers: MAX_WHISPER_WORKERS + 1,
+            ..JobSettings::default()
+        };
         assert!(Job::new(inputs(), invalid).is_err());
     }
 }
