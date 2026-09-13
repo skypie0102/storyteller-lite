@@ -6,165 +6,156 @@ Read this file before making substantial changes.
 
 - Repository: `skypie0102/storyteller-lite`
 - Active recovered code branch: `recovery/rust-slint`
-- Default branch `main` is not the code branch to use for the Rust + Slint implementation.
+- Default branch `main` is not the Rust + Slint implementation branch.
+- P1 was reconstructed on `feature/whisper-chunk-workers` and validated on Windows before integration.
 
-The recovered planning transcript mentions a historical `refactor/rust-slint` branch and several commit SHAs. Those are useful clues but are **not authoritative current repository state**. Inspect the live branch before relying on them.
+Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
 ## Product identity
 
-Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The pre-Rust application is a behavioral reference where needed, but Lite is deliberately smaller and should not become a line-for-line port.
+Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The pre-Rust application is a behavioral reference where useful, but Lite is deliberately smaller and must not become a line-for-line port.
 
 Primary references:
 
 1. `docs/ROADMAP.md` — canonical current roadmap/product scope.
-2. `docs/ui-guides/README.md` + mockups — visual/product references.
-3. `docs/recovery/README.md` — provenance and source hierarchy.
-4. `docs/recovery/LITE_PLANNING_HISTORY.txt` — recovered historical planning transcript.
-5. `docs/recovery/LEGACY_INSTALLER_REFERENCE.md` — old installer provenance and usage rules.
-6. `docs/recovery/INSTALLER_DISSECTION.md` — facts recovered by static analysis of the v0.39.0 installer.
-7. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend state machine, exact allocator invariants, backend defaults, and persistence/concurrency behavior.
-8. `docs/recovery/WORKER_SEMANTICS.md` — focused evidence for what old Parallel Whisper jobs meant and the preferred Lite worker architecture.
-9. `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` — recovered Smart classification, automatic edge handling, lazy OCR, and reduced allocator scope.
-10. `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md` — recovered downstream EPUB rendering semantics for Introduction/Credits/Graphic Readout decisions.
-11. `docs/recovery/QUEUE_FAILURE_RECOVERY.md` — recovered auto-advance behavior after a book fails.
-12. `tools/recovery/extract_legacy_nsis.py` — reproducible static extractor for the exact known installer hash.
-13. `tools/recovery/extract_tauri_assets.py` — reproducible recovery/verification of the old embedded Tauri frontend assets.
+2. `docs/ui-guides/README.md` + mockups — current visual/product references.
+3. `docs/RUNTIME.md` — owned external runtime behavior.
+4. `docs/recovery/README.md` — provenance and authority order.
+5. `docs/recovery/WORKER_SEMANTICS.md` — recovered transcription concurrency semantics.
+6. `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` — Smart/edge/lazy-OCR recovery.
+7. `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md` — downstream Introduction/Credits/Graphic Readout semantics.
+8. `docs/recovery/QUEUE_FAILURE_RECOVERY.md` — queue auto-advance behavior after failure.
+9. `docs/recovery/INTEGRITY_RECOVERY.md` — legacy finishing/integrity behavior, including the 1 ms zero-length SMIL repair.
+10. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — old frontend state, persistence, and allocator invariants.
+11. `docs/recovery/INSTALLER_DISSECTION.md` — static findings from v0.39.0.
+12. `tools/recovery/extract_legacy_nsis.py` and `tools/recovery/extract_tauri_assets.py` — reproducible recovery tools.
 
-## User decisions recovered in this chat
+Installer archaeology is now **demand-driven**. Do not spend time recovering unrelated EXE details unless a live Lite behavior remains ambiguous.
+
+## User decisions that remain authoritative
 
 ### Keep / restore
 
 - Queue-first workflow.
 - Fixed seven-stage pipeline: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate.
-- Exactly one overall progress bar with real structured metrics.
-- Existing automatic CPU-thread selection for Whisper.
-- **A simple user-facing Whisper worker-count setting**, default `1` for Lite unless benchmarking/product evidence changes it.
-- Worker count means **concurrent transcription chunks/tracks**, not manual CPU allocation and not a direct alias for whisper.cpp `-p`.
+- Exactly one overall progress bar backed by real metrics.
+- Automatic CPU-thread selection for Whisper.
+- A simple user-facing **Whisper worker count**, default `1`, range `1–4` for the current Lite implementation.
+- Worker count means **concurrent bounded transcription chunks**, not manual CPU allocation and not whisper.cpp `-p`.
 - **Smart / ReviewAll** unmatched-audio policy.
-- **Automatic edge handling/trimming** for safe high-confidence cases.
-- **Lazy/on-demand OCR** of bounded EPUB image candidates; no permanent OCR toggle.
-- **Manual allocation for unresolved/unaligned audio** in a reduced Lite-specific review screen.
-- Limited useful classifications such as Introduction, Credits, Graphic Readout, and Extra Audio when they materially affect destination/build behavior.
-- Failed books remain failed/retryable but **do not stall the queue**; the next waiting book starts unless the queue was explicitly paused or Pause-after-current was requested.
-- Old installer only as a behavioral reference when needed.
-- The supplied mockups as current UI layout guides.
+- Conservative automatic edge handling for safe high-confidence cases.
+- Lazy/on-demand OCR of bounded EPUB image candidates; no permanent OCR toggle.
+- Reduced manual allocation for unresolved audio.
+- Limited useful dispositions such as Introduction, Credits, Graphic Readout, and Extra Audio where they affect build behavior.
+- Failed books remain failed/retryable but do not stall the queue unless the queue was explicitly paused or Pause-after-current was requested.
+- Supplied mockups as UI hierarchy guides.
 
 ### Do not restore by default
 
 - Manual CPU/thread allocation UI.
 - Full old OneClick settings complexity.
 - Word-level synchronization.
-- Activity console as primary UI.
+- Activity-console-first UI.
 - Runtime Health page.
 - Process-now flow.
 - Engine/runtime path tuning UI.
 - Standardize-EPUB toggle.
 - CSS editor.
 - Permanent OCR toggle.
-- Full historical allocator/editor complexity: unrestricted split/merge/trim/rules/general-purpose classification editing.
+- Arbitrary split/merge/trim/rules/general-purpose allocator complexity.
 
-The recovered planning transcript previously said worker/thread controls could be removed. The newer explicit user request for a **worker count** overrides that old note; it does **not** restore manual CPU allocation. Likewise, removing the old permanent OCR preference does not remove lazy OCR from Smart review.
+## Current code behavior
 
-## Current code behavior relevant to pending work
+### P0/P1 — complete and Windows-validated
 
-As of the recovered branch inspected during this chat:
+P1 replaced the previous single full-book PCM transcription path.
 
-- `spawn_job_worker()` derives all logical CPU threads from `std::thread::available_parallelism()`.
-- `LitePipelineBackend` passes that value to whisper.cpp with `-t`.
-- Analyze currently converts the whole audiobook into one `audio.wav` and launches one whisper-cli process, so there is only one transcription work item per book.
-- `JobSettings` currently contains audio encoding, language override, and Whisper model; no worker-count field exists.
-- Settings UI currently focuses on runtime dependency discovery/install/import.
-- Review Audio currently writes `review.json`, previews unmatched segments, and only offers Cancel or global **Continue without unmatched audio**.
-- `AudioReviewReport` has a global `accepted_unmatched_exclusion` flag; there is no durable per-segment manual assignment model yet.
-- Smart edge handling, lazy OCR/image classification, and ReviewAll are not implemented in the current recovered code.
-- Alignment is conservative/monotonic and accepted segments map to single XHTML block ranges.
-- Queue failure behavior already matches the recovered old app: terminal worker results are followed by `start_next_worker()`, while `JobQueue` only pauses on a requested pause-after-current terminal transition.
+Current Analyze behavior:
 
-Inspect the current source before implementation because the branch may have advanced since this snapshot.
+- `JobSettings` carries `whisper_workers`, validated to `1..=4`, default `1`.
+- The Settings UI exposes only that simple worker selector. There is no manual CPU allocation control.
+- The selected worker value is snapshotted into each queued job.
+- Worker count is execution-only for resume fingerprints; changing it does not invalidate semantic checkpoints.
+- Analyze probes audiobook duration/chapter metadata using the existing ffmpeg executable; no ffprobe dependency was added.
+- Long audio is divided into deterministic ordered chunks. Chapter boundaries are preferred; synthetic boundaries are refined around nearby detected silence.
+- Each chunk is temporarily decoded to 16 kHz mono signed-16-bit PCM and passed to its own whisper.cpp CLI process.
+- At most `whisper_workers` chunks are transcribed concurrently.
+- Each whisper invocation uses `-t` with an automatically divided CPU-thread budget. The worker setting is **not** mapped to `-p`.
+- Local Whisper timestamps are offset back to global audiobook time, merged, sorted/validated, and written as one normalized transcript.
+- Silent individual chunks are allowed; an invalid/empty final transcript is not.
+- Temporary PCM chunk files are deleted when Analyze finishes. There is no permanent whole-book `audio.wav` artifact.
+- Durable Analyze artifacts are `book-corpus.json`, `transcription-plan.json`, and `transcript.json`.
+- User cancellation propagates to active chunk processes. Internal worker failure cancels siblings through a private worker token without misclassifying the whole job as user-cancelled.
+- Analyze fingerprinting includes both ffmpeg and whisper.cpp executable identity plus language/model identity.
+- Audio codec/bitrate changes invalidate Encode/downstream rather than unnecessarily invalidating Analyze.
 
-## Installer recovery status
+Windows validation for the feature passed:
 
-Static analysis of the user-provided v0.39.0 installer is reproducible and documented under `docs/recovery/`.
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
+- `cargo build -p storyteller-ui`
 
-Important recovered clues:
+Validation run: GitHub Actions run `34732299289`. The validated source cleanup commit is `d7d421135078f76ef54bda0adc821f9c60afc898`.
 
-- The old Tauri/Rust app had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings. Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs.
-- Machine-code recovery confirms the old backend defaults were `threads=6`, `parallelTranscribes=3`, and `parallelTranscodes=6`, with `npx`, `large-v3-turbo`, `en-US`, and `64K`. These are historical defaults only, not Lite defaults.
-- **Critical:** the old alignment launcher passed `--processors 1` separately from `--parallel-transcribes <parallelTranscribes>`. Therefore historical `parallelTranscribes` was higher-level job concurrency and was **not** whisper.cpp processor count / `-p`.
-- A current upstream Storyteller source cross-check confirms the same conceptual split: `parallelTranscribes` is a semaphore over multiple processed audio files, while each file has independent Whisper `processors`/`threads`. Current preprocessing splits long audio into bounded chapter/VAD-safe tracks. See `docs/recovery/WORKER_SEMANTICS.md`.
-- Old manual-allocation IPC included draft save/restore, pending request retrieval, audio preview, image preview, submit, and pause/cancel operations.
-- Old persisted state contained `manualDrafts`; retry after interruption could reopen/restore allocations. The recovered frontend autosaved after a 450 ms debounce and also kept a local fallback copy.
-- Durable decisions were separate from disposable/rebuildable preview workspaces. Preserve that boundary in Lite.
-- The installer contains the old finishing helper's **plain Python source**. Its manual allocation code enforces complete time coverage, no gaps/overlaps, explicit targets, and final output auditing.
-- The old helper's unmatched discovery was primarily edge-focused (Introduction/Credits), while its automatic-player path also used bounded image candidates and OCR/text hints to detect Graphic Readouts.
-- Historical OCR was already bounded/lazy in implementation: candidate documents/images were narrowed first, embedded text hints were used first where possible, and OCR ran only on relevant candidates. See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md`.
-- Recovered output semantics show that Introduction/Credits could become native XHTML+SMIL supplemental pages, while Graphic Readout narration could be attached to the existing image page. See `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md`.
-- The old executable explicitly reports `Queue continuing after this failure; <N> pending book(s) remain.` The old UI's `Stop After` command was the mechanism to suppress auto-advance after the current book. See `docs/recovery/QUEUE_FAILURE_RECOVERY.md`.
-- The helper is GPLv3-or-later/Sigil-derived. Treat it as a behavioral/test-vector reference unless licensing for direct code reuse is deliberately resolved.
+### Known P1 caveats
+
+- Multiple GPU-backed whisper processes can each load the model. The current UI deliberately limits concurrency to 1–4, but there is not yet a GPU/VRAM-aware automatic clamp. Benchmark before changing the default above 1.
+- Progress is aggregated from real Whisper callback percentages across chunks; it is not a wall-clock guess. A future refinement may duration-weight chunks if useful.
+- Changing worker count is intentionally excluded from semantic cache fingerprints. If future evidence shows materially different transcript semantics at different concurrency, revisit that policy with regression data rather than assumptions.
+
+### Review Audio — current next gap
+
+Review Audio still writes `review.json`, previews unmatched regions, and offers only Cancel or global **Continue without unmatched audio**. `AudioReviewReport` still uses a global `accepted_unmatched_exclusion` decision; there is no durable per-segment assignment model yet.
+
+Smart edge handling, ReviewAll, lazy OCR/image classification, durable manual drafts, and reduced per-segment allocation remain unimplemented. Alignment itself remains conservative/monotonic, and accepted transcript matches stay tied to real XHTML block ranges.
+
+Queue failure behavior already matches recovered OneClick: terminal worker results advance to the next waiting job unless pause-after-current has paused the queue.
+
+## Installer recovery facts worth preserving
+
+- Old OneClick had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings.
+- Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs; historical backend defaults were different from Lite and are not compatibility requirements.
+- Old alignment launched Whisper with `--processors 1` separately from `--parallel-transcribes`, proving parallel transcribes was higher-level work concurrency rather than whisper.cpp processor count.
+- Old manual allocation persisted `manualDrafts`; the recovered frontend autosaved after roughly 450 ms and kept a local fallback.
+- Durable review decisions were separate from disposable/rebuildable preview workspaces. Preserve that boundary in Lite.
+- Old finishing logic required complete non-overlapping coverage and explicit targets, followed by a final independent audit.
+- Old zero-length SMIL repair was narrowly `clipEnd = clipBegin + 0.001s`; the final audit could still reject invalid/overlapping output.
+- Historical OCR was already bounded/lazy: narrow candidates first, embedded text hints where possible, OCR only when needed.
+- Introduction/Credits could become supplemental XHTML+SMIL pages; Graphic Readout narration could attach to an existing image page when validated.
+- The recovered GPL/Sigil-derived helper is a behavioral/test-vector reference unless licensing for direct reuse is deliberately resolved.
 
 ## Immediate implementation order
 
-### P0 — validate current head
-
-Before feature changes, establish that the current branch builds/tests on the intended Windows validation path. Do not assume historical CI claims in the planning transcript still apply.
-
-### P1 — Whisper workers setting and chunked Analyze
-
-Implement one simple user-facing worker-count setting while retaining automatic CPU-thread selection.
-
-Recovered evidence gives a preferred semantic definition: **worker count bounds concurrently transcribed audio chunks/tracks**, not whisper.cpp `-p`.
-
-Requirements:
-
-- Lite default `1` unless deliberate benchmarking changes it;
-- user-adjustable from Settings;
-- initial range can reasonably benchmark 1–4, matching the old parallel-job range without treating it as a compatibility mandate;
-- split/decode long audiobook input into deterministic ordered transcription work items so `workers > 1` actually has work to schedule;
-- prefer chapter-safe boundaries and a tested silence/VAD-aware fallback for overlong/no-chapter ranges;
-- run at most `workers` Whisper transcription tasks concurrently;
-- keep each individual whisper.cpp invocation at one processor initially; do **not** implement this setting by simply passing `-p N`;
-- automatically budget per-worker CPU threads/resources instead of restoring manual thread controls or giving every simultaneous worker all logical CPUs;
-- add each chunk's global audio offset to its local Whisper timestamps, then merge and validate one chronological Analyze transcript artifact;
-- aggregate progress/cancellation across active workers;
-- avoid CPU/GPU/VRAM oversubscription, especially when the model is loaded by multiple concurrent GPU processes;
-- treat worker count as **execution/performance configuration**, not semantic output configuration. Do not invalidate reusable Analyze/Align checkpoints solely because N changed if the merged transcript contract is deterministic/equivalent.
-
-`docs/recovery/WORKER_SEMANTICS.md` contains the evidence and implementation cautions in detail.
-
-Prefer an app/runtime settings model separate from output-affecting `JobSettings` fingerprints. If queued-job determinism requires storing it per job, exclude it from semantic stage fingerprints.
-
 ### P2 — Smart unmatched-audio pipeline and reduced manual allocator
 
-Replace the current all-or-nothing unmatched-audio review with the recovered Lite model. See `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` and `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md`.
+This is the next product milestone. Replace the current all-or-nothing unmatched-audio review with the recovered Lite model from `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` and `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md`.
 
 Required behavior:
 
 - reduced **Smart / ReviewAll** policy;
-- conservative automatic edge trimming/handling;
-- bounded candidate generation from EPUB order/context;
-- lazy/on-demand OCR and embedded image-text hints only when Smart or the current review segment needs them;
-- optional small classification/suggestion set such as Introduction, Credits, Graphic Readout, Extra Audio when useful for destination/build behavior;
-- high-confidence Graphic Readout → valid image page/document assignment where evidence supports it;
-- unresolved segments remain pending instead of being silently discarded;
-- durable per-segment decisions with autosave/retry restoration;
-- previous/next unresolved navigation, audio preview/seek, transcript/timing/silence context, Smart suggestion, EPUB candidate context, explicit assignment/exclusion/override, Apply & Next;
-- monotonic EPUB ordering and real block/image candidate validation;
-- retain automatic alignment and decision provenance for audit/debugging while materializing an effective downstream allocation/alignment result;
-- Build EPUB must understand more than plain text-block assignment: it needs a path for synchronized supplemental Introduction/Credits pages and validated image-bound Graphic Readout narration where those dispositions are used;
-- validate/audit output after automatic/manual decisions.
+- conservative automatic edge handling;
+- bounded EPUB candidate generation using reading order and neighboring accepted matches;
+- lazy embedded-image text/OCR only when Smart or the current unresolved segment needs it;
+- small optional disposition set such as Introduction, Credits, Graphic Readout, Extra Audio where destination/rendering semantics require it;
+- unresolved segments remain Pending rather than being silently discarded;
+- durable per-segment Pending / Assigned / Excluded decisions with provenance and optional disposition metadata;
+- autosaved drafts that survive app restart/retry independently of disposable preview workspaces;
+- previous/next unresolved navigation, audio preview/seek, transcript/timing/silence context, Smart suggestion, EPUB candidate context, explicit assignment/exclusion/override, and Apply & Next;
+- monotonic EPUB ordering and real XHTML block/image candidate validation;
+- a materialized effective downstream allocation/alignment result while retaining original automatic alignment and review provenance;
+- Build EPUB support for supplemental Introduction/Credits pages and validated image-bound Graphic Readout narration when those dispositions are used;
+- final structural audit after automatic/manual decisions.
 
-A base decision model should support Pending, Assigned, and Excluded, but preserve optional classification/suggestion/provenance and destination/rendering semantics rather than collapsing useful Smart information.
+Do **not** initially add arbitrary split/merge, a general waveform trim editor, broad Apply-to-similar rules, permanent OCR controls, or the unrestricted old allocator taxonomy.
 
-Do **not** initially implement arbitrary split/merge, a general waveform trim editor, permanent OCR controls, broad Apply-to-similar rules, or an unrestricted old-app category/destination editor.
+### P3 — align Slint UI with supplied mockups
 
-### P3 — align Slint UI with the supplied mockups
-
-Use the main UI mockup for hierarchy and information density and the allocator mockup for the dedicated review experience. They are wide-window guides, not fixed pixel canvases.
+Use the main mockup for hierarchy/information density and the allocator mockup for the dedicated review experience. Treat them as responsive wide-window guides, not fixed pixel canvases.
 
 ## Engineering rule
 
-Do not start with broad legacy deletion. The preserved historical material is useful for regression behavior. Use:
+Do not start with broad legacy deletion. Use:
 
 > Replace → regression-test → delete.
 
-When old behavior and Lite scope conflict, prefer current Lite scope and document the decision.
+When old behavior and current Lite scope conflict, prefer current Lite scope and document the decision.
