@@ -62,8 +62,9 @@ pub use source_prepare::{
 };
 pub use whisper_transcript::{
     merge_chunk_transcripts, plan_transcription_chunks, read_whisper_transcript,
-    validate_chunk_plan, write_whisper_transcript, TranscriptSegment, TranscriptionChunk,
-    WhisperTranscript, CHAPTER_BOUNDARY_TOLERANCE_MS, DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
+    read_whisper_transcript_chunk, validate_chunk_plan, write_whisper_transcript,
+    TranscriptSegment, TranscriptionChunk, WhisperTranscript, CHAPTER_BOUNDARY_TOLERANCE_MS,
+    DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
 };
 pub use worker::{
     spawn_pipeline_worker, spawn_pipeline_worker_with_preflight, PipelineEnvironment,
