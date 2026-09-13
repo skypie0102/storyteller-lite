@@ -44,6 +44,7 @@ export component AppWindow inherits Window {
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
     in-out property <string> whisper-workers-text: "1";
+    in-out property <string> unmatched-audio-policy-text: "Smart";
     in-out property <bool> settings-open: false;
     in-out property <bool> runtime-refresh-requested: false;
     in-out property <bool> runtime-install-requested: false;
@@ -229,7 +230,12 @@ export component AppWindow inherits Window {
                 }
                 Text { text: "Output: Next to source"; vertical-alignment: center; opacity: 0.72; }
                 Rectangle { horizontal-stretch: 1; }
-                Text { text: "Unmatched audio: Smart"; vertical-alignment: center; opacity: 0.72; }
+                Text { text: "Unmatched audio"; vertical-alignment: center; opacity: 0.72; }
+                ComboBox {
+                    model: ["Smart", "Review all"];
+                    current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                    selected(value) => { root.unmatched-audio-policy-text = value; }
+                }
                 Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
             }
         }
@@ -264,6 +270,11 @@ export component AppWindow inherits Window {
                     current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
                     enabled: root.codec-text != "Copy";
                     selected(value) => { root.bitrate-text = value; }
+                }
+                ComboBox {
+                    model: ["Smart", "Review all"];
+                    current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                    selected(value) => { root.unmatched-audio-policy-text = value; }
                 }
                 Rectangle { horizontal-stretch: 1; }
                 Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }

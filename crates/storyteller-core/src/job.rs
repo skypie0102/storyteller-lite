@@ -1,5 +1,6 @@
 use crate::{
-    PipelineProgress, PipelineStage, ResumeContext, ResumePlan, StageStatus, ValidatedResumePlan,
+    AudioReviewPolicy, PipelineProgress, PipelineStage, ResumeContext, ResumePlan, StageStatus,
+    ValidatedResumePlan,
 };
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -62,6 +63,8 @@ pub struct JobSettings {
     pub audio: AudioEncoding,
     pub language: Option<String>,
     pub whisper_model: String,
+    /// Controls whether safe unmatched-audio cases may be resolved automatically or all are surfaced.
+    pub audio_review_policy: AudioReviewPolicy,
     /// Maximum number of independent transcription chunks that may run concurrently.
     /// This is intentionally separate from whisper.cpp's internal processor count.
     pub whisper_workers: usize,
@@ -76,6 +79,7 @@ impl Default for JobSettings {
             },
             language: None,
             whisper_model: "large-v3-turbo".into(),
+            audio_review_policy: AudioReviewPolicy::Smart,
             whisper_workers: MIN_WHISPER_WORKERS,
         }
     }

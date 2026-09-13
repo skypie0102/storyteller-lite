@@ -11,8 +11,8 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobQueue,
-    JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
+    AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobOutcome,
+    JobQueue, JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
 };
 use worker_bridge::{accept_audio_review_exclusion, load_audio_review_report, WorkerBridge};
 
@@ -155,10 +155,19 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
             };
+            let audio_review_policy =
+                match parse_audio_review_policy(ui.get_unmatched_audio_policy_text().as_str()) {
+                    Ok(policy) => policy,
+                    Err(error) => {
+                        ui.set_status_text(error.into());
+                        return;
+                    }
+                };
             let title = book_title(&epub_path);
             let output_path = output_path(&epub_path, &title);
             let settings = JobSettings {
                 audio,
+                audio_review_policy,
                 whisper_workers,
                 ..JobSettings::default()
             };
@@ -518,6 +527,14 @@ fn audio_encoding(codec: &str, bitrate: &str) -> Result<AudioEncoding, String> {
         value => return Err(format!("Unsupported audio bitrate: {value}")),
     };
     AudioEncoding::new(codec, Some(bitrate))
+}
+
+fn parse_audio_review_policy(value: &str) -> Result<AudioReviewPolicy, String> {
+    match value.trim() {
+        "Smart" => Ok(AudioReviewPolicy::Smart),
+        "Review all" => Ok(AudioReviewPolicy::ReviewAll),
+        value => Err(format!("Unsupported unmatched-audio policy: {value}")),
+    }
 }
 
 fn parse_whisper_workers(value: &str) -> Result<usize, String> {

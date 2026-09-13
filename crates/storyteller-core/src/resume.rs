@@ -53,11 +53,21 @@ impl ResumeContext {
                 hasher.update(self.effective_language.as_bytes());
                 hasher.update(self.effective_whisper_model.as_bytes());
             }
-            PipelineStage::Align | PipelineStage::ReviewAudio => {
+            PipelineStage::Align => {
                 hasher.update(self.whisper_backend.as_bytes());
                 hasher.update(self.alignment_backend.as_bytes());
                 hasher.update(self.effective_language.as_bytes());
                 hasher.update(self.effective_whisper_model.as_bytes());
+            }
+            PipelineStage::ReviewAudio => {
+                hasher.update(self.whisper_backend.as_bytes());
+                hasher.update(self.alignment_backend.as_bytes());
+                hasher.update(self.effective_language.as_bytes());
+                hasher.update(self.effective_whisper_model.as_bytes());
+                hasher.update(format!(
+                    "review-policy:{:?}\n",
+                    self.settings.audio_review_policy
+                ));
             }
             PipelineStage::Encode => {
                 hasher.update(format!("audio-settings:{:?}\n", self.settings.audio));
@@ -162,6 +172,33 @@ mod tests {
                 stage.label()
             );
         }
+    }
+
+    #[test]
+    fn review_policy_invalidates_review_audio_but_not_alignment() {
+        let first = context(JobSettings::default());
+        let changed = JobSettings {
+            audio_review_policy: crate::AudioReviewPolicy::ReviewAll,
+            ..JobSettings::default()
+        };
+        let second = context(changed);
+
+        for stage in [
+            PipelineStage::Prepare,
+            PipelineStage::Analyze,
+            PipelineStage::Align,
+        ] {
+            assert_eq!(
+                first.stage_fingerprint(stage),
+                second.stage_fingerprint(stage),
+                "review policy unexpectedly changed {} fingerprint",
+                stage.label()
+            );
+        }
+        assert_ne!(
+            first.stage_fingerprint(PipelineStage::ReviewAudio),
+            second.stage_fingerprint(PipelineStage::ReviewAudio)
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 const REVIEW_DRAFT_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AudioReviewPolicy {
     #[default]

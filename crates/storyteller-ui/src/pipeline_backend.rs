@@ -14,10 +14,9 @@ use storyteller_core::{
     encode_audiobook, extract_epub_corpus, materialize_reviewed_alignment, prepare_job_sources,
     prepared_job_sources, publish_validated_epub, read_audio_review_report,
     spawn_pipeline_worker_with_preflight, validate_readaloud_epub, write_validation_report,
-    AudioCodec, AudioReviewPolicy, HardwareProfile, Job, JobWorkspace, LiveMetrics,
-    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
-    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
-    StageRunOutput,
+    AudioCodec, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
+    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
+    RuntimeCoordinator, StagePlan, StageRunContext, StageRunError, StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -283,7 +282,7 @@ impl LitePipelineBackend {
             &alignment_path,
             &report_path,
             Some(&draft_path),
-            AudioReviewPolicy::Smart,
+            context.job().settings.audio_review_policy,
         )
         .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         context.set_metrics(
