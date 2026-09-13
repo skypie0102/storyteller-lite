@@ -3,7 +3,7 @@ use slint::{ComponentHandle, VecModel};
 use std::{
     cell::RefCell,
     env,
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Child, Command, Stdio},
     rc::Rc,
 };
@@ -13,7 +13,7 @@ use storyteller_core::{
     JobQueue, JobStatus, PipelineStage, DEFAULT_REVIEW_CANDIDATE_LIMIT,
 };
 
-const UI_CANDIDATE_LIMIT: usize = 8;
+const UI_CANDIDATE_LIMIT: usize = 4;
 const SEEK_STEP_MS: i64 = 5_000;
 
 pub(crate) struct ReviewUiController {
@@ -59,7 +59,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_review_previous(move || {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             if controller.selected_index > 0 {
                 controller.selected_index -= 1;
@@ -75,7 +77,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_review_next(move || {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             if let Some(job) = review_job(&queue.borrow()) {
                 if let Ok(report) = worker_bridge::load_audio_review_report(job) {
@@ -95,7 +99,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_review_seek_relative(move |direction| {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             if let Some(job) = review_job(&queue.borrow()) {
                 if let Ok(report) = worker_bridge::load_audio_review_report(job) {
@@ -117,7 +123,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_review_play(move || {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
             let result = review_job(&queue.borrow())
@@ -146,7 +154,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_review_assign(move |href, line_index| {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
             let result = review_job(&queue.borrow())
@@ -190,7 +200,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_review_exclude(move || {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
             let result = review_job(&queue.borrow())
@@ -206,7 +218,8 @@ pub(crate) fn install_review_ui(
                         &worker_bridge::audio_review_draft_path(job),
                         &item.id,
                         AudioReviewDecision::Excluded {
-                            reason: "User excluded this unmatched audio segment during review.".into(),
+                            reason: "User excluded this unmatched audio segment during review."
+                                .into(),
                             source: AudioReviewDecisionSource::Manual,
                         },
                     )
@@ -227,7 +240,9 @@ pub(crate) fn install_review_ui(
         let queue = Rc::clone(&queue);
         let ui_weak = ui.as_weak();
         ui.on_finish_review(move || {
-            let Some(ui) = ui_weak.upgrade() else { return; };
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
             let result = {
@@ -261,7 +276,9 @@ pub(crate) fn refresh_review_ui(
     queue: &Rc<RefCell<JobQueue>>,
     controller: &Rc<RefCell<ReviewUiController>>,
 ) {
-    let Some(ui) = ui_weak.upgrade() else { return; };
+    let Some(ui) = ui_weak.upgrade() else {
+        return;
+    };
     refresh_for_ui(&ui, &queue.borrow(), &mut controller.borrow_mut());
 }
 
@@ -278,7 +295,9 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
         Ok(report) => report,
         Err(error) => {
             controller.candidates.set_vec(Vec::new());
-            ui.set_review_allocator_status_text(format!("Review data could not be loaded: {error}").into());
+            ui.set_review_allocator_status_text(
+                format!("Review data could not be loaded: {error}").into(),
+            );
             return;
         }
     };
@@ -295,26 +314,43 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
     let duration = item.audio_end_ms.saturating_sub(item.audio_start_ms);
     controller.seek_ms = controller.seek_ms.min(duration.saturating_sub(1));
     ui.set_review_item_position_text(
-        format!("Segment {} of {}", controller.selected_index + 1, report.unmatched.len()).into(),
+        format!(
+            "Segment {} of {}",
+            controller.selected_index + 1,
+            report.unmatched.len()
+        )
+        .into(),
     );
     ui.set_review_item_time_text(
-        format!("{}–{}", format_millis(item.audio_start_ms), format_millis(item.audio_end_ms)).into(),
+        format!(
+            "{}–{}",
+            format_millis(item.audio_start_ms),
+            format_millis(item.audio_end_ms)
+        )
+        .into(),
     );
     ui.set_review_item_transcript_text(item.transcript_text.clone().into());
     ui.set_review_item_decision_text(decision_text(&item.decision).into());
     ui.set_review_seek_text(
-        format!("Seek {} / {}", format_millis(controller.seek_ms), format_millis(duration)).into(),
+        format!(
+            "Seek {} / {}",
+            format_millis(controller.seek_ms),
+            format_millis(duration)
+        )
+        .into(),
     );
     ui.set_review_can_previous(controller.selected_index > 0);
     ui.set_review_can_next(controller.selected_index + 1 < report.unmatched.len());
     ui.set_review_complete(report.is_complete());
-    ui.set_review_allocator_status_text(
-        if report.pending_count() == 0 {
-            "All unmatched segments have durable decisions. Continue when ready.".into()
-        } else {
-            format!("{} segment(s) still need a decision.", report.pending_count()).into()
-        },
-    );
+    ui.set_review_allocator_status_text(if report.pending_count() == 0 {
+        "All unmatched segments have durable decisions. Continue when ready.".into()
+    } else {
+        format!(
+            "{} segment(s) still need a decision.",
+            report.pending_count()
+        )
+        .into()
+    });
 
     match load_candidates(job, item.alignment_index) {
         Ok(candidates) => controller.candidates.set_vec(
@@ -326,11 +362,13 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
                     text: candidate.text.into(),
                     score: format!("{}%", u32::from(candidate.score_milli) / 10).into(),
                 })
-                .collect(),
+                .collect::<Vec<_>>(),
         ),
         Err(error) => {
             controller.candidates.set_vec(Vec::new());
-            ui.set_review_allocator_status_text(format!("Could not load text candidates: {error}").into());
+            ui.set_review_allocator_status_text(
+                format!("Could not load text candidates: {error}").into(),
+            );
         }
     }
 }
@@ -355,8 +393,12 @@ fn review_job(queue: &JobQueue) -> Option<&Job> {
 }
 
 fn select_next_pending(queue: &JobQueue, controller: &mut ReviewUiController) {
-    let Some(job) = review_job(queue) else { return; };
-    let Ok(report) = worker_bridge::load_audio_review_report(job) else { return; };
+    let Some(job) = review_job(queue) else {
+        return;
+    };
+    let Ok(report) = worker_bridge::load_audio_review_report(job) else {
+        return;
+    };
     if let Some((index, _)) = report
         .unmatched
         .iter()
@@ -380,11 +422,18 @@ fn load_candidates(
         .stage_dir(PipelineStage::Analyze)
         .join("book-corpus.json");
     let alignment_data = std::fs::read(&alignment_path).map_err(|error| {
-        format!("Could not read alignment map {}: {error}", alignment_path.display())
+        format!(
+            "Could not read alignment map {}: {error}",
+            alignment_path.display()
+        )
     })?;
-    let alignment: AlignmentDocument = serde_json::from_slice(&alignment_data).map_err(|error| {
-        format!("Could not parse alignment map {}: {error}", alignment_path.display())
-    })?;
+    let alignment: AlignmentDocument =
+        serde_json::from_slice(&alignment_data).map_err(|error| {
+            format!(
+                "Could not parse alignment map {}: {error}",
+                alignment_path.display()
+            )
+        })?;
     let corpus = read_epub_corpus(&corpus_path)?;
     review_text_candidates(
         &alignment,
@@ -455,12 +504,18 @@ fn resolve_ffplay() -> Option<PathBuf> {
 }
 
 fn ffplay_file_name() -> &'static str {
-    if cfg!(windows) { "ffplay.exe" } else { "ffplay" }
+    if cfg!(windows) {
+        "ffplay.exe"
+    } else {
+        "ffplay"
+    }
 }
 
 fn decision_text(decision: &AudioReviewDecision) -> String {
     match decision {
-        AudioReviewDecision::Pending => "Pending — choose a text block or exclude this segment.".into(),
+        AudioReviewDecision::Pending => {
+            "Pending — choose a text block or exclude this segment.".into()
+        }
         AudioReviewDecision::Assigned { destination, .. } => match destination.line_index {
             Some(line) => format!("Assigned — {} line {}", destination.href, line + 1),
             None => format!("Assigned — {}", destination.href),

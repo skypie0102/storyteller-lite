@@ -289,16 +289,20 @@ fn apply_runtime_status(ui: &AppWindow, status: &RuntimeStatus) {
     ui.set_runtime_ready(status.ready());
 }
 
-fn audio_review_draft_path(job: &Job) -> std::path::PathBuf {
+pub(crate) fn audio_review_draft_path(job: &Job) -> std::path::PathBuf {
     pipeline_backend::job_workspace(job)
         .root()
         .join("review-draft.json")
 }
 
-fn audio_review_path(job: &Job) -> std::path::PathBuf {
+pub(crate) fn audio_review_path(job: &Job) -> std::path::PathBuf {
     pipeline_backend::job_workspace(job)
         .stage_dir(PipelineStage::ReviewAudio)
         .join("review.json")
+}
+
+pub(crate) fn job_workspace(job: &Job) -> storyteller_core::JobWorkspace {
+    pipeline_backend::job_workspace(job)
 }
 
 pub(crate) fn load_audio_review_report(job: &Job) -> Result<AudioReviewReport, String> {

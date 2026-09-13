@@ -24,6 +24,13 @@ export struct StageDetailRow {
     activity: string,
 }
 
+export struct ReviewCandidateRow {
+    href: string,
+    line-index: int,
+    text: string,
+    score: string,
+}
+
 export component AppWindow inherits Window {
     title: "Storyteller OneClick Lite";
     preferred-width: 1040px;
@@ -64,6 +71,17 @@ export component AppWindow inherits Window {
     in property <bool> needs-review: false;
     in property <string> review-summary-text: "";
     in property <string> review-preview-text: "";
+    in property <[ReviewCandidateRow]> review-candidates;
+    in property <string> review-item-position-text: "";
+    in property <string> review-item-time-text: "";
+    in property <string> review-item-transcript-text: "";
+    in property <string> review-item-decision-text: "";
+    in property <string> review-seek-text: "";
+    in property <string> review-allocator-status-text: "";
+    in-out property <string> review-preview-status-text: "";
+    in property <bool> review-can-previous: false;
+    in property <bool> review-can-next: false;
+    in property <bool> review-complete: false;
 
     callback browse-epub();
     callback browse-audio();
@@ -73,6 +91,14 @@ export component AppWindow inherits Window {
     callback pause-after-book();
     callback cancel-current();
     callback continue-after-review();
+    callback review-previous();
+    callback review-next();
+    callback review-seek-relative(int);
+    callback review-play();
+    callback review-stop();
+    callback review-assign(string, int);
+    callback review-exclude();
+    callback finish-review();
     callback resume-queue();
     callback move-waiting(string, bool);
     callback remove-job(string);
@@ -249,7 +275,7 @@ export component AppWindow inherits Window {
             Text { text: "ACTIVE JOB"; font-size: 14px; font-weight: 700; opacity: 0.72; }
 
             Rectangle {
-                min-height: root.needs-review ? 350px : 250px;
+                min-height: root.needs-review ? 520px : 250px;
                 border-width: 1px;
                 border-color: Palette.border;
                 border-radius: 10px;
@@ -319,22 +345,65 @@ export component AppWindow inherits Window {
                     if root.active-timing-text != "" : Text { text: root.active-timing-text; opacity: 0.78; wrap: word-wrap; }
 
                     if root.needs-review : Rectangle {
-                        min-height: 96px;
+                        min-height: 315px;
                         border-width: 1px;
                         border-color: Palette.border;
                         border-radius: 7px;
                         VerticalBox {
                             padding: 10px;
-                            spacing: 5px;
-                            Text { text: "UNMATCHED AUDIO REVIEW"; font-size: 12px; font-weight: 700; }
-                            Text { text: root.review-summary-text; wrap: word-wrap; }
-                            if root.review-preview-text != "" : Text {
-                                text: root.review-preview-text;
-                                font-size: 11px;
-                                opacity: 0.72;
-                                wrap: word-wrap;
-                                max-height: 56px;
+                            spacing: 7px;
+                            HorizontalBox {
+                                spacing: 8px;
+                                Text { text: "UNMATCHED AUDIO ALLOCATOR"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
+                                Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
+                                Button { text: "Next"; enabled: root.review-can-next; clicked => { root.review-next(); } }
                             }
+                            Text { text: root.review-summary-text; wrap: word-wrap; opacity: 0.82; }
+                            HorizontalBox {
+                                spacing: 7px;
+                                Text { text: root.review-item-time-text; font-weight: 600; vertical-alignment: center; }
+                                Text { text: root.review-seek-text; opacity: 0.72; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Button { text: "-5s"; clicked => { root.review-seek-relative(-1); } }
+                                Button { text: "Play"; clicked => { root.review-play(); } }
+                                Button { text: "+5s"; clicked => { root.review-seek-relative(1); } }
+                                Button { text: "Stop"; clicked => { root.review-stop(); } }
+                            }
+                            if root.review-preview-status-text != "" : Text { text: root.review-preview-status-text; font-size: 11px; opacity: 0.72; overflow: elide; }
+                            Text { text: root.review-item-transcript-text; wrap: word-wrap; max-height: 54px; }
+                            Text { text: root.review-item-decision-text; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
+                            HorizontalBox {
+                                spacing: 8px;
+                                Text { text: "EPUB TEXT CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Button { text: "Exclude segment"; clicked => { root.review-exclude(); } }
+                            }
+                            for candidate in root.review-candidates : Rectangle {
+                                min-height: 42px;
+                                max-height: 42px;
+                                border-width: 1px;
+                                border-color: Palette.border;
+                                border-radius: 5px;
+                                HorizontalBox {
+                                    padding-left: 7px;
+                                    padding-right: 7px;
+                                    spacing: 7px;
+                                    VerticalBox {
+                                        horizontal-stretch: 1;
+                                        spacing: 1px;
+                                        Text { text: candidate.text; overflow: elide; font-size: 11px; }
+                                        HorizontalBox {
+                                            spacing: 6px;
+                                            Text { text: candidate.href; overflow: elide; font-size: 9px; opacity: 0.58; horizontal-stretch: 1; }
+                                            Text { text: candidate.score; font-size: 9px; opacity: 0.58; }
+                                        }
+                                    }
+                                    Button { text: "Assign"; clicked => { root.review-assign(candidate.href, candidate.line-index); } }
+                                }
+                            }
+                            Text { text: root.review-allocator-status-text; font-size: 11px; opacity: 0.78; wrap: word-wrap; }
                         }
                     }
 
@@ -350,9 +419,14 @@ export component AppWindow inherits Window {
                         if root.active-metrics-text == "" : Rectangle { horizontal-stretch: 1; }
                         Button { text: root.needs-review ? "Cancel book" : "Cancel"; clicked => { root.cancel-current(); } }
                         if root.needs-review : Button {
-                            text: "Continue without unmatched audio";
-                            primary: true;
+                            text: "Exclude all pending & continue";
                             clicked => { root.continue-after-review(); }
+                        }
+                        if root.needs-review : Button {
+                            text: "Continue";
+                            primary: true;
+                            enabled: root.review-complete;
+                            clicked => { root.finish-review(); }
                         }
                         if !root.needs-review : Button {
                             text: root.pause-action-text;

@@ -1,3 +1,4 @@
+mod review_ui;
 mod runtime_import;
 mod worker_bridge;
 
@@ -31,6 +32,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let stage_rows = Rc::new(VecModel::<StageRow>::default());
     let detail_stage_rows = Rc::new(VecModel::<StageDetailRow>::default());
     let worker_bridge = Rc::new(RefCell::new(WorkerBridge::default()));
+    let review_ui_controller = review_ui::install_review_ui(&ui, Rc::clone(&queue));
     ui.set_queue_rows(queue_rows.clone().into());
     ui.set_active_stages(stage_rows.clone().into());
     ui.set_active_stage_details(detail_stage_rows.clone().into());
@@ -451,6 +453,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let queue_rows = Rc::clone(&queue_rows);
         let stage_rows = Rc::clone(&stage_rows);
         let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let review_ui_controller = Rc::clone(&review_ui_controller);
         let ui_weak = ui.as_weak();
         poll_timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
             worker_bridge.borrow_mut().poll(
@@ -460,6 +463,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 &stage_rows,
                 &detail_stage_rows,
             );
+            review_ui::refresh_review_ui(&ui_weak, &queue, &review_ui_controller);
         });
     }
 
@@ -470,6 +474,7 @@ fn main() -> Result<(), slint::PlatformError> {
         &stage_rows,
         &detail_stage_rows,
     );
+    review_ui::refresh_review_ui(&ui.as_weak(), &queue, &review_ui_controller);
     let result = ui.run();
     poll_timer.stop();
     result
