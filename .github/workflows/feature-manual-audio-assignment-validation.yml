@@ -33,9 +33,9 @@ jobs:
         run: |
           $assignmentPath = 'crates/storyteller-core/src/review_assignment.rs'
           $assignment = Get-Content -Raw $assignmentPath
-          $assignment = $assignment.Replace("    section_index: usize,`n", '')
+          $assignment = $assignment -replace '(?m)^\s*section_index: usize,\r?\n', ''
           $assignment = $assignment.Replace('    for (section_index, section) in corpus.sections.iter().enumerate() {', '    for section in &corpus.sections {')
-          $assignment = $assignment.Replace('                section_index,', '')
+          $assignment = $assignment -replace '(?m)^\s*section_index,\r?\n', ''
           $needle = @'
               if review.total_segments != alignment.total_segments {
                   return Err("Audio review no longer matches the alignment segment count.".into());
