@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Temporary deterministic source transform used only by feature validation.
 
 def replace_once(text: str, old: str, new: str, label: str) -> str:
     count = text.count(old)
