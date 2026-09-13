@@ -31,6 +31,9 @@ jobs:
       - name: Wire smart edge evidence
         run: python .github/scripts/patch-smart-edge-evidence.py
 
+      - name: Update review assignment fixture
+        run: python .github/scripts/fix-smart-edge-evidence-fixture.py
+
       - name: Apply Rust formatting
         run: cargo fmt --all
 
