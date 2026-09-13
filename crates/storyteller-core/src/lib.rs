@@ -13,6 +13,7 @@ mod job;
 mod progress;
 mod queue;
 mod resume;
+mod review_assignment;
 mod runner;
 mod scheduler;
 mod source_fingerprint;
@@ -52,6 +53,10 @@ pub use job::{
 pub use progress::{LiveMetrics, PipelineProgress, PipelineStage, StageProgress, StageStatus};
 pub use queue::{JobQueue, QueueMove, QueueState};
 pub use resume::{InvalidResumeStage, ResumeContext, ResumePlan, ValidatedResumePlan};
+pub use review_assignment::{
+    apply_audio_review_to_alignment, review_text_candidates, AudioReviewTextCandidate,
+    DEFAULT_REVIEW_CANDIDATE_LIMIT,
+};
 pub use runner::{
     run_pipeline, PipelineBackend, PipelineObserver, PipelineRunState, StagePlan, StageRunContext,
     StageRunError, StageRunErrorKind, StageRunOutput,
