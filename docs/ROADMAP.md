@@ -147,15 +147,24 @@ Implemented now:
 - Text candidates are bounded by the nearest accepted matches in EPUB reading order and ranked by deterministic lexical overlap.
 - Manual text assignment is revalidated against the monotonic window before it is materialized into the effective alignment.
 - Leading/trailing unmatched segments are marked as Introduction/Credits candidates and receive bounded FFmpeg silence evidence; silence is advisory and never by itself authorizes deletion.
-- Edge segments can be manually preserved as Introduction/Credits supplemental read-aloud pages.
-- The reduced `Smart / ReviewAll` setting is wired into queued job settings.
+- `Smart` and `ReviewAll` now behaviorally diverge for safe edge preservation. `Smart` automatically assigns leading/trailing unmatched narration to supplemental Introduction/Credits pages when a concrete matched EPUB anchor exists; `ReviewAll` leaves those same segments Pending for user review.
+- Smart edge handling is deliberately non-destructive: it does **not** automatically exclude unmatched audio.
+- Saved manual decisions always override Smart. Saved automatic decisions are recomputed under the active policy, so switching/rebuilding under ReviewAll cannot silently retain a prior Smart assignment.
+- Edge segments can still be manually preserved/overridden in the allocator.
 
 Still pending in Review Audio:
 
-- `Smart` and `ReviewAll` do not yet behaviorally diverge: the policy is passed into report creation, but automatic high-confidence decisions are not applied yet.
-- No automatic edge assignment/exclusion is performed yet.
 - Lazy image candidate extraction/OCR and Graphic Readout classification/assignment are not implemented yet.
 - Extra Audio has a classification value but no dedicated destination/rendering behavior yet.
+- Dedicated end-to-end supplemental/Smart regression fixtures are still needed beyond the core policy tests and workspace validation gates.
+
+The Smart edge-preservation slice passed Windows validation on GitHub Actions run `34745516558`:
+
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
+- `cargo build -p storyteller-ui`
+
+Validated source commit: `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c`.
 
 ### Encode — implemented
 
@@ -168,8 +177,8 @@ For EPUB 3 sources without existing Media Overlays, the builder preserves unrela
 P2 additions now implemented:
 
 - Reviewed text assignments are materialized into an effective alignment while the original automatic alignment remains the source record.
-- A reviewed Introduction can become generated XHTML + SMIL immediately before its existing spine anchor.
-- A reviewed Credits segment can become generated XHTML + SMIL immediately after its existing spine anchor.
+- A reviewed or Smart-assigned Introduction can become generated XHTML + SMIL immediately before its existing spine anchor.
+- A reviewed or Smart-assigned Credits segment can become generated XHTML + SMIL immediately after its existing spine anchor.
 - Supplemental pages receive their own manifest items, spine references, Media Overlay association, clip timing from the real audiobook interval, and per-overlay duration metadata.
 - Build EPUB fingerprinting was bumped for the supplemental-page behavior so an older Build EPUB checkpoint is not silently reused.
 
@@ -214,18 +223,17 @@ Already landed:
 5. Reduced allocator controls for navigation, preview/seek, transcript/timing/context, assign/exclude, and completion gating.
 6. Effective reviewed alignment materialization for text assignments.
 7. Manual Introduction/Credits preservation through generated supplemental XHTML+SMIL pages.
+8. Conservative Smart edge preservation: safe anchored leading/trailing narration is automatically assigned to supplemental Introduction/Credits pages, while ReviewAll keeps those regions Pending and Smart never auto-discards audio.
 
 Next implementation sequence:
 
-1. Implement actual `Smart` versus `ReviewAll` behavior. `ReviewAll` surfaces every otherwise-automatic unmatched decision; `Smart` may apply only tested high-confidence decisions.
-2. Add conservative automatic edge resolution now that safe supplemental Introduction/Credits rendering exists. Silence/noise evidence can support a decision but must not by itself prove spoken narration is disposable.
-3. Add dedicated regression tests for supplemental page manifest/spine order, SMIL clips, duration metadata, restart durability, and Smart/manual mixes.
-4. Add bounded EPUB image candidate discovery: nearby reading-order documents first, embedded `alt` / `title` / SVG text hints before OCR.
-5. Add lazy OCR only for bounded image candidates needed by Smart or the current unresolved segment; do not restore a permanent OCR setting.
-6. Implement high-confidence Graphic Readout classification and validated image/page assignment without allowing overlap/double allocation.
-7. Extend Build EPUB for validated image-bound Graphic Readout narration.
-8. Decide whether Extra Audio needs a distinct Lite destination/rendering rule; if not, do not grow the taxonomy merely for historical compatibility.
-9. Keep every weak/ambiguous region Pending for manual review and independently audit final output.
+1. Add dedicated regression tests for supplemental page manifest/spine order, SMIL clips, duration metadata, restart durability, and Smart/manual mixes.
+2. Add bounded EPUB image candidate discovery: nearby reading-order documents first, embedded `alt` / `title` / SVG text hints before OCR.
+3. Add lazy OCR only for bounded image candidates needed by Smart or the current unresolved segment; do not restore a permanent OCR setting.
+4. Implement high-confidence Graphic Readout classification and validated image/page assignment without allowing overlap/double allocation.
+5. Extend Build EPUB for validated image-bound Graphic Readout narration.
+6. Decide whether Extra Audio needs a distinct Lite destination/rendering rule; if not, do not grow the taxonomy merely for historical compatibility.
+7. Keep every weak/ambiguous region Pending for manual review and independently audit final output.
 
 Historical thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are recovery test vectors, not mandatory tuning constants. Implement/test the Rust classifier rather than copying the old GPL helper.
 
