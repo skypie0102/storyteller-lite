@@ -35,7 +35,7 @@ jobs:
           $assignment = Get-Content -Raw $assignmentPath
           $assignment = $assignment.Replace("    section_index: usize,`n", '')
           $assignment = $assignment.Replace('    for (section_index, section) in corpus.sections.iter().enumerate() {', '    for section in &corpus.sections {')
-          $assignment = $assignment.Replace("                section_index,`n", '')
+          $assignment = $assignment.Replace('                section_index,', '')
           $needle = @'
               if review.total_segments != alignment.total_segments {
                   return Err("Audio review no longer matches the alignment segment count.".into());
