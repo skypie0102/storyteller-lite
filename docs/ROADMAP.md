@@ -22,7 +22,7 @@ The recovery packet is stored in-repo so another agent can continue without this
 - `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — recovered old frontend/state/persistence behavior.
 - `docs/recovery/INSTALLER_DISSECTION.md` and `docs/recovery/LITE_PLANNING_HISTORY.txt` — historical evidence.
 
-Installer archaeology is now demand-driven. Inspect more only when a live Lite behavior is genuinely ambiguous.
+Installer archaeology is demand-driven. Inspect more only when a live Lite behavior is genuinely ambiguous.
 
 ## Product contracts
 
@@ -52,10 +52,10 @@ Installer archaeology is now demand-driven. Inspect more only when a live Lite b
 - One simple Whisper worker-count setting: default `1`, current range `1–4`.
 - Worker count means **concurrent transcription chunks**, not manual CPU allocation and not whisper.cpp `-p`.
 - **Smart / ReviewAll** unmatched-audio policy.
-- Conservative automatic edge handling.
+- Conservative automatic edge handling only when evidence is high-confidence and destination/rendering is safe.
 - Lazy/on-demand OCR only for bounded candidate EPUB images when needed.
 - Reduced manual audio allocation for unresolved segments.
-- Limited useful dispositions such as Introduction, Credits, Graphic Readout, and Extra Audio where they change destination/build behavior.
+- Limited useful dispositions such as Introduction, Credits, Graphic Readout, and Extra Audio where they materially change destination/build behavior.
 - Supplied UI mockups as hierarchy references.
 
 ### Explicitly not restored by default
@@ -128,29 +128,64 @@ Windows validation passed on GitHub Actions run `34732299289`:
 - `cargo test --workspace`
 - `cargo build -p storyteller-ui`
 
-Validated maintenance source commit: `d7d421135078f76ef54bda0adc821f9c60afc898`.
-
 Current caveat: multiple GPU-backed Whisper processes may each load the model. Keep the default at 1 until benchmarking and, if needed, hardware/VRAM-aware clamping justify a different default.
 
 ### Align — implemented
 
 Uses the conservative `monotonic-ngram-edit-v2-block-safe` engine. Whisper timestamps remain timing authority. Strong n-gram anchors/token similarity accept monotonic book matches; weak evidence remains unmatched. Accepted matches cannot cross normalized XHTML block boundaries. `alignment.json` records output and real match metrics are surfaced.
 
-### Review Audio — partial; next major milestone
+### Review Audio — substantial P2 foundation implemented
 
-`review.json` contains real unmatched transcript/audio ranges. With no unmatched segments processing continues automatically; otherwise the job enters `NeedsReview`.
+Review Audio is no longer a global-exclusion-only gate.
 
-Current limitation: the UI only previews unmatched regions and offers Cancel or global **Continue without unmatched audio**. Continuing stores a global exclusion flag. Smart edge handling, ReviewAll, lazy OCR/classification, durable per-segment decisions, and manual assignment are not implemented yet.
+Implemented now:
+
+- `review.json` stores stable per-segment IDs, transcript/timing, optional Smart suggestion, leading/trailing edge identity, optional silence evidence, and an explicit decision.
+- Durable decisions are `Pending`, `Assigned`, or `Excluded`, with `Automatic` / `Manual` provenance. A small classification set exists for Introduction, Credits, Graphic Readout, and Extra Audio.
+- Review decisions are also persisted in `review-draft.json` outside the disposable stage directory and are restored when the report is rebuilt.
+- The UI supports previous/next navigation, audio preview/stop, ±5 s seeking, transcript/timing/context, monotonic EPUB text candidates, explicit Assign, Exclude, and completion only after every region has a decision.
+- Text candidates are bounded by the nearest accepted matches in EPUB reading order and ranked by deterministic lexical overlap.
+- Manual text assignment is revalidated against the monotonic window before it is materialized into the effective alignment.
+- Leading/trailing unmatched segments are marked as Introduction/Credits candidates and receive bounded FFmpeg silence evidence; silence is advisory and never by itself authorizes deletion.
+- Edge segments can be manually preserved as Introduction/Credits supplemental read-aloud pages.
+- The reduced `Smart / ReviewAll` setting is wired into queued job settings.
+
+Still pending in Review Audio:
+
+- `Smart` and `ReviewAll` do not yet behaviorally diverge: the policy is passed into report creation, but automatic high-confidence decisions are not applied yet.
+- No automatic edge assignment/exclusion is performed yet.
+- Lazy image candidate extraction/OCR and Graphic Readout classification/assignment are not implemented yet.
+- Extra Audio has a classification value but no dedicated destination/rendering behavior yet.
 
 ### Encode — implemented
 
 Whole-audiobook output. Copy mode performs cancellable byte-preserving copy only when the source maps safely to an EPUB Media Overlay audio type. Opus/AAC use ffmpeg machine-readable progress. `encoded-audio.json` records filename, codec, bitrate, and media type.
 
-### Build EPUB — implemented for current allocation model
+### Build EPUB — implemented for text allocation plus supplemental edge pages
 
-For EPUB 3 sources without existing Media Overlays, the builder preserves unrelated resources, creates valid SMIL/audio manifest links, injects deterministic block anchors where required, writes real Whisper clip times, and embeds encoded audio. Current synchronization is block-level.
+For EPUB 3 sources without existing Media Overlays, the builder preserves unrelated resources, creates valid SMIL/audio manifest links, injects deterministic block anchors where required, writes real Whisper clip times, and embeds encoded audio. Normal synchronization is block-level.
 
-P2 will require extending this builder for supplemental Introduction/Credits XHTML+SMIL pages and validated image-bound Graphic Readout narration when review decisions use those dispositions.
+P2 additions now implemented:
+
+- Reviewed text assignments are materialized into an effective alignment while the original automatic alignment remains the source record.
+- A reviewed Introduction can become generated XHTML + SMIL immediately before its existing spine anchor.
+- A reviewed Credits segment can become generated XHTML + SMIL immediately after its existing spine anchor.
+- Supplemental pages receive their own manifest items, spine references, Media Overlay association, clip timing from the real audiobook interval, and per-overlay duration metadata.
+- Build EPUB fingerprinting was bumped for the supplemental-page behavior so an older Build EPUB checkpoint is not silently reused.
+
+Still pending:
+
+- validated image-bound Graphic Readout rendering;
+- any deliberately chosen Extra Audio rendering semantics;
+- dedicated regression fixtures that exercise supplemental spine ordering/manifest/duration behavior end-to-end, beyond the workspace compile/test gates already passed.
+
+The supplemental edge-page slice passed Windows validation on GitHub Actions run `34738027167`:
+
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
+- `cargo build -p storyteller-ui`
+
+Validated source commit: `cea590ada02c7942a8fda7226631f22d503e55b1`.
 
 ### Validate — implemented
 
@@ -162,32 +197,37 @@ Recovered legacy compatibility note: old OneClick repaired only zero-length SMIL
 
 ### P0 — baseline validation — complete
 
-A known recovered Windows build existed before P1, and the P1 feature itself now passes strict Windows lint, workspace tests, and native Slint build.
+Known recovered Windows validation exists and all integrated P1/P2 slices so far were gated by strict Clippy, workspace tests, and native Slint build.
 
 ### P1 — Whisper workers + chunked Analyze — complete
 
 The current implementation follows recovered semantics: workers are higher-level bounded chunk concurrency, while each whisper.cpp invocation retains independent thread/process settings. Manual CPU allocation remains out of scope.
 
-### P2 — Smart unmatched-audio pipeline and reduced manual allocator — next
+### P2 — finish Smart unmatched-audio pipeline and reduced allocator — active
 
-Implement the Review Audio behavior recovered in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` and `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md`.
+Already landed:
 
-Suggested implementation sequence:
+1. Durable per-segment Pending / Assigned / Excluded decisions with provenance and restart-safe draft persistence.
+2. Reduced `Smart / ReviewAll` setting wiring.
+3. Native leading/trailing edge identity plus bounded silence evidence.
+4. Monotonic bounded EPUB text candidates and manual text assignment/exclusion.
+5. Reduced allocator controls for navigation, preview/seek, transcript/timing/context, assign/exclude, and completion gating.
+6. Effective reviewed alignment materialization for text assignments.
+7. Manual Introduction/Credits preservation through generated supplemental XHTML+SMIL pages.
 
-1. Define a durable reduced decision model with at least Pending / Assigned / Excluded, plus optional disposition/suggestion/provenance.
-2. Add a reduced **Smart / ReviewAll** policy without restoring the old four-mode selector.
-3. Add native silence/edge evidence and conservative automatic edge handling.
-4. Generate bounded EPUB candidates from reading order and neighboring accepted alignment positions.
-5. Use embedded image text hints first and lazy OCR only when Smart/current review segment needs it.
-6. Support high-confidence Graphic Readout → real image/page assignment where evidence validates it.
-7. Preserve Introduction/Credits/Extra Audio dispositions only where they materially change destination/rendering behavior.
-8. Persist review decisions/drafts separately from rebuildable preview workspaces; retry/relaunch should restore review work.
-9. Constrain manual assignments by monotonic EPUB ordering and real XHTML/image candidates.
-10. Materialize an effective downstream allocation/alignment result while retaining original automatic alignment plus decision provenance.
-11. Build the reduced Slint allocator from the supplied mockup: audio preview/seek, transcript/timing/silence context, Smart suggestion, candidate context, previous/next unresolved, assign/exclude/override, Apply & Next.
-12. Extend Build EPUB for supplemental Introduction/Credits pages and validated image-bound Graphic Readout narration.
-13. Require every unresolved region to have a validated disposition before continuing and independently audit final output.
-14. Add regression tests for ordering, exclusions, Smart/manual mixes, OCR/image candidates, restart durability, and invalid/cross-boundary decisions.
+Next implementation sequence:
+
+1. Implement actual `Smart` versus `ReviewAll` behavior. `ReviewAll` surfaces every otherwise-automatic unmatched decision; `Smart` may apply only tested high-confidence decisions.
+2. Add conservative automatic edge resolution now that safe supplemental Introduction/Credits rendering exists. Silence/noise evidence can support a decision but must not by itself prove spoken narration is disposable.
+3. Add dedicated regression tests for supplemental page manifest/spine order, SMIL clips, duration metadata, restart durability, and Smart/manual mixes.
+4. Add bounded EPUB image candidate discovery: nearby reading-order documents first, embedded `alt` / `title` / SVG text hints before OCR.
+5. Add lazy OCR only for bounded image candidates needed by Smart or the current unresolved segment; do not restore a permanent OCR setting.
+6. Implement high-confidence Graphic Readout classification and validated image/page assignment without allowing overlap/double allocation.
+7. Extend Build EPUB for validated image-bound Graphic Readout narration.
+8. Decide whether Extra Audio needs a distinct Lite destination/rendering rule; if not, do not grow the taxonomy merely for historical compatibility.
+9. Keep every weak/ambiguous region Pending for manual review and independently audit final output.
+
+Historical thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are recovery test vectors, not mandatory tuning constants. Implement/test the Rust classifier rather than copying the old GPL helper.
 
 Do not initially add arbitrary split/merge, a general waveform trim editor, broad Apply-to-similar rules, permanent OCR controls, or the old unrestricted allocator taxonomy.
 
