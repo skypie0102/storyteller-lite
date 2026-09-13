@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 slint.workspace = true
 storyteller-core = { path = "../storyteller-core" }
 
