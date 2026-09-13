@@ -8,12 +8,17 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
     return text.replace(old, new, 1)
 
 
-# The supplemental package rewrite needs the element-name tests to outlive
-# moving the quick-xml end event into the writer.
+# The supplemental package helper has an End-event pattern that also exists in
+# the pre-existing package rewrite. Scope the lifetime repair to the generated
+# helper so validation cannot accidentally rewrite unrelated EPUB code.
 overlay_path = Path("crates/storyteller-core/src/epub_overlay.rs")
 overlay = overlay_path.read_text(encoding="utf-8")
-overlay = replace_once(
-    overlay,
+helper_marker = "pub(crate) fn add_supplemental_package_items("
+if overlay.count(helper_marker) != 1:
+    raise RuntimeError("supplemental package helper: expected exactly one generated helper")
+prefix, helper = overlay.split(helper_marker, 1)
+helper = replace_once(
+    helper,
     '''            Ok(Event::End(element)) => {
                 let qname = element.name();
                 let name = local_name(qname.as_ref());
@@ -25,25 +30,25 @@ overlay = replace_once(
                 let is_metadata = name == b"metadata";
                 let is_itemref = name == b"itemref";
                 if is_manifest {''',
-    "owned package end-tag state",
+    "supplemental helper end-tag state",
 )
-overlay = replace_once(
-    overlay,
+helper = replace_once(
+    helper,
     '''                } else if name == b"metadata" {
                     for supplement in supplements {''',
     '''                } else if is_metadata {
                     for supplement in supplements {''',
-    "metadata end-tag state",
+    "supplemental helper metadata state",
 )
-overlay = replace_once(
-    overlay,
+helper = replace_once(
+    helper,
     '''                if name == b"itemref" {
                     if let Some(idref) = start_itemref_after.take() {''',
     '''                if is_itemref {
                     if let Some(idref) = start_itemref_after.take() {''',
-    "itemref end-tag state",
+    "supplemental helper itemref state",
 )
-overlay_path.write_text(overlay, encoding="utf-8", newline="\n")
+overlay_path.write_text(prefix + helper_marker + helper, encoding="utf-8", newline="\n")
 
 
 # Existing review-assignment unit tests construct ordinary text/image
