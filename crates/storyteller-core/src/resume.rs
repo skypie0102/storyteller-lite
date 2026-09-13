@@ -46,7 +46,6 @@ impl ResumeContext {
         hasher.update(format!("stage:{}\n", stage.label()));
         hasher.update(format!("epub:{}\n", self.epub_source));
         hasher.update(format!("audio:{}\n", self.audiobook_source));
-        hasher.update(format!("settings:{:?}\n", self.settings));
         match stage {
             PipelineStage::Prepare => {}
             PipelineStage::Analyze => {
@@ -61,10 +60,12 @@ impl ResumeContext {
                 hasher.update(self.effective_whisper_model.as_bytes());
             }
             PipelineStage::Encode => {
+                hasher.update(format!("audio-settings:{:?}\n", self.settings.audio));
                 hasher.update(self.alignment_backend.as_bytes());
                 hasher.update(self.audio_backend.as_bytes());
             }
             PipelineStage::BuildEpub | PipelineStage::Validate => {
+                hasher.update(format!("audio-settings:{:?}\n", self.settings.audio));
                 hasher.update(self.alignment_backend.as_bytes());
                 hasher.update(self.audio_backend.as_bytes());
                 hasher.update(self.ocr_backend.as_bytes());
@@ -121,5 +122,68 @@ impl ValidatedResumePlan {
 
     pub fn next_stage(&self) -> Option<PipelineStage> {
         PipelineStage::ALL.get(self.reusable.len()).copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{AudioBitrate, AudioCodec, AudioEncoding, MAX_WHISPER_WORKERS};
+
+    fn context(settings: JobSettings) -> ResumeContext {
+        ResumeContext {
+            epub_source: "epub:one".into(),
+            audiobook_source: "audio:one".into(),
+            whisper_backend: "whisper:one".into(),
+            alignment_backend: "align:one".into(),
+            audio_backend: "ffmpeg:one".into(),
+            ocr_backend: "ocr:one".into(),
+            epub_backend: "epub-builder:one".into(),
+            effective_language: "auto".into(),
+            effective_whisper_model: "model:one".into(),
+            settings,
+        }
+    }
+
+    #[test]
+    fn worker_count_is_execution_only_for_stage_fingerprints() {
+        let first = context(JobSettings::default());
+        let mut changed = JobSettings::default();
+        changed.whisper_workers = MAX_WHISPER_WORKERS;
+        let second = context(changed);
+
+        for stage in PipelineStage::ALL {
+            assert_eq!(
+                first.stage_fingerprint(stage),
+                second.stage_fingerprint(stage),
+                "worker count unexpectedly changed {} fingerprint",
+                stage.label()
+            );
+        }
+    }
+
+    #[test]
+    fn audio_encoding_only_invalidates_encode_and_downstream() {
+        let first = context(JobSettings::default());
+        let mut changed = JobSettings::default();
+        changed.audio =
+            AudioEncoding::new(AudioCodec::Aac, Some(AudioBitrate::Kbps96)).unwrap();
+        let second = context(changed);
+
+        for stage in [
+            PipelineStage::Prepare,
+            PipelineStage::Analyze,
+            PipelineStage::Align,
+            PipelineStage::ReviewAudio,
+        ] {
+            assert_eq!(first.stage_fingerprint(stage), second.stage_fingerprint(stage));
+        }
+        for stage in [
+            PipelineStage::Encode,
+            PipelineStage::BuildEpub,
+            PipelineStage::Validate,
+        ] {
+            assert_ne!(first.stage_fingerprint(stage), second.stage_fingerprint(stage));
+        }
     }
 }
