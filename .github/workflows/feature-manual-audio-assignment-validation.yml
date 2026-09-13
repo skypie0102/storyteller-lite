@@ -66,13 +66,17 @@ jobs:
           $backend = $backend.Replace('encode_audiobook, extract_epub_corpus, prepare_job_sources, prepared_job_sources,', 'encode_audiobook, extract_epub_corpus, materialize_reviewed_alignment, prepare_job_sources, prepared_job_sources,')
           $oldCandidate = '        let candidate = stage_dir.join("readaloud.epub");'
           $newCandidate = "        let candidate = stage_dir.join(`"readaloud.epub`");`n        let reviewed_alignment = stage_dir.join(`"effective-alignment.json`");"
+          if (-not $backend.Contains($oldCandidate)) { throw 'Could not locate Build EPUB candidate path.' }
           $backend = $backend.Replace($oldCandidate, $newCandidate)
-          $oldActivityEnd = @'
-                  .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+
+          $oldBuild = @'
               let summary = build_readaloud_epub(
+                  prepared.epub(),
+                  &analyze_dir.join("book-corpus.json"),
+                  &align_dir.join("alignment.json"),
+                  &review_dir.join("review.json"),
           '@
-          $newActivityEnd = @'
-                  .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+          $newBuild = @'
               materialize_reviewed_alignment(
                   &align_dir.join("alignment.json"),
                   &analyze_dir.join("book-corpus.json"),
@@ -81,10 +85,13 @@ jobs:
               )
               .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
               let summary = build_readaloud_epub(
+                  prepared.epub(),
+                  &analyze_dir.join("book-corpus.json"),
+                  &reviewed_alignment,
+                  &review_dir.join("review.json"),
           '@
-          if (-not $backend.Contains($oldActivityEnd.Trim())) { throw 'Could not locate Build EPUB activity boundary.' }
-          $backend = $backend.Replace($oldActivityEnd.Trim(), $newActivityEnd.Trim())
-          $backend = $backend.Replace('&align_dir.join("alignment.json"),', '&reviewed_alignment,')
+          if (-not $backend.Contains($oldBuild.Trim())) { throw 'Could not locate Build EPUB call.' }
+          $backend = $backend.Replace($oldBuild.Trim(), $newBuild.Trim())
           $backend = $backend.Replace('            vec![PathBuf::from("readaloud.epub")],', '            vec![PathBuf::from("effective-alignment.json"), PathBuf::from("readaloud.epub")],')
           Set-Content -NoNewline -Path $backendPath -Value $backend
 
