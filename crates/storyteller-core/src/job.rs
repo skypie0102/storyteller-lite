@@ -6,6 +6,9 @@ use uuid::Uuid;
 
 pub type JobId = Uuid;
 
+pub const MIN_WHISPER_WORKERS: usize = 1;
+pub const MAX_WHISPER_WORKERS: usize = 4;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioCodec {
     Copy,
@@ -59,6 +62,9 @@ pub struct JobSettings {
     pub audio: AudioEncoding,
     pub language: Option<String>,
     pub whisper_model: String,
+    /// Maximum number of independent transcription chunks that may run concurrently.
+    /// This is intentionally separate from whisper.cpp's internal processor count.
+    pub whisper_workers: usize,
 }
 
 impl Default for JobSettings {
@@ -70,6 +76,7 @@ impl Default for JobSettings {
             },
             language: None,
             whisper_model: "large-v3-turbo".into(),
+            whisper_workers: MIN_WHISPER_WORKERS,
         }
     }
 }
@@ -140,6 +147,11 @@ impl Job {
         }
         if inputs.output_path == inputs.epub_path {
             return Err("Output path must not replace the source EPUB.".into());
+        }
+        if !(MIN_WHISPER_WORKERS..=MAX_WHISPER_WORKERS).contains(&settings.whisper_workers) {
+            return Err(format!(
+                "Whisper workers must be between {MIN_WHISPER_WORKERS} and {MAX_WHISPER_WORKERS}."
+            ));
         }
         Ok(Self {
             id: Uuid::new_v4(),
@@ -288,5 +300,30 @@ impl Job {
             self.progress.mark_cached(*stage, None)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inputs() -> JobInputs {
+        JobInputs {
+            title: "Test".into(),
+            epub_path: "test.epub".into(),
+            audiobook_path: "test.m4b".into(),
+            output_path: "test (readaloud).epub".into(),
+        }
+    }
+
+    #[test]
+    fn whisper_worker_count_is_bounded_for_queued_jobs() {
+        let mut settings = JobSettings::default();
+        settings.whisper_workers = MAX_WHISPER_WORKERS;
+        assert!(Job::new(inputs(), settings).is_ok());
+
+        let mut invalid = JobSettings::default();
+        invalid.whisper_workers = MAX_WHISPER_WORKERS + 1;
+        assert!(Job::new(inputs(), invalid).is_err());
     }
 }
