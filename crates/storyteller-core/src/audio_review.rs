@@ -73,8 +73,6 @@ pub struct AudioReviewReport {
     pub matched_segments: usize,
     pub match_percent: f64,
     pub unmatched: Vec<AudioReviewItem>,
-    #[serde(default)]
-    pub policy: AudioReviewPolicy,
     /// Legacy compatibility bit. New code records explicit per-segment decisions.
     #[serde(default)]
     pub accepted_unmatched_exclusion: bool,
@@ -142,7 +140,7 @@ pub fn create_audio_review_report_with_draft(
     alignment_path: &Path,
     destination: &Path,
     draft_path: Option<&Path>,
-    policy: AudioReviewPolicy,
+    _policy: AudioReviewPolicy,
 ) -> Result<AudioReviewSummary, String> {
     let data = fs::read(alignment_path).map_err(|error| {
         format!(
@@ -202,7 +200,6 @@ pub fn create_audio_review_report_with_draft(
         matched_segments: alignment.matched_segments,
         match_percent: alignment.match_percent,
         unmatched,
-        policy,
         accepted_unmatched_exclusion: false,
     };
     validate_audio_review_report(&report)?;
