@@ -11,12 +11,13 @@ use std::{
 };
 use storyteller_core::{
     align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report_with_draft,
-    encode_audiobook, extract_epub_corpus, prepare_job_sources, prepared_job_sources,
-    publish_validated_epub, read_audio_review_report, spawn_pipeline_worker_with_preflight,
-    validate_readaloud_epub, write_validation_report, AudioCodec, AudioReviewPolicy,
-    HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend, PipelineEnvironment,
-    PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler, RuntimeCoordinator,
-    StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    encode_audiobook, extract_epub_corpus, materialize_reviewed_alignment, prepare_job_sources,
+    prepared_job_sources, publish_validated_epub, read_audio_review_report,
+    spawn_pipeline_worker_with_preflight, validate_readaloud_epub, write_validation_report,
+    AudioCodec, AudioReviewPolicy, HardwareProfile, Job, JobWorkspace, LiveMetrics,
+    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
+    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
+    StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -421,6 +422,7 @@ impl LitePipelineBackend {
         reset_stage_dir(&stage_dir, PipelineStage::BuildEpub)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let candidate = stage_dir.join("readaloud.epub");
+        let reviewed_alignment = stage_dir.join("effective-alignment.json");
         let cancellation = context.cancellation_token();
 
         context.set_metrics(
@@ -436,10 +438,17 @@ impl LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        materialize_reviewed_alignment(
+            &align_dir.join("alignment.json"),
+            &analyze_dir.join("book-corpus.json"),
+            &review_dir.join("review.json"),
+            &reviewed_alignment,
+        )
+        .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let summary = build_readaloud_epub(
             prepared.epub(),
             &analyze_dir.join("book-corpus.json"),
-            &align_dir.join("alignment.json"),
+            &reviewed_alignment,
             &review_dir.join("review.json"),
             &encode_dir.join("encoded-audio.json"),
             &encode_dir,
@@ -467,7 +476,10 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![PathBuf::from("readaloud.epub")],
+            vec![
+                PathBuf::from("effective-alignment.json"),
+                PathBuf::from("readaloud.epub"),
+            ],
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))

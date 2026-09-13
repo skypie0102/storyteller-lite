@@ -18,7 +18,6 @@ pub struct AudioReviewTextCandidate {
 #[derive(Debug, Clone)]
 struct CorpusBlock {
     href: String,
-    section_index: usize,
     line_index: usize,
     text: String,
 }
@@ -98,6 +97,17 @@ pub fn apply_audio_review_to_alignment(
     if review.total_segments != alignment.total_segments {
         return Err("Audio review no longer matches the alignment segment count.".into());
     }
+    if review.matched_segments != alignment.matched_segments {
+        return Err("Audio review no longer matches the source alignment matched count.".into());
+    }
+    let expected_unmatched = alignment
+        .segments
+        .iter()
+        .filter(|segment| segment.status == AlignmentStatus::Unmatched)
+        .count();
+    if review.unmatched.len() != expected_unmatched {
+        return Err("Audio review does not contain a decision record for every unmatched alignment segment.".into());
+    }
 
     let blocks = corpus_blocks(corpus);
     let positions = corpus_position_map(&blocks);
@@ -118,7 +128,12 @@ pub fn apply_audio_review_to_alignment(
         let original = alignment
             .segments
             .get(item.alignment_index)
-            .ok_or_else(|| format!("Audio review references missing alignment segment {}.", item.alignment_index))?;
+            .ok_or_else(|| {
+                format!(
+                    "Audio review references missing alignment segment {}.",
+                    item.alignment_index
+                )
+            })?;
         if original.status != AlignmentStatus::Unmatched {
             return Err(format!(
                 "Audio review segment {} is no longer unmatched in the source alignment.",
@@ -150,9 +165,9 @@ pub fn apply_audio_review_to_alignment(
                             .into(),
                     );
                 }
-                let line_index = destination.line_index.ok_or(
-                    "Text audio assignment requires an EPUB text-block line index.",
-                )?;
+                let line_index = destination
+                    .line_index
+                    .ok_or("Text audio assignment requires an EPUB text-block line index.")?;
                 let key = (destination.href.clone(), line_index);
                 let block = block_by_key.get(&key).ok_or_else(|| {
                     format!(
@@ -164,7 +179,12 @@ pub fn apply_audio_review_to_alignment(
                     "Audio review destination could not be resolved in EPUB reading order."
                         .to_string()
                 })?;
-                validate_assignment_window(alignment, item.alignment_index, block_position, &positions)?;
+                validate_assignment_window(
+                    alignment,
+                    item.alignment_index,
+                    block_position,
+                    &positions,
+                )?;
 
                 let end_offset = block.text.chars().count();
                 if end_offset == 0 {
@@ -203,7 +223,7 @@ pub fn apply_audio_review_to_alignment(
 
 fn corpus_blocks(corpus: &EpubCorpus) -> Vec<CorpusBlock> {
     let mut blocks = Vec::new();
-    for (section_index, section) in corpus.sections.iter().enumerate() {
+    for section in &corpus.sections {
         for (line_index, line) in section.text.lines().enumerate() {
             let text = line.trim();
             if text.is_empty() {
@@ -211,7 +231,6 @@ fn corpus_blocks(corpus: &EpubCorpus) -> Vec<CorpusBlock> {
             }
             blocks.push(CorpusBlock {
                 href: section.href.clone(),
-                section_index,
                 line_index,
                 text: text.to_string(),
             });
@@ -292,7 +311,10 @@ fn validate_assignment_window(
     }
     if let Some(next) = nearest_next_position(alignment, alignment_index, positions)? {
         if destination_position > next {
-            return Err("Audio review assignment would move forward past the next matched EPUB block.".into());
+            return Err(
+                "Audio review assignment would move forward past the next matched EPUB block."
+                    .into(),
+            );
         }
     }
     Ok(())
@@ -396,9 +418,30 @@ mod tests {
             matched_segments: 2,
             match_percent: 66.666,
             segments: vec![
-                segment(0, 1000, "alpha", AlignmentStatus::Matched, Some("OPS/ch1.xhtml"), 0),
-                segment(1000, 2000, "bravo middle", AlignmentStatus::Unmatched, None, 0),
-                segment(2000, 3000, "delta", AlignmentStatus::Matched, Some("OPS/ch2.xhtml"), 0),
+                segment(
+                    0,
+                    1000,
+                    "alpha",
+                    AlignmentStatus::Matched,
+                    Some("OPS/ch1.xhtml"),
+                    0,
+                ),
+                segment(
+                    1000,
+                    2000,
+                    "bravo middle",
+                    AlignmentStatus::Unmatched,
+                    None,
+                    0,
+                ),
+                segment(
+                    2000,
+                    3000,
+                    "delta",
+                    AlignmentStatus::Matched,
+                    Some("OPS/ch2.xhtml"),
+                    0,
+                ),
             ],
         }
     }
@@ -445,8 +488,8 @@ mod tests {
             classification: None,
             source: AudioReviewDecisionSource::Manual,
         };
-        let effective = apply_audio_review_to_alignment(&alignment(), &corpus(), &report(decision))
-            .unwrap();
+        let effective =
+            apply_audio_review_to_alignment(&alignment(), &corpus(), &report(decision)).unwrap();
         let segment = &effective.segments[1];
         assert_eq!(segment.status, AlignmentStatus::Matched);
         assert_eq!(segment.book_start.as_ref().unwrap().line_index, 1);
