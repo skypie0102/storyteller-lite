@@ -8,9 +8,11 @@ Read this file before making substantial changes.
 - Active recovered code branch: `recovery/rust-slint`
 - Default branch `main` is **not** the Rust + Slint implementation branch and must not be used as current code truth.
 - P1 Whisper chunk workers are integrated and Windows-validated.
-- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, real supplemental Introduction/Credits rendering, and behaviorally distinct Smart/ReviewAll edge handling.
+- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, real supplemental Introduction/Credits rendering, behaviorally distinct Smart/ReviewAll edge handling, dedicated supplemental regression coverage, and bounded EPUB image candidate discovery.
 - Supplemental edge-page rendering passed Windows validation on run `34738027167`; validated source commit `cea590ada02c7942a8fda7226631f22d503e55b1` is included in recovery.
 - Smart edge preservation passed Windows validation on run `34745516558`; validated source commit `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c` is included in recovery.
+- Supplemental/Smart end-to-end regression coverage passed Windows validation on run `34746062156`.
+- Bounded image candidate discovery passed Windows validation on run `34811582552`; validated source commit `20954ba2c128e7c396e870b2fb5a9f382490450e` is included in recovery.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
@@ -117,6 +119,8 @@ Current allocator/core behavior:
 - Explicit text Assign and Exclude actions; after a decision the controller selects the next Pending item.
 - Review cannot finish while any item is Pending.
 - Effective alignment materialization converts validated manual text assignments into matched blocks while retaining the original automatic alignment as source truth.
+- Bounded image candidate discovery reads the EPUB package/spine directly, so image-only XHTML pages remain visible even when the text corpus omits them. Candidate work is bounded between neighboring accepted alignment anchors, defaults to at most 12 nearby spine documents / 24 images, requires manifest-declared image resources, skips empty/missing/images over 25 MiB, and gathers `alt`, `title`, SVG `title`/`desc`/`text` hints before OCR.
+- Image discovery is evidence-only at this stage: it does not run OCR, classify Graphic Readout automatically, or create an image assignment.
 
 Current edge evidence and Smart behavior:
 
@@ -156,7 +160,9 @@ Validated supplemental source commit: `cea590ada02c7942a8fda7226631f22d503e55b1`
 
 Smart edge-policy validation run `34745516558` passed the same three gates. Validated Smart source commit: `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c`.
 
-Important remaining validation debt: add dedicated regression fixtures for supplemental OPF manifest/spine ordering, generated XHTML+SMIL clip relationships, duration metadata, review-draft restoration, and Smart/manual mixtures. Existing workspace tests/build gates passed, but this path deserves explicit feature fixtures before P2 is considered complete.
+Dedicated supplemental/Smart regression coverage passed Windows validation on run `34746062156`. It verifies OPF manifest/spine ordering, generated XHTML+SMIL relationships, real clip timing and duration metadata, durable review-draft restoration, a mixed automatic Introduction/manual Credits decision set, and final independent EPUB validation.
+
+Bounded image candidate discovery passed Windows validation on run `34811582552` (format check, strict Clippy, full workspace tests, native Slint build). Validated image-discovery source commit: `20954ba2c128e7c396e870b2fb5a9f382490450e`.
 
 ### Build/Validate boundaries that remain
 
@@ -186,13 +192,12 @@ Queue failure behavior already matches recovered OneClick: terminal worker resul
 
 Do these next, in order unless a concrete failure requires a smaller prerequisite:
 
-1. **Add dedicated supplemental/Smart regression fixtures** for OPF manifest/spine ordering, XHTML+SMIL clip timing, duration metadata, review-draft restoration, and mixed automatic/manual decisions.
-2. **Add bounded image candidate discovery** near the relevant reading-order edge/current segment. Consume embedded `alt`, `title`, and SVG text hints before OCR.
-3. **Add lazy OCR** only when Smart or the current unresolved review item actually needs image text evidence. Do not restore a permanent OCR setting.
-4. **Implement high-confidence Graphic Readout assignment** to a validated image/page destination, preventing overlapping/double allocation.
-5. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
-6. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
-7. Keep weak/ambiguous/non-edge regions Pending unless a deterministic auditable rule is added and regression-tested.
+1. **Add lazy OCR** only when Smart or the current unresolved review item actually needs text evidence from one of the bounded image candidates. Do not restore a permanent OCR setting.
+2. **Add deterministic image-evidence scoring** that prefers embedded `alt` / `title` / SVG text and uses OCR only as fallback. Weak/ambiguous evidence stays Pending.
+3. **Implement high-confidence Graphic Readout assignment** to a validated image/page destination, preventing overlapping/double allocation.
+4. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
+5. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
+6. Keep weak/ambiguous/non-edge regions Pending unless a deterministic auditable rule is added and regression-tested.
 
 Historical classifier thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are useful test vectors, not mandatory Lite constants. Reimplement/test behavior in Rust rather than copying the GPL helper.
 

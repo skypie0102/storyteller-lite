@@ -154,9 +154,10 @@ Implemented now:
 
 Still pending in Review Audio:
 
-- Lazy image candidate extraction/OCR and Graphic Readout classification/assignment are not implemented yet.
+- Bounded EPUB image candidate discovery is now implemented. It reads the package/spine directly so image-only XHTML pages omitted by the text corpus remain discoverable, bounds work between neighboring matched anchors, defaults to at most 12 nearby documents and 24 images, accepts only manifest-declared image resources, skips empty/missing/oversized (>25 MiB) images, and extracts embedded `alt` / `title` / SVG `title` / `desc` / `text` hints before OCR.
+- Lazy OCR and high-confidence Graphic Readout classification/assignment are not implemented yet; discovery alone does not auto-assign narration.
 - Extra Audio has a classification value but no dedicated destination/rendering behavior yet.
-- Dedicated end-to-end supplemental/Smart regression fixtures are still needed beyond the core policy tests and workspace validation gates.
+- Dedicated supplemental/Smart regression coverage is now integrated and exercises automatic + manual decisions through EPUB build and validation.
 
 The Smart edge-preservation slice passed Windows validation on GitHub Actions run `34745516558`:
 
@@ -165,6 +166,17 @@ The Smart edge-preservation slice passed Windows validation on GitHub Actions ru
 - `cargo build -p storyteller-ui`
 
 Validated source commit: `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c`.
+
+Supplemental/Smart end-to-end regression coverage passed Windows validation on GitHub Actions run `34746062156`. The fixture verifies Smart automatic Introduction + manual Credits draft restoration, OPF manifest/spine order, generated XHTML+SMIL, exact clip timing/duration metadata, and final independent EPUB validation.
+
+Bounded image candidate discovery passed Windows validation on GitHub Actions run `34811582552`:
+
+- `cargo fmt --all -- --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace`
+- `cargo build -p storyteller-ui`
+
+Validated image-discovery source commit: `20954ba2c128e7c396e870b2fb5a9f382490450e`.
 
 ### Encode — implemented
 
@@ -185,8 +197,9 @@ P2 additions now implemented:
 Still pending:
 
 - validated image-bound Graphic Readout rendering;
-- any deliberately chosen Extra Audio rendering semantics;
-- dedicated regression fixtures that exercise supplemental spine ordering/manifest/duration behavior end-to-end, beyond the workspace compile/test gates already passed.
+- any deliberately chosen Extra Audio rendering semantics.
+
+Dedicated supplemental regression coverage is now integrated and checks spine ordering, manifest/overlay relationships, real clip timing/duration metadata, Smart/manual review mixes, and final validation.
 
 The supplemental edge-page slice passed Windows validation on GitHub Actions run `34738027167`:
 
@@ -224,16 +237,17 @@ Already landed:
 6. Effective reviewed alignment materialization for text assignments.
 7. Manual Introduction/Credits preservation through generated supplemental XHTML+SMIL pages.
 8. Conservative Smart edge preservation: safe anchored leading/trailing narration is automatically assigned to supplemental Introduction/Credits pages, while ReviewAll keeps those regions Pending and Smart never auto-discards audio.
+9. Dedicated supplemental/Smart regression coverage across draft restoration, package/spine order, generated XHTML+SMIL, timing/duration metadata, and final validation.
+10. Bounded EPUB image candidate discovery, including image-only spine documents, monotonic neighbor bounds, default 12-document / 24-image caps, manifest resource validation, a 25 MiB image ceiling, and embedded `alt` / `title` / SVG text hints before OCR.
 
 Next implementation sequence:
 
-1. Add dedicated regression tests for supplemental page manifest/spine order, SMIL clips, duration metadata, restart durability, and Smart/manual mixes.
-2. Add bounded EPUB image candidate discovery: nearby reading-order documents first, embedded `alt` / `title` / SVG text hints before OCR.
-3. Add lazy OCR only for bounded image candidates needed by Smart or the current unresolved segment; do not restore a permanent OCR setting.
-4. Implement high-confidence Graphic Readout classification and validated image/page assignment without allowing overlap/double allocation.
-5. Extend Build EPUB for validated image-bound Graphic Readout narration.
-6. Decide whether Extra Audio needs a distinct Lite destination/rendering rule; if not, do not grow the taxonomy merely for historical compatibility.
-7. Keep every weak/ambiguous region Pending for manual review and independently audit final output.
+1. Add lazy OCR only for bounded image candidates needed by Smart or the current unresolved segment; do not restore a permanent OCR setting.
+2. Add deterministic evidence scoring that prefers embedded hints and uses OCR only as fallback; keep weak/ambiguous regions Pending.
+3. Implement high-confidence Graphic Readout classification and validated image/page assignment without allowing overlap/double allocation.
+4. Extend Build EPUB for validated image-bound Graphic Readout narration.
+5. Decide whether Extra Audio needs a distinct Lite destination/rendering rule; if not, do not grow the taxonomy merely for historical compatibility.
+6. Independently audit every new destination/rendering path in Validate.
 
 Historical thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are recovery test vectors, not mandatory tuning constants. Implement/test the Rust classifier rather than copying the old GPL helper.
 
