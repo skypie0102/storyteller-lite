@@ -1,7 +1,6 @@
 use crate::{
     epub_graphic::{
-        annotate_graphic_targets, build_combined_smil, collect_graphic_readouts,
-        GraphicReadoutSpec,
+        annotate_graphic_targets, build_combined_smil, collect_graphic_readouts, GraphicReadoutSpec,
     },
     epub_overlay::{
         add_supplemental_package_items, annotate_xhtml_blocks, build_supplemental_smil,
@@ -107,7 +106,9 @@ fn build_readaloud_epub_inner(
     let mut overlay_hrefs = matched_hrefs(&alignment)?;
     overlay_hrefs.extend(graphics_by_href.keys().cloned());
     if overlay_hrefs.is_empty() {
-        return Err("Publication contains no text or Graphic Readout segments to synchronize.".into());
+        return Err(
+            "Publication contains no text or Graphic Readout segments to synchronize.".into(),
+        );
     }
     let scan = scan_package(&package_xml, &package_path, &overlay_hrefs)?;
     let package_dir = parent_archive_path(&package_path);

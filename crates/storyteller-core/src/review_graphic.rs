@@ -1,9 +1,9 @@
 use crate::{
     apply_audio_review_decision, read_audio_review_report, read_epub_corpus,
     review_image_candidates, review_image_matches, AlignmentDocument, AudioReviewClassification,
-    AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination, AudioReviewImageCandidate,
-    AudioReviewPolicy, CancellationToken, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
-    DEFAULT_REVIEW_IMAGE_LIMIT,
+    AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination,
+    AudioReviewImageCandidate, AudioReviewPolicy, CancellationToken,
+    DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT, DEFAULT_REVIEW_IMAGE_LIMIT,
 };
 use std::{fs, path::Path};
 
@@ -37,12 +37,13 @@ pub fn apply_smart_graphic_readouts(
             alignment_path.display()
         )
     })?;
-    let alignment: AlignmentDocument = serde_json::from_slice(&alignment_data).map_err(|error| {
-        format!(
-            "Could not parse alignment map {}: {error}",
-            alignment_path.display()
-        )
-    })?;
+    let alignment: AlignmentDocument =
+        serde_json::from_slice(&alignment_data).map_err(|error| {
+            format!(
+                "Could not parse alignment map {}: {error}",
+                alignment_path.display()
+            )
+        })?;
     let corpus = read_epub_corpus(corpus_path)?;
     let report = read_audio_review_report(report_path)?;
     let pending = report

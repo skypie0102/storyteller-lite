@@ -40,9 +40,7 @@ pub(crate) fn collect_graphic_readouts(
             continue;
         };
         if *classification != Some(AudioReviewClassification::GraphicReadout) {
-            return Err(
-                "Image audio assignment must be classified as Graphic Readout.".into(),
-            );
+            return Err("Image audio assignment must be classified as Graphic Readout.".into());
         }
         if destination.line_index.is_some() || destination.supplemental.is_some() {
             return Err(
@@ -80,10 +78,7 @@ pub(crate) fn annotate_graphic_targets(
     if specs.is_empty() {
         return Ok((xml.to_string(), HashMap::new()));
     }
-    if specs
-        .iter()
-        .any(|spec| spec.document_href != document_href)
-    {
+    if specs.iter().any(|spec| spec.document_href != document_href) {
         return Err("Graphic Readout target set mixes EPUB content documents.".into());
     }
 
@@ -111,7 +106,9 @@ pub(crate) fn annotate_graphic_targets(
                 )?;
                 writer
                     .write_event(Event::Start(element.into_owned()))
-                    .map_err(|error| format!("Could not rewrite EPUB Graphic Readout XHTML: {error}"))?;
+                    .map_err(|error| {
+                        format!("Could not rewrite EPUB Graphic Readout XHTML: {error}")
+                    })?;
             }
             Ok(Event::Empty(mut element)) => {
                 maybe_anchor_image_element(
@@ -124,12 +121,14 @@ pub(crate) fn annotate_graphic_targets(
                 )?;
                 writer
                     .write_event(Event::Empty(element.into_owned()))
-                    .map_err(|error| format!("Could not rewrite EPUB Graphic Readout XHTML: {error}"))?;
+                    .map_err(|error| {
+                        format!("Could not rewrite EPUB Graphic Readout XHTML: {error}")
+                    })?;
             }
             Ok(Event::Eof) => break,
-            Ok(event) => writer
-                .write_event(event.into_owned())
-                .map_err(|error| format!("Could not rewrite EPUB Graphic Readout XHTML: {error}"))?,
+            Ok(event) => writer.write_event(event.into_owned()).map_err(|error| {
+                format!("Could not rewrite EPUB Graphic Readout XHTML: {error}")
+            })?,
             Err(error) => {
                 return Err(format!(
                     "Could not parse EPUB XHTML for Graphic Readout anchors: {error}"
@@ -283,11 +282,7 @@ fn maybe_anchor_image_element(
     let id = match attribute_value(element, b"id")?.filter(|value| !value.trim().is_empty()) {
         Some(id) => id,
         None => {
-            let base = format!(
-                "stl-graphic-s{}-r{}",
-                section_index + 1,
-                review_index + 1
-            );
+            let base = format!("stl-graphic-s{}-r{}", section_index + 1, review_index + 1);
             let generated = unique_id(&base, used_ids);
             element.push_attribute(("id", generated.as_str()));
             generated

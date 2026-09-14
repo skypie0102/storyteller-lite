@@ -162,8 +162,7 @@ fn write_inputs(root: &Path) -> (PathBuf, PathBuf, PathBuf, PathBuf, PathBuf) {
 fn graphic_readout_shares_document_overlay_with_text_and_validates() {
     let root = temp_root();
     fs::create_dir_all(&root).unwrap();
-    let (source, corpus_path, alignment_path, review_path, descriptor_path) =
-        write_inputs(&root);
+    let (source, corpus_path, alignment_path, review_path, descriptor_path) = write_inputs(&root);
     let encode_dir = descriptor_path.parent().unwrap();
     let candidate = root.join("candidate.epub");
     let cancellation = CancellationToken::default();
