@@ -8,12 +8,13 @@ Read this file before making substantial changes.
 - Active recovered code branch: `recovery/rust-slint`
 - Default branch `main` is **not** the Rust + Slint implementation branch and must not be used as current code truth.
 - P1 Whisper chunk workers are integrated and Windows-validated.
-- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, real supplemental Introduction/Credits rendering, behaviorally distinct Smart/ReviewAll edge handling, dedicated supplemental regression coverage, bounded EPUB image candidate discovery, and a lazy per-candidate image text evidence API.
+- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, real supplemental Introduction/Credits rendering, behaviorally distinct Smart/ReviewAll edge handling, dedicated supplemental regression coverage, bounded EPUB image candidate discovery, lazy per-candidate image text evidence, and deterministic transcript-to-image evidence scoring.
 - Supplemental edge-page rendering passed Windows validation on run `34738027167`; validated source commit `cea590ada02c7942a8fda7226631f22d503e55b1` is included in recovery.
 - Smart edge preservation passed Windows validation on run `34745516558`; validated source commit `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c` is included in recovery.
 - Supplemental/Smart end-to-end regression coverage passed Windows validation on run `34746062156`.
 - Bounded image candidate discovery passed Windows validation on run `34811582552`; validated source commit `20954ba2c128e7c396e870b2fb5a9f382490450e` is included in recovery.
 - Lazy image text evidence passed check-only Windows validation on run `34815433905`; validated feature source commit `734ef8461e0b0245d4a6700c3fed471003226d4a` is integrated in recovery as commits `4f25486ccdc46dbd73a0924a8f224a0c69ecec2c` and `10f0b8308f9fa6b04dcfd681c9792802804bdcbb`.
+- Deterministic image-evidence scoring passed Windows validation on run `34820045285`; validated feature source commit `40c5172c35c43a1a5eb9fa2e07fabbc8e68f4ed6` is integrated in recovery as commits `fa22c918157c7f18ed8b718d62a0c183b4959310` and `d8d728d2b73db793e668c62a4c733f893e61ae57`.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
@@ -121,9 +122,13 @@ Current allocator/core behavior:
 - Review cannot finish while any item is Pending.
 - Effective alignment materialization converts validated manual text assignments into matched blocks while retaining the original automatic alignment as source truth.
 - Bounded image candidate discovery reads the EPUB package/spine directly, so image-only XHTML pages remain visible even when the text corpus omits them. Candidate work is bounded between neighboring accepted alignment anchors, defaults to at most 12 nearby spine documents / 24 images, requires manifest-declared image resources, skips empty/missing/images over 25 MiB, and gathers `alt`, `title`, SVG `title`/`desc`/`text` hints before OCR.
-- Lazy image text evidence is available for one already-bounded candidate at a time. Embedded EPUB hints are normalized and preferred without opening the image or invoking OCR. If hints are absent, the caller may explicitly supply a Tesseract executable; otherwise the API returns no OCR evidence instead of turning Tesseract into a permanent runtime dependency or setting.
+- Lazy image text evidence is available for one already-bounded candidate at a time. Embedded EPUB hints are normalized and preferred without opening the image or invoking OCR. If hints are absent or normalize to no usable evidence, the caller may explicitly supply a Tesseract executable; otherwise the API returns no OCR evidence instead of turning Tesseract into a permanent runtime dependency or setting.
 - The OCR fallback extracts only the selected manifest image, rechecks its discovered byte size, enforces the 25 MiB bound, copies with cancellation support, invokes Tesseract TSV output, and returns normalized text lines plus mean confidence when evidence clears conservative minimums.
-- The lazy evidence API is not yet wired into deterministic transcript-to-image scoring, Smart classification, or an image assignment. No Graphic Readout destination is created automatically yet.
+- Deterministic image-evidence scoring is now available through `review_image_matches`. It normalizes the unmatched transcript once, evaluates embedded evidence across the already-bounded image candidates first, and avoids opening the EPUB image or launching OCR when a strong unambiguous embedded winner already exists.
+- If embedded evidence does not produce a recommendation and the caller supplies optional Tesseract, OCR is attempted only for candidates that produced no usable embedded evidence. Empty transcripts short-circuit without OCR.
+- Evidence phrase bounds use actual word count (`5..=120`) while lexical overlap uses distinct normalized words. Qualification requires conservative coverage/aggregate score thresholds plus at least two distinctive word matches; exact source/spine/image tie-breaks are deterministic and embedded evidence wins an exact source tie.
+- A winner is recommended only when it qualifies and is separated from the next ranked candidate by the configured margin; a close runner-up can therefore keep the result ambiguous even when that runner-up falls just below qualification.
+- The scorer returns ranked evidence and an optional recommendation only. It is **not yet wired into Smart review decisions**, and no Graphic Readout destination is created automatically yet.
 
 Current edge evidence and Smart behavior:
 
@@ -169,6 +174,8 @@ Bounded image candidate discovery passed Windows validation on run `34811582552`
 
 Lazy image text evidence passed Windows validation on run `34815433905` using committed-source `cargo fmt --all -- --check`, strict Clippy, full workspace tests, and the native Slint build. The validated implementation prefers embedded hints and makes optional Tesseract a per-call fallback rather than a permanent Lite runtime setting.
 
+Deterministic image-evidence scoring passed Windows validation on run `34820045285` using committed-source `cargo fmt --all -- --check`, strict Clippy, full workspace tests, and the native Slint build. The validated implementation prefers embedded evidence, invokes optional OCR only after embedded evidence fails to produce a strong unambiguous recommendation, keeps close competing candidates ambiguous, and does not create a review decision by itself.
+
 ### Build/Validate boundaries that remain
 
 - Image destinations intentionally still fail with an explicit error: Graphic Readout rendering is not implemented yet.
@@ -186,7 +193,7 @@ Queue failure behavior already matches recovered OneClick: terminal worker resul
 - Historical OCR was bounded/lazy: narrow nearby candidates first, embedded text hints where possible, OCR only when needed.
 - Old edge handling refined already-safe boundaries around transcript/silence evidence; silence detection alone was not proof that narration could be discarded.
 - Introduction/Credits could become supplemental XHTML+SMIL pages; Lite now implements both manual and conservative Smart preservation through that reduced rendering path.
-- Graphic Readout narration could attach to an existing image page when validated; this remains pending in Lite.
+- Graphic Readout narration could attach to an existing image page when validated; deterministic image matching now exists in Lite, while the assignment/rendering path remains pending.
 - Old finishing logic required complete non-overlapping coverage and explicit targets, followed by a final independent audit.
 - Old zero-length SMIL repair was narrowly `clipEnd = clipBegin + 0.001s`; the final audit could still reject invalid/overlapping output.
 - The recovered GPL/Sigil-derived helper is a behavioral/test-vector reference unless licensing for direct reuse is deliberately resolved.
@@ -197,11 +204,10 @@ Queue failure behavior already matches recovered OneClick: terminal worker resul
 
 Do these next, in order unless a concrete failure requires a smaller prerequisite:
 
-1. **Add deterministic image-evidence scoring and caller wiring** that prefers embedded `alt` / `title` / SVG text and invokes the lazy OCR fallback only when Smart or the current unresolved review item actually needs more evidence. Weak/ambiguous evidence stays Pending.
-2. **Implement high-confidence Graphic Readout assignment** to a validated image/page destination, preventing overlapping/double allocation.
-3. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
-4. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
-5. Keep weak/ambiguous/non-edge regions Pending unless a deterministic auditable rule is added and regression-tested.
+1. **Wire the validated image scorer into high-confidence Graphic Readout assignment**. Use only a strong unambiguous recommendation, create a validated image/page destination, preserve manual decisions over Smart, prevent overlapping/double allocation, and leave weak/ambiguous cases Pending.
+2. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
+3. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
+4. Keep weak/ambiguous/non-edge regions Pending unless a deterministic auditable rule is added and regression-tested.
 
 Historical classifier thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are useful test vectors, not mandatory Lite constants. Reimplement/test behavior in Rust rather than copying the GPL helper.
 
