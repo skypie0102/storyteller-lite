@@ -6,19 +6,22 @@ on:
       - validation/graphic-readout-base
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: storyteller-lite-graphic-readout-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - name: Check out repository
+      - name: Check out feature head
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -27,6 +30,22 @@ jobs:
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
+
+      - name: Apply and commit rustfmt
+        shell: pwsh
+        run: |
+          cargo fmt --all
+          git diff --quiet -- crates
+          if ($LASTEXITCODE -ne 0) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add crates
+            git commit -m "chore: apply rustfmt to Graphic Readout slice"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          } else {
+            Write-Host "No rustfmt changes to commit."
+          }
+          Write-Host "Validated source commit: $(git rev-parse HEAD)"
 
       - name: Rust formatting
         id: fmt
