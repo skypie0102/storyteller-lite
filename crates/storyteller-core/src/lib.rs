@@ -16,6 +16,7 @@ mod resume;
 mod review_assignment;
 mod review_image;
 mod review_materialize;
+mod review_ocr;
 mod runner;
 mod scheduler;
 mod source_fingerprint;
@@ -65,6 +66,9 @@ pub use review_image::{
     DEFAULT_REVIEW_IMAGE_LIMIT,
 };
 pub use review_materialize::materialize_reviewed_alignment;
+pub use review_ocr::{
+    review_image_text_evidence, AudioReviewImageEvidenceSource, AudioReviewImageTextEvidence,
+};
 pub use runner::{
     run_pipeline, PipelineBackend, PipelineObserver, PipelineRunState, StagePlan, StageRunContext,
     StageRunError, StageRunErrorKind, StageRunOutput,
