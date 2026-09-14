@@ -29,13 +29,35 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Rust formatting
+        id: fmt
+        continue-on-error: true
         run: cargo fmt --all -- --check
 
       - name: Rust lint
+        id: clippy
+        continue-on-error: true
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Rust tests
+        id: tests
+        continue-on-error: true
         run: cargo test --workspace
 
       - name: Build native Slint shell
+        id: build
+        continue-on-error: true
         run: cargo build -p storyteller-ui
+
+      - name: Require all validation gates
+        if: always()
+        shell: pwsh
+        run: |
+          $failed = @()
+          if ("${{ steps.fmt.outcome }}" -ne "success") { $failed += "rustfmt" }
+          if ("${{ steps.clippy.outcome }}" -ne "success") { $failed += "clippy" }
+          if ("${{ steps.tests.outcome }}" -ne "success") { $failed += "tests" }
+          if ("${{ steps.build.outcome }}" -ne "success") { $failed += "build" }
+          if ($failed.Count -gt 0) {
+            Write-Error ("Validation failed: " + ($failed -join ", "))
+            exit 1
+          }
