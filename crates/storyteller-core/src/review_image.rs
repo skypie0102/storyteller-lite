@@ -133,23 +133,20 @@ pub fn review_image_candidates(
         }
     }
 
-    let previous = nearest_previous_anchor(
-        alignment,
-        alignment_index,
-        &spine_positions,
-    )?;
+    let previous = nearest_previous_anchor(alignment, alignment_index, &spine_positions)?;
     let next = nearest_next_anchor(alignment, alignment_index, &spine_positions)?;
     let last_spine_index = spine_documents.len() - 1;
     let (minimum, maximum, focus) = match (previous, next) {
         (Some((previous_segment, previous_spine)), Some((next_segment, next_spine))) => {
             if previous_spine > next_spine {
-                return Err("Neighboring alignment anchors are not monotonic in EPUB spine order.".into());
+                return Err(
+                    "Neighboring alignment anchors are not monotonic in EPUB spine order.".into(),
+                );
             }
             let segment_span = next_segment.saturating_sub(previous_segment).max(1);
             let segment_offset = alignment_index.saturating_sub(previous_segment);
             let spine_span = next_spine - previous_spine;
-            let focus = previous_spine
-                + spine_span.saturating_mul(segment_offset) / segment_span;
+            let focus = previous_spine + spine_span.saturating_mul(segment_offset) / segment_span;
             (previous_spine, next_spine, focus)
         }
         (Some((_, previous_spine)), None) => (previous_spine, last_spine_index, previous_spine),
@@ -172,18 +169,15 @@ pub fn review_image_candidates(
             return Err("EPUB image candidate discovery was cancelled.".into());
         }
         let document_href = &spine_documents[document_spine_index];
-        let document_xml = read_zip_text(
-            &mut archive,
-            document_href,
-            MAX_XHTML_BYTES,
-            cancellation,
-        )?;
+        let document_xml =
+            read_zip_text(&mut archive, document_href, MAX_XHTML_BYTES, cancellation)?;
         let document_dir = parent_archive_path(document_href);
         for reference in extract_image_references(&document_xml)? {
             if candidates.len() >= image_limit {
                 return Ok(candidates);
             }
-            let Some(image_href) = resolve_optional_resource_href(&document_dir, &reference.href)? else {
+            let Some(image_href) = resolve_optional_resource_href(&document_dir, &reference.href)?
+            else {
                 continue;
             };
             let Some(media_type) = image_media_types.get(&image_href) else {
@@ -214,7 +208,11 @@ fn nearest_previous_anchor(
     alignment_index: usize,
     spine_positions: &HashMap<String, usize>,
 ) -> Result<Option<(usize, usize)>, String> {
-    for (segment_index, segment) in alignment.segments[..alignment_index].iter().enumerate().rev() {
+    for (segment_index, segment) in alignment.segments[..alignment_index]
+        .iter()
+        .enumerate()
+        .rev()
+    {
         if segment.status != AlignmentStatus::Matched {
             continue;
         }
@@ -222,12 +220,15 @@ fn nearest_previous_anchor(
             .book_end
             .as_ref()
             .ok_or("Matched alignment segment is missing its book end position.")?;
-        let spine_index = spine_positions.get(&position.href).copied().ok_or_else(|| {
-            format!(
-                "Matched EPUB document {} is not present in the package spine.",
-                position.href
-            )
-        })?;
+        let spine_index = spine_positions
+            .get(&position.href)
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "Matched EPUB document {} is not present in the package spine.",
+                    position.href
+                )
+            })?;
         return Ok(Some((segment_index, spine_index)));
     }
     Ok(None)
@@ -246,12 +247,15 @@ fn nearest_next_anchor(
             .book_start
             .as_ref()
             .ok_or("Matched alignment segment is missing its book start position.")?;
-        let spine_index = spine_positions.get(&position.href).copied().ok_or_else(|| {
-            format!(
-                "Matched EPUB document {} is not present in the package spine.",
-                position.href
-            )
-        })?;
+        let spine_index = spine_positions
+            .get(&position.href)
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "Matched EPUB document {} is not present in the package spine.",
+                    position.href
+                )
+            })?;
         return Ok(Some((alignment_index + 1 + offset, spine_index)));
     }
     Ok(None)
@@ -376,11 +380,11 @@ fn extract_image_references(xml: &str) -> Result<Vec<RawImageReference>, String>
                     if let Some(href) = attribute_value(&element, b"href")? {
                         let mut hints = Vec::new();
                         push_attribute_hint(&mut hints, &element, b"title")?;
-                        svg_stack.last_mut().unwrap().images.push((
-                            href,
-                            next_ordinal,
-                            hints,
-                        ));
+                        svg_stack
+                            .last_mut()
+                            .unwrap()
+                            .images
+                            .push((href, next_ordinal, hints));
                         next_ordinal += 1;
                     }
                 } else if !svg_stack.is_empty()
@@ -409,11 +413,11 @@ fn extract_image_references(xml: &str) -> Result<Vec<RawImageReference>, String>
                     if let Some(href) = attribute_value(&element, b"href")? {
                         let mut hints = Vec::new();
                         push_attribute_hint(&mut hints, &element, b"title")?;
-                        svg_stack.last_mut().unwrap().images.push((
-                            href,
-                            next_ordinal,
-                            hints,
-                        ));
+                        svg_stack
+                            .last_mut()
+                            .unwrap()
+                            .images
+                            .push((href, next_ordinal, hints));
                         next_ordinal += 1;
                     }
                 }
@@ -508,10 +512,7 @@ fn image_entry_size<R: Read + Seek>(
 
 fn resolve_optional_resource_href(base: &str, href: &str) -> Result<Option<String>, String> {
     let href = href.split(['#', '?']).next().unwrap_or(href).trim();
-    if href.is_empty()
-        || href.starts_with('/')
-        || href.starts_with("data:")
-        || href.contains("://")
+    if href.is_empty() || href.starts_with('/') || href.starts_with("data:") || href.contains("://")
     {
         return Ok(None);
     }
@@ -550,7 +551,9 @@ fn normalize_archive_path(path: &str) -> Result<String, String> {
         }
     }
     if parts.is_empty() {
-        return Err(format!("EPUB archive path is empty after normalization: {path}"));
+        return Err(format!(
+            "EPUB archive path is empty after normalization: {path}"
+        ));
     }
     Ok(parts.join("/"))
 }
@@ -566,7 +569,9 @@ fn percent_decode(value: &str) -> Result<String, String> {
             continue;
         }
         if index + 2 >= bytes.len() {
-            return Err(format!("EPUB URI contains an incomplete percent escape: {value}"));
+            return Err(format!(
+                "EPUB URI contains an incomplete percent escape: {value}"
+            ));
         }
         let high = hex_value(bytes[index + 1])
             .ok_or_else(|| format!("EPUB URI contains an invalid percent escape: {value}"))?;
@@ -629,7 +634,9 @@ fn read_zip_text<R: Read + Seek>(
         return Err(format!("EPUB entry {name} is not a regular file."));
     }
     if entry.size() > max_bytes {
-        return Err(format!("EPUB entry {name} exceeds its image-review extraction limit."));
+        return Err(format!(
+            "EPUB entry {name} exceeds its image-review extraction limit."
+        ));
     }
     let mut bytes = Vec::with_capacity(entry.size().min(max_bytes) as usize);
     let mut buffer = vec![0u8; READ_BUFFER_BYTES];
@@ -644,7 +651,9 @@ fn read_zip_text<R: Read + Seek>(
             break;
         }
         if bytes.len().saturating_add(count) > max_bytes as usize {
-            return Err(format!("EPUB entry {name} expanded beyond its image-review extraction limit."));
+            return Err(format!(
+                "EPUB entry {name} expanded beyond its image-review extraction limit."
+            ));
         }
         bytes.extend_from_slice(&buffer[..count]);
     }
@@ -660,13 +669,18 @@ mod tests {
     use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
     fn temp_epub() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("storyteller-review-images-{}", Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("storyteller-review-images-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let path = root.join("book.epub");
         let file = File::create(&path).unwrap();
         let mut zip = ZipWriter::new(file);
         let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
-        zip.start_file("mimetype", SimpleFileOptions::default().compression_method(CompressionMethod::Stored)).unwrap();
+        zip.start_file(
+            "mimetype",
+            SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+        )
+        .unwrap();
         zip.write_all(b"application/epub+zip").unwrap();
         zip.start_file("OPS/package.opf", deflated).unwrap();
         zip.write_all(br#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/><manifest><item id="c1" href="Text/ch1.xhtml" media-type="application/xhtml+xml"/><item id="fig" href="Text/figure.xhtml" media-type="application/xhtml+xml"/><item id="c3" href="Text/ch3.xhtml" media-type="application/xhtml+xml"/><item id="diagram" href="Images/diagram.png" media-type="image/png"/><item id="map" href="Images/map.png" media-type="image/png"/></manifest><spine><itemref idref="c1"/><itemref idref="fig"/><itemref idref="c3"/></spine></package>"#).unwrap();
@@ -795,18 +809,12 @@ mod tests {
     fn discovery_honors_cancellation_and_limits() {
         let epub = temp_epub();
         let cancellation = CancellationToken::default();
-        cancellation.cancel();
-        assert!(review_image_candidates(
-            &epub,
-            &alignment(),
-            &corpus(),
-            1,
-            12,
-            24,
-            &cancellation,
-        )
-        .unwrap_err()
-        .contains("cancelled"));
+        cancellation.request();
+        assert!(
+            review_image_candidates(&epub, &alignment(), &corpus(), 1, 12, 24, &cancellation,)
+                .unwrap_err()
+                .contains("cancelled")
+        );
         assert!(review_image_candidates(
             &epub,
             &alignment(),
