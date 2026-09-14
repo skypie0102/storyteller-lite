@@ -15,6 +15,7 @@ mod queue;
 mod resume;
 mod review_assignment;
 mod review_image;
+mod review_image_match;
 mod review_materialize;
 mod review_ocr;
 mod runner;
@@ -64,6 +65,9 @@ pub use review_assignment::{
 pub use review_image::{
     review_image_candidates, AudioReviewImageCandidate, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
     DEFAULT_REVIEW_IMAGE_LIMIT,
+};
+pub use review_image_match::{
+    review_image_matches, AudioReviewImageMatchCandidate, AudioReviewImageMatchResult,
 };
 pub use review_materialize::materialize_reviewed_alignment;
 pub use review_ocr::{
