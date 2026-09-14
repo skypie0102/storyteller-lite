@@ -46,8 +46,8 @@ impl AudioReviewImageMatchResult {
 /// Scores already-bounded EPUB image candidates against one unmatched transcript segment.
 ///
 /// Embedded EPUB text is evaluated first. If it yields a strong, unambiguous winner, OCR is not
-/// attempted. Only when embedded evidence cannot do that are candidates without embedded text
-/// eligible for the optional Tesseract fallback.
+/// attempted. Only when embedded evidence cannot do that are candidates without usable embedded
+/// text eligible for the optional Tesseract fallback.
 pub fn review_image_matches(
     epub_path: &Path,
     transcript_text: &str,
@@ -59,34 +59,36 @@ pub fn review_image_matches(
         return Err("EPUB image evidence scoring was cancelled.".into());
     }
 
+    let transcript_words = normalized_words(transcript_text);
+    if transcript_words.is_empty() {
+        return Ok(result_from_ranked(Vec::new()));
+    }
+
     let mut scored = Vec::new();
-    for candidate in candidates
-        .iter()
-        .filter(|candidate| !candidate.embedded_text.is_empty())
-    {
+    let mut ocr_candidates = Vec::new();
+    for candidate in candidates {
         if cancellation.is_requested() {
             return Err("EPUB image evidence scoring was cancelled.".into());
         }
-        if let Some(evidence) =
-            review_image_text_evidence(epub_path, candidate, None, cancellation)?
-        {
-            if let Some(candidate) = score_candidate(transcript_text, candidate, evidence) {
-                scored.push(candidate);
+        match review_image_text_evidence(epub_path, candidate, None, cancellation)? {
+            Some(evidence) => {
+                if let Some(candidate) = score_candidate(&transcript_words, candidate, evidence) {
+                    scored.push(candidate);
+                }
             }
+            None => ocr_candidates.push(candidate),
         }
     }
 
     rank_candidates(&mut scored);
-    let embedded_result = result_from_ranked(scored.clone());
-    if embedded_result.recommended_index.is_some() || tesseract_executable.is_none() {
-        return Ok(embedded_result);
+    if recommended_index(&scored).is_some() {
+        return Ok(result_from_ranked(scored));
     }
+    let Some(tesseract_executable) = tesseract_executable else {
+        return Ok(result_from_ranked(scored));
+    };
 
-    let tesseract_executable = tesseract_executable.expect("checked above");
-    for candidate in candidates
-        .iter()
-        .filter(|candidate| candidate.embedded_text.is_empty())
-    {
+    for candidate in ocr_candidates {
         if cancellation.is_requested() {
             return Err("EPUB image evidence scoring was cancelled.".into());
         }
@@ -96,7 +98,7 @@ pub fn review_image_matches(
             Some(tesseract_executable),
             cancellation,
         )? {
-            if let Some(candidate) = score_candidate(transcript_text, candidate, evidence) {
+            if let Some(candidate) = score_candidate(&transcript_words, candidate, evidence) {
                 scored.push(candidate);
             }
         }
@@ -107,25 +109,24 @@ pub fn review_image_matches(
 }
 
 fn score_candidate(
-    transcript_text: &str,
+    transcript_words: &BTreeSet<String>,
     candidate: &AudioReviewImageCandidate,
     evidence: AudioReviewImageTextEvidence,
 ) -> Option<AudioReviewImageMatchCandidate> {
-    let transcript_words = normalized_words(transcript_text);
-    let evidence_words = normalized_words(&evidence.lines.join(" "));
-    let evidence_word_count = evidence_words.len();
-    if transcript_words.is_empty()
-        || !(MIN_EVIDENCE_WORDS..=MAX_EVIDENCE_WORDS).contains(&evidence_word_count)
-    {
+    let evidence_text = evidence.lines.join(" ");
+    let evidence_word_sequence = normalized_word_sequence(&evidence_text);
+    let evidence_word_count = evidence_word_sequence.len();
+    if !(MIN_EVIDENCE_WORDS..=MAX_EVIDENCE_WORDS).contains(&evidence_word_count) {
         return None;
     }
+    let evidence_words = evidence_word_sequence.into_iter().collect::<BTreeSet<_>>();
 
-    let matches = evidence_words.intersection(&transcript_words).count();
+    let matches = evidence_words.intersection(transcript_words).count();
     let coverage_milli = ratio_milli(matches, evidence_words.len());
     let similarity_milli = ratio_milli(matches, evidence_words.len().min(transcript_words.len()));
     let score_milli = ((u32::from(coverage_milli) * 2 + u32::from(similarity_milli)) / 3) as u16;
     let distinctive_matches = evidence_words
-        .intersection(&transcript_words)
+        .intersection(transcript_words)
         .filter(|word| is_distinctive(word))
         .count();
     let minimum_score = if evidence_word_count <= SHORT_EVIDENCE_WORDS {
@@ -150,22 +151,24 @@ fn score_candidate(
 }
 
 fn result_from_ranked(ranked: Vec<AudioReviewImageMatchCandidate>) -> AudioReviewImageMatchResult {
-    let recommended_index = ranked.first().and_then(|winner| {
-        if !winner.qualifies {
-            return None;
-        }
-        let runner_up = ranked.iter().skip(1).find(|candidate| candidate.qualifies);
-        if runner_up.is_some_and(|candidate| {
-            winner.score_milli.saturating_sub(candidate.score_milli) < MIN_WINNER_MARGIN_MILLI
-        }) {
-            return None;
-        }
-        Some(0)
-    });
+    let recommended_index = recommended_index(&ranked);
     AudioReviewImageMatchResult {
         ranked,
         recommended_index,
     }
+}
+
+fn recommended_index(ranked: &[AudioReviewImageMatchCandidate]) -> Option<usize> {
+    let winner = ranked.first()?;
+    if !winner.qualifies {
+        return None;
+    }
+    if ranked.get(1).is_some_and(|runner_up| {
+        winner.score_milli.saturating_sub(runner_up.score_milli) < MIN_WINNER_MARGIN_MILLI
+    }) {
+        return None;
+    }
+    Some(0)
 }
 
 fn rank_candidates(candidates: &mut [AudioReviewImageMatchCandidate]) {
@@ -204,11 +207,13 @@ fn ratio_milli(numerator: usize, denominator: usize) -> u16 {
 }
 
 fn normalized_words(text: &str) -> BTreeSet<String> {
+    normalized_word_sequence(text).into_iter().collect()
+}
+
+fn normalized_word_sequence(text: &str) -> Vec<String> {
     text.split(|character: char| !character.is_alphanumeric())
-        .filter_map(|word| {
-            let normalized = word.trim().to_lowercase();
-            (!normalized.is_empty()).then_some(normalized)
-        })
+        .map(str::to_lowercase)
+        .filter(|word| !word.is_empty())
         .collect()
 }
 
@@ -288,6 +293,14 @@ mod tests {
         }
     }
 
+    fn score(
+        transcript_text: &str,
+        candidate: &AudioReviewImageCandidate,
+        evidence: AudioReviewImageTextEvidence,
+    ) -> Option<AudioReviewImageMatchCandidate> {
+        score_candidate(&normalized_words(transcript_text), candidate, evidence)
+    }
+
     #[test]
     fn strong_embedded_match_is_recommended_without_opening_epub_or_ocr() {
         let candidates = vec![
@@ -315,6 +328,21 @@ mod tests {
             AudioReviewImageEvidenceSource::Embedded
         );
         assert!(recommended.qualifies);
+    }
+
+    #[test]
+    fn empty_transcript_short_circuits_before_epub_or_ocr() {
+        let result = review_image_matches(
+            Path::new("does-not-need-to-exist.epub"),
+            "   ",
+            &[candidate(4, 0, "OPS/Images/no-hints.png", &[])],
+            Some(Path::new("definitely-missing-tesseract")),
+            &CancellationToken::default(),
+        )
+        .unwrap();
+
+        assert!(result.ranked.is_empty());
+        assert!(result.recommended().is_none());
     }
 
     #[test]
@@ -348,8 +376,37 @@ mod tests {
     }
 
     #[test]
+    fn near_miss_runner_up_keeps_result_ambiguous() {
+        let source = candidate(1, 0, "OPS/Images/winner.png", &[]);
+        let evidence = embedded(&["Alpha bravo charlie delta echo"]);
+        let winner = AudioReviewImageMatchCandidate {
+            candidate: source.clone(),
+            evidence: evidence.clone(),
+            coverage_milli: 800,
+            similarity_milli: 800,
+            score_milli: 800,
+            distinctive_matches: 4,
+            evidence_word_count: 5,
+            qualifies: true,
+        };
+        let runner_up = AudioReviewImageMatchCandidate {
+            candidate: source,
+            evidence,
+            coverage_milli: 750,
+            similarity_milli: 750,
+            score_milli: 750,
+            distinctive_matches: 1,
+            evidence_word_count: 5,
+            qualifies: false,
+        };
+
+        let result = result_from_ranked(vec![winner, runner_up]);
+        assert!(result.recommended().is_none());
+    }
+
+    #[test]
     fn weak_or_generic_overlap_stays_unqualified() {
-        let scored = score_candidate(
+        let scored = score(
             "This is where the other people were before they went there.",
             &candidate(
                 1,
@@ -366,8 +423,25 @@ mod tests {
     }
 
     #[test]
+    fn phrase_bounds_use_total_words_not_only_unique_words() {
+        let scored = score(
+            "Alpha alpha bravo charlie delta",
+            &candidate(
+                1,
+                0,
+                "OPS/Images/repeated.png",
+                &["Alpha alpha bravo charlie delta"],
+            ),
+            embedded(&["Alpha alpha bravo charlie delta"]),
+        )
+        .unwrap();
+
+        assert_eq!(scored.evidence_word_count, 5);
+    }
+
+    #[test]
     fn evidence_outside_phrase_bounds_is_ignored() {
-        assert!(score_candidate(
+        assert!(score(
             "Alpha beta gamma delta",
             &candidate(1, 0, "OPS/Images/short.png", &["Alpha beta"]),
             embedded(&["Alpha beta"]),
@@ -379,7 +453,7 @@ mod tests {
     fn embedded_source_wins_deterministic_tie() {
         let source = candidate(2, 0, "OPS/Images/tie.png", &[]);
         let mut ranked = vec![
-            score_candidate(
+            score(
                 "Alpha bravo charlie delta echo foxtrot",
                 &source,
                 AudioReviewImageTextEvidence {
@@ -389,7 +463,7 @@ mod tests {
                 },
             )
             .unwrap(),
-            score_candidate(
+            score(
                 "Alpha bravo charlie delta echo foxtrot",
                 &source,
                 embedded(&["Alpha bravo charlie delta echo foxtrot"]),
@@ -398,6 +472,9 @@ mod tests {
         ];
         rank_candidates(&mut ranked);
 
-        assert_eq!(ranked[0].evidence.source, AudioReviewImageEvidenceSource::Embedded);
+        assert_eq!(
+            ranked[0].evidence.source,
+            AudioReviewImageEvidenceSource::Embedded
+        );
     }
 }
