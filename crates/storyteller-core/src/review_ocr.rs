@@ -65,10 +65,7 @@ pub fn review_image_text_evidence(
         return Err("OCR image candidate has an invalid or oversized byte length.".into());
     }
 
-    let temp_root = std::env::temp_dir().join(format!(
-        "storyteller-image-ocr-{}",
-        Uuid::new_v4()
-    ));
+    let temp_root = std::env::temp_dir().join(format!("storyteller-image-ocr-{}", Uuid::new_v4()));
     fs::create_dir_all(&temp_root).map_err(|error| {
         format!(
             "Could not create temporary OCR directory {}: {error}",
@@ -88,11 +85,12 @@ pub fn review_image_text_evidence(
         .arg("--psm")
         .arg("6")
         .arg("tsv");
-    let output = run_cancellable_command(&mut command, cancellation, |_stream, _line| {})
-        .map_err(|error| match error {
+    let output = run_cancellable_command(&mut command, cancellation, |_stream, _line| {}).map_err(
+        |error| match error {
             CommandRunError::Cancelled => "EPUB image OCR was cancelled.".to_string(),
             other => format!("Could not run optional Tesseract OCR: {other}"),
-        })?;
+        },
+    )?;
     if !output.success {
         let detail = output.stderr.trim();
         return Err(if detail.is_empty() {
@@ -111,8 +109,12 @@ fn extract_candidate_image(
     destination: &Path,
     cancellation: &CancellationToken,
 ) -> Result<(), String> {
-    let source = File::open(epub_path)
-        .map_err(|error| format!("Could not open EPUB {} for OCR: {error}", epub_path.display()))?;
+    let source = File::open(epub_path).map_err(|error| {
+        format!(
+            "Could not open EPUB {} for OCR: {error}",
+            epub_path.display()
+        )
+    })?;
     let mut archive = ZipArchive::new(source)
         .map_err(|error| format!("Could not read EPUB ZIP container for OCR: {error}"))?;
     let mut entry = archive.by_name(&candidate.image_href).map_err(|error| {
@@ -125,7 +127,9 @@ fn extract_candidate_image(
         return Err("OCR image candidate is missing, empty, or oversized.".into());
     }
     if entry.size() != candidate.byte_size {
-        return Err("OCR image candidate size no longer matches the discovered EPUB resource.".into());
+        return Err(
+            "OCR image candidate size no longer matches the discovered EPUB resource.".into(),
+        );
     }
 
     let mut output = File::create(destination).map_err(|error| {
