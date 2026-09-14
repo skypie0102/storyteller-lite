@@ -4,223 +4,139 @@ Read this file before making substantial changes.
 
 ## Current repository truth
 
-- Repository: `skypie0102/storyteller-lite`
-- Active recovered code branch: `recovery/rust-slint`
-- Default branch `main` is **not** the Rust + Slint implementation branch and must not be used as current code truth.
-- P1 Whisper chunk workers are integrated and Windows-validated.
-- P2 now includes durable per-segment review decisions, the reduced allocator foundation, native edge/silence evidence, real supplemental Introduction/Credits rendering, behaviorally distinct Smart/ReviewAll edge handling, dedicated supplemental regression coverage, bounded EPUB image candidate discovery, lazy per-candidate image text evidence, and deterministic transcript-to-image evidence scoring.
-- Supplemental edge-page rendering passed Windows validation on run `34738027167`; validated source commit `cea590ada02c7942a8fda7226631f22d503e55b1` is included in recovery.
-- Smart edge preservation passed Windows validation on run `34745516558`; validated source commit `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c` is included in recovery.
-- Supplemental/Smart end-to-end regression coverage passed Windows validation on run `34746062156`.
-- Bounded image candidate discovery passed Windows validation on run `34811582552`; validated source commit `20954ba2c128e7c396e870b2fb5a9f382490450e` is included in recovery.
-- Lazy image text evidence passed check-only Windows validation on run `34815433905`; validated feature source commit `734ef8461e0b0245d4a6700c3fed471003226d4a` is integrated in recovery as commits `4f25486ccdc46dbd73a0924a8f224a0c69ecec2c` and `10f0b8308f9fa6b04dcfd681c9792802804bdcbb`.
-- Deterministic image-evidence scoring passed Windows validation on run `34820045285`; validated feature source commit `40c5172c35c43a1a5eb9fa2e07fabbc8e68f4ed6` is integrated in recovery as commits `fa22c918157c7f18ed8b718d62a0c183b4959310` and `d8d728d2b73db793e668c62a4c733f893e61ae57`.
+- Repository: `skypie0102/storyteller-lite`.
+- Active Rust + Slint implementation branch: `recovery/rust-slint`.
+- Default branch `main` is **not** current implementation truth.
+- P1 bounded Whisper chunk workers are implemented and Windows-validated.
+- P2 now includes durable per-segment review decisions, reduced manual allocation, Smart/ReviewAll edge behavior, supplemental Introduction/Credits rendering, bounded EPUB image discovery, lazy image text evidence, deterministic image scoring, conservative Smart Graphic Readout assignment, and native image-target Media Overlay rendering.
+- The validated Graphic Readout implementation is integrated in recovery as commit `9673dc7a6f41493e13b24724b3123659fcbaa271`.
+- Final Graphic Readout Windows validation run `34826426511` passed committed-source rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
+- Temporary Graphic Readout validation PR #3 is closed without merge, and its temporary workflow was removed from `feature/graphic-readout`.
+- Hosted CI is intentionally opt-in/manual-only on recovery. **Do not create temporary validation PRs/workflows or dispatch GitHub-hosted runners unless the user explicitly asks.** Prefer local/static validation and report any remaining validation requirement.
+- Unvalidated follow-up work currently lives on `feature/manual-graphic-readout`; do not present or integrate it as validated until it has been checked without violating the hosted-runner rule.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
-## Product identity
+## Product identity and authority order
 
-Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The pre-Rust application is a behavioral reference where useful, but Lite is deliberately smaller and must not become a line-for-line port.
+Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The old app is a behavioral reference where useful, but Lite is deliberately smaller and must not become a line-for-line port.
 
-Primary references:
+Use these references in order:
 
-1. `docs/ROADMAP.md` — canonical current roadmap/product scope.
-2. `docs/ui-guides/README.md` + mockups — current visual/product references.
-3. `docs/RUNTIME.md` — owned external runtime behavior.
-4. `docs/recovery/README.md` — provenance and authority order.
-5. `docs/recovery/WORKER_SEMANTICS.md` — recovered transcription concurrency semantics.
-6. `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` — Smart/edge/lazy-OCR recovery.
-7. `docs/recovery/ALLOCATOR_OUTPUT_RECOVERY.md` — downstream Introduction/Credits/Graphic Readout semantics.
-8. `docs/recovery/QUEUE_FAILURE_RECOVERY.md` — queue auto-advance behavior after failure.
-9. `docs/recovery/INTEGRITY_RECOVERY.md` — legacy finishing/integrity behavior, including the 1 ms zero-length SMIL repair.
-10. `docs/recovery/FRONTEND_AND_CONCURRENCY_RECOVERY.md` — old frontend state, persistence, and allocator invariants.
-11. `docs/recovery/INSTALLER_DISSECTION.md` — static findings from v0.39.0.
-12. `tools/recovery/extract_legacy_nsis.py` and `tools/recovery/extract_tauri_assets.py` — reproducible recovery tools.
+1. live source on `recovery/rust-slint` for implementation truth;
+2. `docs/HANDOFF.md` for current implementation handoff;
+3. `docs/ROADMAP.md` for current product/pending-work truth;
+4. `docs/ui-guides/README.md` plus mockups for UI hierarchy;
+5. `docs/RUNTIME.md` for owned external runtime behavior;
+6. `docs/recovery/*.md` for recovered historical evidence and test vectors.
 
-Installer archaeology is **demand-driven**. Do not spend time recovering unrelated EXE details unless a live Lite behavior remains ambiguous.
+Installer archaeology is demand-driven. Do not recover unrelated legacy behavior unless a live Lite decision is genuinely ambiguous.
 
-## User decisions that remain authoritative
+## Product decisions that remain authoritative
 
-### Keep / restore
+Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, a simple Whisper worker count of 1–4 (default 1), Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
 
-- Queue-first workflow.
-- Fixed seven-stage pipeline: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate.
-- Exactly one overall progress bar backed by real metrics.
-- Automatic CPU-thread selection for Whisper.
-- A simple user-facing **Whisper worker count**, default `1`, range `1–4`.
-- Worker count means **concurrent bounded transcription chunks**, not manual CPU allocation and not whisper.cpp `-p`.
-- **Smart / ReviewAll** unmatched-audio policy.
-- Conservative automatic edge handling for safe high-confidence cases only.
-- Lazy/on-demand OCR of bounded EPUB image candidates; no permanent OCR toggle.
-- Reduced manual allocation for unresolved audio.
-- Limited useful dispositions such as Introduction, Credits, Graphic Readout, and Extra Audio only where they affect build behavior.
-- Failed books remain failed/retryable but do not stall the queue unless the queue was explicitly paused or Pause-after-current was requested.
-- Supplied mockups as UI hierarchy guides.
+Do not restore manual CPU allocation, word-level synchronization, the old activity-console-first UI, Runtime Health, process-now flow, broad runtime path controls, EPUB standardization/CSS editor controls, a permanent OCR toggle, or the old general-purpose split/merge/trim/rules allocator.
 
-### Do not restore by default
+## Current pipeline behavior
 
-- Manual CPU/thread allocation UI.
-- Full old OneClick settings complexity.
-- Word-level synchronization.
-- Activity-console-first UI.
-- Runtime Health page.
-- Process-now flow.
-- Engine/runtime path tuning UI.
-- Standardize-EPUB toggle.
-- CSS editor.
-- Permanent OCR toggle.
-- Arbitrary split/merge/trim/rules/general-purpose allocator complexity.
+### Prepare / Analyze / Align
 
-## Current code behavior
-
-### P0/P1 — complete and Windows-validated
-
-Analyze uses bounded ordered audio chunks instead of a permanent full-book PCM artifact.
-
-Current Analyze behavior:
-
-- `JobSettings` carries `whisper_workers`, validated to `1..=4`, default `1`.
-- The Settings UI exposes only that worker selector; there is no manual CPU allocation control.
-- Worker count is snapshotted per queued job and excluded from semantic resume fingerprints.
-- ffmpeg provides duration/chapter metadata; no ffprobe dependency was added.
-- Chapter boundaries are preferred; synthetic boundaries are refined around nearby silence.
-- Each active chunk is temporarily decoded to 16 kHz mono signed-16-bit PCM and passed to its own whisper.cpp CLI process.
-- At most `whisper_workers` chunks are transcribed concurrently.
-- Each Whisper invocation receives an automatically divided `-t` CPU-thread budget. Worker count is not mapped to `-p`.
-- Chunk-local timestamps are converted to global audiobook time, merged, ordered, and validated.
-- Temporary PCM chunks are deleted after Analyze; durable artifacts are `book-corpus.json`, `transcription-plan.json`, and `transcript.json`.
-- User cancellation and internal sibling cancellation remain distinct.
-- Analyze fingerprinting includes ffmpeg/whisper executable identity plus language/model identity.
+Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–4 independent Whisper processes, divides available logical CPU threads across workers, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
 
 P1 Windows validation run: `34732299289`.
 
-Known caveat: multiple GPU-backed Whisper processes may each load the model. Keep the default at 1 until real CPU/CUDA benchmarking justifies another default or hardware-aware clamping.
+### Review Audio
 
-### Review Audio — substantial P2 foundation is implemented
+Review decisions are durable per segment:
 
-The old handoff statement that Review Audio was global-exclusion-only is obsolete.
+- `Pending`;
+- `Assigned { destination, classification?, source = Automatic | Manual }`;
+- `Excluded { reason, source }`.
 
-Current review data model:
+`review.json` contains the current report and `review-draft.json` preserves decisions outside the disposable Review Audio stage directory. Manual decisions win over automatic Smart recomputation. Review cannot finish while any item remains Pending.
 
-- `AudioReviewPolicy`: `Smart` / `ReviewAll`.
-- `AudioReviewDecision`: `Pending`, `Assigned`, `Excluded`.
-- Assigned/excluded decisions preserve `Automatic` / `Manual` provenance.
-- Optional classifications: Introduction, Credits, Graphic Readout, Extra Audio.
-- Stable per-segment review IDs are derived from alignment index/time/transcript.
-- `review.json` stores transcript/timing, suggestion, edge identity, optional silence evidence, and decision.
-- `review-draft.json` persists decisions outside the disposable Review Audio stage directory and is restored when review data is regenerated.
-- The legacy global exclusion bit remains only for compatibility; new work should use explicit per-segment decisions.
+The reduced allocator supports navigation, audio preview/seek, transcript/timing/evidence context, bounded EPUB text candidates, explicit text assignment, explicit exclusion, and manual Introduction/Credits preservation. Text assignment is revalidated against the nearest accepted alignment neighbors before materialization.
 
-Current allocator/core behavior:
+Leading/trailing unmatched segments are marked as Introduction/Credits candidates and may receive bounded FFmpeg silence evidence. Silence is advisory and never by itself authorizes deletion. In Smart mode, anchored edge narration is conservatively preserved as supplemental Introduction/Credits pages; ReviewAll leaves those cases Pending. Smart does not auto-discard unmatched narration.
 
-- Previous/next segment navigation.
-- Audio preview/stop and ±5 s seek.
-- Transcript/timing plus edge/silence context.
-- Bounded EPUB text candidates ranked by lexical overlap.
-- Candidate range is constrained between nearest accepted alignment neighbors so manual assignment cannot break monotonic reading order.
-- Explicit text Assign and Exclude actions; after a decision the controller selects the next Pending item.
-- Review cannot finish while any item is Pending.
-- Effective alignment materialization converts validated manual text assignments into matched blocks while retaining the original automatic alignment as source truth.
-- Bounded image candidate discovery reads the EPUB package/spine directly, so image-only XHTML pages remain visible even when the text corpus omits them. Candidate work is bounded between neighboring accepted alignment anchors, defaults to at most 12 nearby spine documents / 24 images, requires manifest-declared image resources, skips empty/missing/images over 25 MiB, and gathers `alt`, `title`, SVG `title`/`desc`/`text` hints before OCR.
-- Lazy image text evidence is available for one already-bounded candidate at a time. Embedded EPUB hints are normalized and preferred without opening the image or invoking OCR. If hints are absent or normalize to no usable evidence, the caller may explicitly supply a Tesseract executable; otherwise the API returns no OCR evidence instead of turning Tesseract into a permanent runtime dependency or setting.
-- The OCR fallback extracts only the selected manifest image, rechecks its discovered byte size, enforces the 25 MiB bound, copies with cancellation support, invokes Tesseract TSV output, and returns normalized text lines plus mean confidence when evidence clears conservative minimums.
-- Deterministic image-evidence scoring is now available through `review_image_matches`. It normalizes the unmatched transcript once, evaluates embedded evidence across the already-bounded image candidates first, and avoids opening the EPUB image or launching OCR when a strong unambiguous embedded winner already exists.
-- If embedded evidence does not produce a recommendation and the caller supplies optional Tesseract, OCR is attempted only for candidates that produced no usable embedded evidence. Empty transcripts short-circuit without OCR.
-- Evidence phrase bounds use actual word count (`5..=120`) while lexical overlap uses distinct normalized words. Qualification requires conservative coverage/aggregate score thresholds plus at least two distinctive word matches; exact source/spine/image tie-breaks are deterministic and embedded evidence wins an exact source tie.
-- A winner is recommended only when it qualifies and is separated from the next ranked candidate by the configured margin; a close runner-up can therefore keep the result ambiguous even when that runner-up falls just below qualification.
-- The scorer returns ranked evidence and an optional recommendation only. It is **not yet wired into Smart review decisions**, and no Graphic Readout destination is created automatically yet.
+### Image evidence and Graphic Readout
 
-Current edge evidence and Smart behavior:
+Bounded image discovery reads the EPUB package/spine directly, including image-only XHTML pages that the text corpus may omit. Work is constrained by neighboring accepted alignment anchors, defaults to at most 12 nearby spine documents and 24 images, accepts only manifest-declared image resources, rejects missing/empty/resources over 25 MiB, and collects embedded `alt`, `title`, SVG `title`/`desc`/text evidence first.
 
-- Unmatched segments before the first matched segment are marked Introduction candidates; those after the final matched segment are marked Credits candidates.
-- Only those already-bounded edge segments are probed with FFmpeg `silencedetect`.
-- Review evidence currently uses approximately `-38 dB` and `0.35 s`, matching the recovered manual-inspection evidence.
-- Silence percentage is advisory. Probe failure does not erase review work and silence alone does not authorize deletion.
-- `Smart` now automatically preserves leading/trailing unmatched narration as supplemental Introduction/Credits pages when there is a concrete matched EPUB anchor.
-- `ReviewAll` leaves those same edge regions Pending for user inspection/override.
-- Smart is deliberately non-destructive here: it never auto-excludes these unmatched edge segments.
-- Existing **manual** draft decisions always win over Smart. Existing **automatic** decisions are recomputed according to the active policy, so a ReviewAll rebuild cannot silently retain a previous Smart assignment.
-- Internal/non-edge unmatched segments remain Pending; Smart does not invent a destination for them.
+Lazy image text evidence prefers embedded hints. Optional Tesseract is per-call fallback only; there is no permanent OCR setting/runtime requirement. OCR extracts only the selected bounded image, rechecks size, honors cancellation, uses TSV output, and returns normalized evidence only above conservative confidence/text bounds.
 
-### Supplemental Introduction/Credits rendering — implemented and Windows-validated
+`review_image_matches` deterministically ranks candidate evidence against one unmatched transcript. It prefers embedded evidence, uses optional OCR only when needed, enforces phrase/coverage/similarity/distinctive-word bounds, and returns a recommendation only when the winner is strong and sufficiently separated from its runner-up. Weak or ambiguous evidence remains unresolved.
 
-A leading/trailing review item can now be preserved as a real read-aloud page instead of being forced onto an existing paragraph. Preservation can be manual or, in Smart mode, automatic for anchored edge narration.
+`apply_smart_graphic_readouts` wires that scorer into Smart review for pending **non-edge** items. It assigns only a strong unambiguous bounded image winner, records `GraphicReadout` with `Automatic` provenance, and refuses duplicate image ownership. ReviewAll never applies this automatic image decision.
 
-Behavior:
+Graphic Readout rendering is implemented. Build EPUB validates each image destination/classification, finds the real `<img>`/SVG image target, reuses or injects a durable fragment ID, and adds the narration as a native Media Overlay cue. Text and Graphic Readout cues on the same XHTML share one SMIL sequence ordered by audio time. Duplicate image targets and overlapping audio cues are hard build errors. Image-only XHTML is supported. Graphic Readout decisions stay out of effective text alignment materialization and are consumed directly from review data by the EPUB builder.
 
-- Introduction creates a supplemental destination anchored **before** the first matched EPUB spine document.
-- Credits creates a supplemental destination anchored **after** the last matched EPUB spine document.
-- The durable destination model records `BeforeAnchor` / `AfterAnchor` separately from normal text/image destinations.
-- Supplemental decisions stay out of ordinary text alignment materialization; the EPUB builder consumes them separately from `review.json`.
-- Build EPUB generates one XHTML page and one SMIL overlay for each supplemental item, using the real transcript text and real audiobook clip interval.
-- The generated XHTML and SMIL are added to the OPF manifest, the page receives `media-overlay`, a spine itemref is inserted around the chosen anchor, and per-overlay duration metadata is written.
-- Total Media Overlay duration includes supplemental clips.
-- Build EPUB semantic fingerprint is `storyteller:epub-media-overlay-v2-supplemental-edge`, so older build checkpoints are not reused silently.
-- The allocator still exposes **Preserve as Introduction** / **Preserve as Credits** for corresponding edge candidates so ReviewAll/manual override remains available.
+The end-to-end fixture `crates/storyteller-core/tests/graphic_readout.rs` verifies mixed text/image overlay behavior, durable image anchoring, audio-time ordering, and final structural validation.
 
-Supplemental rendering validation run `34738027167` passed:
+Graphic Readout validation run `34826426511` passed:
 
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
-- `cargo build -p storyteller-ui`
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace`;
+- `cargo build -p storyteller-ui`;
+- aggregate validation gate.
 
-Validated supplemental source commit: `cea590ada02c7942a8fda7226631f22d503e55b1`.
+### Introduction / Credits supplemental rendering
 
-Smart edge-policy validation run `34745516558` passed the same three gates. Validated Smart source commit: `b868eb0cae9c5916ae1048c18cd2c66bf8f6ee8c`.
+Introduction/Credits preservation generates real XHTML + SMIL pages before/after the chosen spine anchor, with manifest/spine/media-overlay relationships, real audiobook clip timing, and Media Overlay duration metadata. Manual and conservative Smart preservation share this path.
 
-Dedicated supplemental/Smart regression coverage passed Windows validation on run `34746062156`. It verifies OPF manifest/spine ordering, generated XHTML+SMIL relationships, real clip timing and duration metadata, durable review-draft restoration, a mixed automatic Introduction/manual Credits decision set, and final independent EPUB validation.
+Relevant Windows validation runs:
 
-Bounded image candidate discovery passed Windows validation on run `34811582552` (format check, strict Clippy, full workspace tests, native Slint build). Validated image-discovery source commit: `20954ba2c128e7c396e870b2fb5a9f382490450e`.
+- supplemental rendering `34738027167`;
+- Smart edge preservation `34745516558`;
+- supplemental/Smart end-to-end regression `34746062156`.
 
-Lazy image text evidence passed Windows validation on run `34815433905` using committed-source `cargo fmt --all -- --check`, strict Clippy, full workspace tests, and the native Slint build. The validated implementation prefers embedded hints and makes optional Tesseract a per-call fallback rather than a permanent Lite runtime setting.
+### Encode / Build EPUB / Validate
 
-Deterministic image-evidence scoring passed Windows validation on run `34820045285` using committed-source `cargo fmt --all -- --check`, strict Clippy, full workspace tests, and the native Slint build. The validated implementation prefers embedded evidence, invokes optional OCR only after embedded evidence fails to produce a strong unambiguous recommendation, keeps close competing candidates ambiguous, and does not create a review decision by itself.
+Encode creates the final Copy/Opus/AAC representation. Build EPUB consumes the effective reviewed text alignment plus supplemental and Graphic Readout review destinations. Validate independently reopens the candidate EPUB and audits package/SMIL/text-or-image/audio relationships, positive non-overlapping clip ranges, durations, duplicates, and mimetype rules before publication.
 
-### Build/Validate boundaries that remain
+The builder semantic fingerprint was bumped when Graphic Readout output behavior landed so stale build checkpoints are not silently reused.
 
-- Image destinations intentionally still fail with an explicit error: Graphic Readout rendering is not implemented yet.
-- Extra Audio classification exists but has no separate Lite rendering rule yet.
-- Final Validate already independently reopens the candidate and audits package/SMIL/text/audio relationships, timing, duration consistency, duplicates, and mimetype rules. Extend regression coverage as new destination types land rather than weakening this audit.
+## Extra Audio decision
 
-Queue failure behavior already matches recovered OneClick: terminal worker results advance to the next waiting job unless pause-after-current has paused the queue.
+`AudioReviewClassification::ExtraAudio` exists, but Lite currently has **no distinct Extra Audio destination/rendering rule**. Recovered legacy evidence documents an optional standalone audio-player page as one historical fallback, but explicitly treats that as a product/interoperability choice rather than a required Lite behavior. Do not invent a separate Extra Audio renderer merely for historical taxonomy compatibility. Add one only if a concrete product requirement and validation strategy justify it.
 
-## Installer recovery facts worth preserving
+## Current unvalidated follow-up: manual Graphic Readout allocation
 
-- Old OneClick had separate `threads`, `parallelTranscribes`, and `parallelTranscodes` settings.
-- Historical validation allowed 1–32 CPU threads, 1–4 parallel transcription jobs, and 1–8 parallel FFmpeg jobs; historical backend defaults are not Lite compatibility requirements.
-- Old alignment launched Whisper with `--processors 1` separately from `--parallel-transcribes`, proving parallel transcribes was higher-level work concurrency rather than whisper.cpp processor count.
-- Old manual allocation persisted `manualDrafts`; durable review decisions were separate from disposable/rebuildable preview workspaces. Lite preserves this boundary with `review-draft.json`.
-- Historical OCR was bounded/lazy: narrow nearby candidates first, embedded text hints where possible, OCR only when needed.
-- Old edge handling refined already-safe boundaries around transcript/silence evidence; silence detection alone was not proof that narration could be discarded.
-- Introduction/Credits could become supplemental XHTML+SMIL pages; Lite now implements both manual and conservative Smart preservation through that reduced rendering path.
-- Graphic Readout narration could attach to an existing image page when validated; deterministic image matching now exists in Lite, while the assignment/rendering path remains pending.
-- Old finishing logic required complete non-overlapping coverage and explicit targets, followed by a final independent audit.
-- Old zero-length SMIL repair was narrowly `clipEnd = clipBegin + 0.001s`; the final audit could still reject invalid/overlapping output.
-- The recovered GPL/Sigil-derived helper is a behavioral/test-vector reference unless licensing for direct reuse is deliberately resolved.
+Branch: `feature/manual-graphic-readout`.
+
+Purpose: let unresolved/ambiguous non-edge narration be manually attached to a **bounded discovered image candidate**, without allowing free-form `document_href` / `image_href` destinations.
+
+Current branch work includes:
+
+- core `assign_manual_graphic_readout(...)`, which reloads the review item, reruns bounded image discovery, rejects edge narration and duplicate image ownership, requires the exact current candidate, then records a Manual Graphic Readout decision;
+- unit tests for accepted bounded targets, arbitrary target rejection, edge rejection, and duplicate image ownership;
+- allocator work that appends a small number of bounded image rows to the existing candidate model and revalidates the chosen image at click time;
+- candidate caching so EPUB image discovery is not repeated by the 100 ms UI refresh loop.
+
+This branch is **not validated or integrated**. Before integration, fix/verify that image-discovery failure is advisory and never hides valid text candidates, make the candidate cache job-specific, perform a formatting/Clippy-oriented static pass, and validate locally or only with explicitly authorized hosted CI.
 
 ## Immediate implementation order
 
-### P2 — finish Smart unmatched-audio behavior
+1. Finish the manual Graphic Readout allocator on `feature/manual-graphic-readout` under the no-hosted-runner rule; keep image paths bounded/revalidated and image-discovery failure advisory.
+2. If validation becomes available without hosted runners, run rustfmt/Clippy/tests/native build and integrate only after green validation. Otherwise leave the branch explicitly unvalidated.
+3. Treat Extra Audio as no-op taxonomy unless a real product/output contract emerges; do not add a player-page renderer by default.
+4. Move to P3 main Slint UI alignment once the reduced P2 allocator is coherent: compact creation controls, one rich processing card, seven-stage visualization, real metrics, queue/recent management, and responsive reflow.
+5. Later: interoperability/EPUBCheck testing, packaging/release/update polish, explicit relaunch/resume UX, and real 1–4 worker CPU/CUDA benchmarks.
 
-Do these next, in order unless a concrete failure requires a smaller prerequisite:
+## Recovered invariants worth preserving
 
-1. **Wire the validated image scorer into high-confidence Graphic Readout assignment**. Use only a strong unambiguous recommendation, create a validated image/page destination, preserve manual decisions over Smart, prevent overlapping/double allocation, and leave weak/ambiguous cases Pending.
-2. **Extend Build EPUB for Graphic Readout** and add corresponding validation fixtures.
-3. Decide whether **Extra Audio** needs a distinct Lite destination/rendering rule. If it does not, do not broaden the taxonomy just because the old app had more modes.
-4. Keep weak/ambiguous/non-edge regions Pending unless a deterministic auditable rule is added and regression-tested.
+- Human/manual decisions are explicit and durable.
+- Destinations are bounded and validated; the UI never supplies arbitrary EPUB paths as authority.
+- One audio interval must not be ambiguously owned twice.
+- Weak/ambiguous evidence remains Pending rather than being forced.
+- Final output is independently audited after review decisions are applied.
+- Historical OCR/scoring thresholds are test vectors, not permanent product constants.
+- The recovered GPL/Sigil-derived helper is behavioral evidence unless licensing for direct reuse is deliberately resolved.
 
-Historical classifier thresholds in `docs/recovery/UNMATCHED_AUDIO_RECOVERY.md` are useful test vectors, not mandatory Lite constants. Reimplement/test behavior in Rust rather than copying the GPL helper.
+## Engineering migration rule
 
-Do **not** initially add arbitrary split/merge, a general waveform trim editor, broad Apply-to-similar rules, permanent OCR controls, or the unrestricted old allocator taxonomy.
+Preserve old behavior/evidence until replacement behavior is implemented and regression-covered.
 
-### P3 — align Slint UI with supplied mockups
-
-Use the main mockup for hierarchy/information density and the allocator mockup for the dedicated review experience. Treat them as responsive wide-window guides, not fixed pixel canvases.
-
-## Engineering rule
-
-Do not start with broad legacy deletion. Use:
-
-> Replace → regression-test → delete.
-
-When old behavior and current Lite scope conflict, prefer current Lite scope and document the decision.
+> **Replace → regression-test → delete. Never delete → hope we remembered everything.**
