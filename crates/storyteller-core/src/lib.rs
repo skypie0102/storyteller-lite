@@ -67,8 +67,7 @@ pub use review_image::{
 };
 pub use review_materialize::materialize_reviewed_alignment;
 pub use review_ocr::{
-    review_image_text_evidence, ReviewImageOcrEngine, ReviewImageTextEvidence,
-    ReviewImageTextSource,
+    review_image_text_evidence, AudioReviewImageEvidenceSource, AudioReviewImageTextEvidence,
 };
 pub use runner::{
     run_pipeline, PipelineBackend, PipelineObserver, PipelineRunState, StagePlan, StageRunContext,
