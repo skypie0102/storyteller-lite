@@ -14,6 +14,7 @@ mod progress;
 mod queue;
 mod resume;
 mod review_assignment;
+mod review_image;
 mod review_materialize;
 mod runner;
 mod scheduler;
@@ -58,6 +59,10 @@ pub use resume::{InvalidResumeStage, ResumeContext, ResumePlan, ValidatedResumeP
 pub use review_assignment::{
     apply_audio_review_to_alignment, review_text_candidates, AudioReviewTextCandidate,
     DEFAULT_REVIEW_CANDIDATE_LIMIT,
+};
+pub use review_image::{
+    review_image_candidates, AudioReviewImageCandidate, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
+    DEFAULT_REVIEW_IMAGE_LIMIT,
 };
 pub use review_materialize::materialize_reviewed_alignment;
 pub use runner::{
