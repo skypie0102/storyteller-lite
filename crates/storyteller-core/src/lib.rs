@@ -15,6 +15,7 @@ mod progress;
 mod queue;
 mod resume;
 mod review_assignment;
+#[allow(clippy::too_many_arguments)]
 mod review_graphic;
 mod review_image;
 mod review_image_match;
