@@ -1,0 +1,29 @@
+name: Apply P2 image discovery docs
+
+on:
+  push:
+    branches:
+      - docs/p2-image-discovery
+
+permissions:
+  contents: write
+
+jobs:
+  update-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Apply checked documentation replacements
+        run: python .github/scripts/update-p2-image-discovery-docs.py
+
+      - name: Commit clean documentation tree
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/scripts/update-p2-image-discovery-docs.py .github/workflows/docs-p2-image-discovery.yml
+          git add docs/ROADMAP.md docs/HANDOFF.md
+          git commit -m "docs: record bounded image discovery progress"
+          git push
