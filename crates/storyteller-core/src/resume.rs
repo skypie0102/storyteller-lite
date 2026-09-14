@@ -62,6 +62,7 @@ impl ResumeContext {
             PipelineStage::ReviewAudio => {
                 hasher.update(self.whisper_backend.as_bytes());
                 hasher.update(self.alignment_backend.as_bytes());
+                hasher.update(self.ocr_backend.as_bytes());
                 hasher.update(self.effective_language.as_bytes());
                 hasher.update(self.effective_whisper_model.as_bytes());
                 hasher.update(format!(
@@ -192,6 +193,30 @@ mod tests {
                 first.stage_fingerprint(stage),
                 second.stage_fingerprint(stage),
                 "review policy unexpectedly changed {} fingerprint",
+                stage.label()
+            );
+        }
+        assert_ne!(
+            first.stage_fingerprint(PipelineStage::ReviewAudio),
+            second.stage_fingerprint(PipelineStage::ReviewAudio)
+        );
+    }
+
+    #[test]
+    fn ocr_backend_invalidates_review_audio_but_not_alignment() {
+        let first = context(JobSettings::default());
+        let mut second = context(JobSettings::default());
+        second.ocr_backend = "ocr:two".into();
+
+        for stage in [
+            PipelineStage::Prepare,
+            PipelineStage::Analyze,
+            PipelineStage::Align,
+        ] {
+            assert_eq!(
+                first.stage_fingerprint(stage),
+                second.stage_fingerprint(stage),
+                "OCR backend unexpectedly changed {} fingerprint",
                 stage.label()
             );
         }
