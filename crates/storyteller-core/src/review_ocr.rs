@@ -239,7 +239,7 @@ fn normalize_evidence_lines<'a>(values: impl Iterator<Item = &'a str>) -> Vec<St
             .chars()
             .filter(|character| character.is_alphanumeric())
             .count();
-        if alnum_count < MIN_OCR_ALNUM_CHARS || alnum_count > MAX_OCR_LINE_ALNUM_CHARS {
+        if !(MIN_OCR_ALNUM_CHARS..=MAX_OCR_LINE_ALNUM_CHARS).contains(&alnum_count) {
             continue;
         }
         if lines
