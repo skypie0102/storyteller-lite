@@ -97,7 +97,7 @@ Validate independently reopens the candidate EPUB and audits package/SMIL/text-o
 
 ### Manual Graphic Readout allocator — active feature branch
 
-Branch: `feature/manual-graphic-readout`.
+Branch: `feature/manual-graphic-readout` at `3835be6832182b9b3c7b684cb499c1f71888511f`.
 
 Goal: unresolved/ambiguous **non-edge** narration may be manually attached to a nearby discovered image, but only through the same bounded candidate model used by Smart. The UI must never authorize a free-form `(document_href, image_href)` pair.
 
@@ -107,15 +107,16 @@ Work in progress currently includes:
 - duplicate-image and edge-region rejection;
 - focused pure validation tests;
 - candidate-list UI work that mixes a small number of clearly labeled Graphic Readout rows with existing text candidates and revalidates the selected image on click;
-- candidate caching to avoid reopening the EPUB every 100 ms UI refresh.
+- a job-specific candidate cache so EPUB image discovery is not repeated on every UI refresh and cannot carry across jobs;
+- advisory image discovery so an image-scanning problem does not remove otherwise-valid text assignment choices.
 
-Before integration:
+Remaining before integration:
 
-1. make image discovery advisory in the allocator so failure cannot hide otherwise-valid text candidates;
-2. make the candidate cache explicitly job-specific;
-3. finish formatting/Clippy-oriented static review;
-4. validate locally when possible, or use hosted CI only after explicit user authorization;
-5. integrate only after validation is green.
+1. complete formatting/Clippy-oriented static review;
+2. run compile/tests/native Slint build in a non-hosted environment when available, or use GitHub-hosted CI only after explicit user authorization;
+3. fix any validation findings;
+4. integrate only after green validation;
+5. during allocator UI polish, rename the current `EPUB TEXT CANDIDATES` heading to reflect mixed text/image rows without expanding the UI into the old editor.
 
 ### Extra Audio — no renderer planned by default
 
