@@ -13,7 +13,7 @@ Read this file before making substantial changes.
 - Final Graphic Readout Windows validation run `34826426511` passed committed-source rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
 - Temporary Graphic Readout validation PR #3 is closed without merge, and its temporary workflow was removed from `feature/graphic-readout`.
 - Hosted CI is intentionally opt-in/manual-only on recovery. **Do not create temporary validation PRs/workflows or dispatch GitHub-hosted runners unless the user explicitly asks.** Prefer local/static validation and report any remaining validation requirement.
-- Unvalidated follow-up work currently lives on `feature/manual-graphic-readout`; do not present or integrate it as validated until it has been checked without violating the hosted-runner rule.
+- Unvalidated follow-up work currently lives on `feature/manual-graphic-readout` at `3835be6832182b9b3c7b684cb499c1f71888511f`; do not present or integrate it as validated until it has been checked without violating the hosted-runner rule.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
@@ -104,7 +104,7 @@ The builder semantic fingerprint was bumped when Graphic Readout output behavior
 
 ## Current unvalidated follow-up: manual Graphic Readout allocation
 
-Branch: `feature/manual-graphic-readout`.
+Branch: `feature/manual-graphic-readout` at `3835be6832182b9b3c7b684cb499c1f71888511f`.
 
 Purpose: let unresolved/ambiguous non-edge narration be manually attached to a **bounded discovered image candidate**, without allowing free-form `document_href` / `image_href` destinations.
 
@@ -113,13 +113,14 @@ Current branch work includes:
 - core `assign_manual_graphic_readout(...)`, which reloads the review item, reruns bounded image discovery, rejects edge narration and duplicate image ownership, requires the exact current candidate, then records a Manual Graphic Readout decision;
 - unit tests for accepted bounded targets, arbitrary target rejection, edge rejection, and duplicate image ownership;
 - allocator work that appends a small number of bounded image rows to the existing candidate model and revalidates the chosen image at click time;
-- candidate caching so EPUB image discovery is not repeated by the 100 ms UI refresh loop.
+- a job-specific candidate cache so EPUB image discovery is not repeated by the 100 ms UI refresh loop and cannot leak across books;
+- advisory image discovery in the allocator: inability to discover image candidates no longer erases otherwise-valid text candidates.
 
-This branch is **not validated or integrated**. Before integration, fix/verify that image-discovery failure is advisory and never hides valid text candidates, make the candidate cache job-specific, perform a formatting/Clippy-oriented static pass, and validate locally or only with explicitly authorized hosted CI.
+This branch is **not validated or integrated**. Remaining work before integration is formatting/Clippy-oriented review, compile/tests/native UI build when a non-hosted environment is available (or hosted CI only after explicit user authorization), and any resulting fixes. The current Slint section heading still says `EPUB TEXT CANDIDATES` even though clearly prefixed Graphic Readout rows may now appear; rename/polish that presentation when touching the allocator UI, but do not expand it into the old editor.
 
 ## Immediate implementation order
 
-1. Finish the manual Graphic Readout allocator on `feature/manual-graphic-readout` under the no-hosted-runner rule; keep image paths bounded/revalidated and image-discovery failure advisory.
+1. Finish static review of `feature/manual-graphic-readout` under the no-hosted-runner rule and keep it unintegrated until validation is possible.
 2. If validation becomes available without hosted runners, run rustfmt/Clippy/tests/native build and integrate only after green validation. Otherwise leave the branch explicitly unvalidated.
 3. Treat Extra Audio as no-op taxonomy unless a real product/output contract emerges; do not add a player-page renderer by default.
 4. Move to P3 main Slint UI alignment once the reduced P2 allocator is coherent: compact creation controls, one rich processing card, seven-stage visualization, real metrics, queue/recent management, and responsive reflow.
