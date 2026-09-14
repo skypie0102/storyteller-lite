@@ -1,6 +1,9 @@
 use crate::{
+    epub_graphic::{
+        annotate_graphic_targets, build_combined_smil, collect_graphic_readouts, GraphicReadoutSpec,
+    },
     epub_overlay::{
-        add_supplemental_package_items, annotate_xhtml_blocks, build_smil, build_supplemental_smil,
+        add_supplemental_package_items, annotate_xhtml_blocks, build_supplemental_smil,
         build_supplemental_xhtml, join_archive_path, parent_archive_path, relative_archive_path,
         rewrite_package, scan_package, unique_id, uri_path, OverlaySectionSpec,
         SupplementalOverlaySpec,
@@ -9,7 +12,7 @@ use crate::{
     AlignmentStatus, AudioReviewClassification, AudioReviewDecision, CancellationToken,
 };
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File},
     io::{Read, Seek, Write},
     path::Path,
@@ -71,6 +74,15 @@ fn build_readaloud_epub_inner(
     if !review.is_complete() {
         return Err("Unmatched audio must be reviewed before the EPUB can be built.".into());
     }
+    let graphic_readouts = collect_graphic_readouts(&review)?;
+    let mut graphics_by_href = BTreeMap::<String, Vec<GraphicReadoutSpec>>::new();
+    for graphic in graphic_readouts {
+        graphics_by_href
+            .entry(graphic.document_href.clone())
+            .or_default()
+            .push(graphic);
+    }
+
     let audio = read_encoded_audio_descriptor(encoded_audio_descriptor_path)?;
     if audio.file_name.contains('/') || audio.file_name.contains('\\') {
         return Err("Encoded audio descriptor filename must not contain a path.".into());
@@ -91,9 +103,12 @@ fn build_readaloud_epub_inner(
 
     let package_path = corpus.package_path.clone();
     let package_xml = read_archive_text(&mut archive, &package_path, cancellation)?;
-    let overlay_hrefs = matched_hrefs(&alignment)?;
+    let mut overlay_hrefs = matched_hrefs(&alignment)?;
+    overlay_hrefs.extend(graphics_by_href.keys().cloned());
     if overlay_hrefs.is_empty() {
-        return Err("Alignment contains no matched segments to synchronize.".into());
+        return Err(
+            "Publication contains no text or Graphic Readout segments to synchronize.".into(),
+        );
     }
     let scan = scan_package(&package_xml, &package_path, &overlay_hrefs)?;
     let package_dir = parent_archive_path(&package_path);
@@ -111,7 +126,8 @@ fn build_readaloud_epub_inner(
             return Err("EPUB build was cancelled.".into());
         }
         let segments = matched_segments_for_href(&alignment, &section.href);
-        if segments.is_empty() {
+        let graphics = graphics_by_href.remove(&section.href).unwrap_or_default();
+        if segments.is_empty() && graphics.is_empty() {
             continue;
         }
         if !scan.xhtml_item_ids.contains_key(&section.href) {
@@ -132,8 +148,17 @@ fn build_readaloud_epub_inner(
                     .ok_or("Matched alignment segment is missing its book start position.")
             })
             .collect::<Result<HashSet<_>, _>>()?;
-        let (annotated_xhtml, anchors) =
-            annotate_xhtml_blocks(&source_xhtml, &requested_lines, section_index)?;
+        let (text_annotated_xhtml, text_anchors) = if requested_lines.is_empty() {
+            (source_xhtml, HashMap::new())
+        } else {
+            annotate_xhtml_blocks(&source_xhtml, &requested_lines, section_index)?
+        };
+        let (annotated_xhtml, graphic_anchors) = annotate_graphic_targets(
+            &text_annotated_xhtml,
+            &section.href,
+            &graphics,
+            section_index,
+        )?;
         let overlay_item_id = unique_id(&format!("stl-mo-{:04}", section_index + 1), &mut used_ids);
         let smil_archive_path = join_archive_path(
             &resource_root,
@@ -143,8 +168,15 @@ fn build_readaloud_epub_inner(
         let smil_dir = parent_archive_path(&smil_archive_path);
         let text_href = uri_path(&relative_archive_path(&smil_dir, &section.href));
         let audio_href = uri_path(&relative_archive_path(&smil_dir, &audio_archive_path));
-        let (smil, duration_ms) =
-            build_smil(&segments, &anchors, &text_href, &audio_href, section_index)?;
+        let (smil, duration_ms, synchronized_segments) = build_combined_smil(
+            &segments,
+            &text_anchors,
+            &graphics,
+            &graphic_anchors,
+            &text_href,
+            &audio_href,
+            section_index,
+        )?;
         sections.push(OverlaySectionSpec {
             href: section.href.clone(),
             xhtml: annotated_xhtml,
@@ -153,9 +185,55 @@ fn build_readaloud_epub_inner(
             smil_manifest_href,
             overlay_item_id,
             duration_ms,
-            synchronized_segments: segments.len(),
+            synchronized_segments,
         });
     }
+
+    for (extra_index, (href, graphics)) in graphics_by_href.into_iter().enumerate() {
+        if cancellation.is_requested() {
+            return Err("EPUB build was cancelled.".into());
+        }
+        if !scan.xhtml_item_ids.contains_key(&href) {
+            return Err(format!(
+                "Graphic Readout document {href} is not an EPUB manifest XHTML item."
+            ));
+        }
+        let section_index = corpus.sections.len() + extra_index;
+        let source_xhtml = read_archive_text(&mut archive, &href, cancellation)?;
+        let (annotated_xhtml, graphic_anchors) =
+            annotate_graphic_targets(&source_xhtml, &href, &graphics, section_index)?;
+        let overlay_item_id = unique_id(&format!("stl-mo-{:04}", section_index + 1), &mut used_ids);
+        let smil_archive_path = join_archive_path(
+            &resource_root,
+            &format!("overlays/overlay-{:04}.smil", section_index + 1),
+        );
+        let smil_manifest_href = relative_archive_path(&package_dir, &smil_archive_path);
+        let smil_dir = parent_archive_path(&smil_archive_path);
+        let text_href = uri_path(&relative_archive_path(&smil_dir, &href));
+        let audio_href = uri_path(&relative_archive_path(&smil_dir, &audio_archive_path));
+        let text_anchors = HashMap::new();
+        let segments = Vec::<(usize, &crate::AlignmentSegment)>::new();
+        let (smil, duration_ms, synchronized_segments) = build_combined_smil(
+            &segments,
+            &text_anchors,
+            &graphics,
+            &graphic_anchors,
+            &text_href,
+            &audio_href,
+            section_index,
+        )?;
+        sections.push(OverlaySectionSpec {
+            href,
+            xhtml: annotated_xhtml,
+            smil,
+            smil_archive_path,
+            smil_manifest_href,
+            overlay_item_id,
+            duration_ms,
+            synchronized_segments,
+        });
+    }
+
     if sections.is_empty() {
         return Err("No EPUB spine document received synchronized Media Overlay content.".into());
     }

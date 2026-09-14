@@ -6,7 +6,8 @@ mod command;
 #[allow(clippy::too_many_arguments)]
 mod epub_build;
 mod epub_corpus;
-#[allow(clippy::too_many_arguments, clippy::same_item_push)]
+mod epub_graphic;
+#[allow(clippy::too_many_arguments, clippy::same_item_push, dead_code)]
 mod epub_overlay;
 mod epub_validate;
 mod job;
@@ -14,6 +15,8 @@ mod progress;
 mod queue;
 mod resume;
 mod review_assignment;
+#[allow(clippy::too_many_arguments)]
+mod review_graphic;
 mod review_image;
 mod review_image_match;
 mod review_materialize;
@@ -62,6 +65,7 @@ pub use review_assignment::{
     apply_audio_review_to_alignment, review_text_candidates, AudioReviewTextCandidate,
     DEFAULT_REVIEW_CANDIDATE_LIMIT,
 };
+pub use review_graphic::apply_smart_graphic_readouts;
 pub use review_image::{
     review_image_candidates, AudioReviewImageCandidate, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
     DEFAULT_REVIEW_IMAGE_LIMIT,

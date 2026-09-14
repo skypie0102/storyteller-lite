@@ -11,15 +11,16 @@ use std::{
     time::{Instant, UNIX_EPOCH},
 };
 use storyteller_core::{
-    align_transcript_to_corpus, build_readaloud_epub, create_audio_review_report_with_draft,
-    encode_audiobook, extract_epub_corpus, materialize_reviewed_alignment, prepare_job_sources,
-    prepared_job_sources, publish_validated_epub, read_audio_review_report,
-    run_cancellable_command, set_audio_review_silence_evidence,
-    spawn_pipeline_worker_with_preflight, validate_readaloud_epub, write_validation_report,
-    AudioCodec, AudioReviewEdge, AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace,
-    LiveMetrics, PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle,
-    ResourceRequest, ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext,
-    StageRunError, StageRunOutput,
+    align_transcript_to_corpus, apply_smart_graphic_readouts, build_readaloud_epub,
+    create_audio_review_report_with_draft, encode_audiobook, extract_epub_corpus,
+    materialize_reviewed_alignment, prepare_job_sources, prepared_job_sources,
+    publish_validated_epub, read_audio_review_report, run_cancellable_command,
+    set_audio_review_silence_evidence, spawn_pipeline_worker_with_preflight,
+    validate_readaloud_epub, write_validation_report, AudioCodec, AudioReviewEdge,
+    AudioReviewPolicy, AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace, LiveMetrics,
+    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
+    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
+    StageRunOutput,
 };
 
 pub(crate) struct LitePipelineBackend {
@@ -269,11 +270,16 @@ impl LitePipelineBackend {
             .workspace()
             .stage_dir(PipelineStage::Align)
             .join("alignment.json");
+        let corpus_path = context
+            .workspace()
+            .stage_dir(PipelineStage::Analyze)
+            .join("book-corpus.json");
         let stage_dir = context.workspace().stage_dir(PipelineStage::ReviewAudio);
         reset_stage_dir(&stage_dir, PipelineStage::ReviewAudio)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         let report_path = stage_dir.join("review.json");
         let draft_path = context.workspace().root().join("review-draft.json");
+        let policy = context.job().settings.audio_review_policy;
 
         context
             .set_activity(
@@ -285,9 +291,10 @@ impl LitePipelineBackend {
             &alignment_path,
             &report_path,
             Some(&draft_path),
-            context.job().settings.audio_review_policy,
+            policy,
         )
         .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let mut graphic_assignments = 0usize;
         if summary.unmatched_segments > 0 {
             let prepared = prepared_job_sources(context.job(), context.workspace())
                 .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
@@ -329,7 +336,38 @@ impl LitePipelineBackend {
                     }
                 }
             }
+
+            if policy == AudioReviewPolicy::Smart {
+                context
+                    .set_activity(
+                        "Checking pending audio against nearby EPUB graphics",
+                        self.elapsed_millis(),
+                    )
+                    .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+                let tesseract = resolve_optional_executable("STORYTELLER_TESSERACT", "tesseract");
+                graphic_assignments = match apply_smart_graphic_readouts(
+                    prepared.epub(),
+                    &alignment_path,
+                    &corpus_path,
+                    &report_path,
+                    &draft_path,
+                    policy,
+                    tesseract.as_deref(),
+                    &cancellation,
+                ) {
+                    Ok(assigned) => assigned,
+                    Err(error) if cancellation.is_requested() => {
+                        return Err(StageRunError::cancelled(error, self.elapsed_millis()));
+                    }
+                    Err(error) => {
+                        return Err(StageRunError::failed(error, self.elapsed_millis()));
+                    }
+                };
+            }
         }
+        let final_report = read_audio_review_report(&report_path)
+            .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
+        let pending_segments = final_report.pending_count();
         context.set_metrics(
             LiveMetrics {
                 match_percent: Some(summary.match_percent),
@@ -347,13 +385,18 @@ impl LitePipelineBackend {
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         );
-        if summary.pending_segments == 0 {
+        if pending_segments == 0 {
             context
                 .set_activity(
                     if summary.unmatched_segments == 0 {
-                        "No unmatched audio segments require review"
+                        "No unmatched audio segments require review".to_string()
+                    } else if graphic_assignments > 0 {
+                        format!(
+                            "Smart review assigned {graphic_assignments} Graphic Readout segment{}",
+                            if graphic_assignments == 1 { "" } else { "s" }
+                        )
                     } else {
-                        "Saved audio review decisions restored"
+                        "Saved audio review decisions restored".to_string()
                     },
                     self.elapsed_millis(),
                 )
@@ -364,12 +407,8 @@ impl LitePipelineBackend {
                 .set_activity(
                     format!(
                         "{} unmatched audio segment{} need review",
-                        summary.pending_segments,
-                        if summary.pending_segments == 1 {
-                            ""
-                        } else {
-                            "s"
-                        }
+                        pending_segments,
+                        if pending_segments == 1 { "" } else { "s" }
                     ),
                     self.elapsed_millis(),
                 )
@@ -739,6 +778,7 @@ pub(crate) fn job_workspace(job: &Job) -> JobWorkspace {
 fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     let whisper_cli = resolve_executable("STORYTELLER_WHISPER", "whisper-cli");
     let ffmpeg = resolve_executable("STORYTELLER_FFMPEG", "ffmpeg");
+    let tesseract = resolve_optional_executable("STORYTELLER_TESSERACT", "tesseract");
     let model_name = job.settings.whisper_model.trim();
     let effective_whisper_model = if model_name.is_empty() {
         String::new()
@@ -754,6 +794,13 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     };
     let ffmpeg_identity = file_identity("ffmpeg-analyze", &ffmpeg);
     let whisper_identity = file_identity("whisper.cpp-cli", &whisper_cli);
+    let ocr_backend = match tesseract {
+        Some(path) => format!(
+            "storyteller:image-evidence-v1|{}",
+            file_identity("tesseract", &path)
+        ),
+        None => "storyteller:image-evidence-v1|tesseract:unavailable".into(),
+    };
 
     PipelineEnvironment {
         whisper_backend: format!(
@@ -761,7 +808,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         ),
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
-        ocr_backend: "not-used:ocr".into(),
+        ocr_backend,
         epub_backend: "storyteller:epub-media-overlay-v2-supplemental-edge".into(),
         effective_language: effective_language(job),
         effective_whisper_model,
@@ -886,6 +933,34 @@ fn resolve_executable(environment_variable: &str, base_name: &str) -> PathBuf {
     }
 
     PathBuf::from(base_name)
+}
+
+fn resolve_optional_executable(environment_variable: &str, base_name: &str) -> Option<PathBuf> {
+    if let Some(value) = env::var_os(environment_variable).filter(|value| !value.is_empty()) {
+        let configured = PathBuf::from(value);
+        return configured.is_file().then_some(configured);
+    }
+
+    let file_name = executable_file_name(base_name);
+    if let Some(executable_dir) = current_executable_dir() {
+        for candidate in [
+            executable_dir.join("tools").join(&file_name),
+            executable_dir.join(&file_name),
+        ] {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    if let Some(path) = env::var_os("PATH") {
+        for directory in env::split_paths(&path) {
+            let candidate = directory.join(&file_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 fn resolve_whisper_model(model_name: &str) -> Result<PathBuf, String> {

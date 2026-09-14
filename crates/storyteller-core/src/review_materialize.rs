@@ -1,5 +1,6 @@
 use crate::{
     apply_audio_review_to_alignment, read_audio_review_report, read_epub_corpus, AlignmentDocument,
+    AudioReviewDecision,
 };
 use std::{fs, path::Path};
 
@@ -23,7 +24,24 @@ pub fn materialize_reviewed_alignment(
     })?;
     let corpus = read_epub_corpus(corpus_path)?;
     let review = read_audio_review_report(review_path)?;
-    let effective = apply_audio_review_to_alignment(&alignment, &corpus, &review)?;
+    let mut alignment_review = review.clone();
+    for item in &mut alignment_review.unmatched {
+        let graphic_source = match &item.decision {
+            AudioReviewDecision::Assigned {
+                destination,
+                source,
+                ..
+            } if destination.image_href.is_some() => Some(*source),
+            _ => None,
+        };
+        if let Some(source) = graphic_source {
+            item.decision = AudioReviewDecision::Excluded {
+                reason: "Graphic Readout is materialized directly on its EPUB image target.".into(),
+                source,
+            };
+        }
+    }
+    let effective = apply_audio_review_to_alignment(&alignment, &corpus, &alignment_review)?;
 
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
