@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/lazy-image-ocr
+  pull_request:
+    branches:
+      - validation/lazy-image-ocr-base
 
 permissions:
   contents: write
@@ -44,6 +47,7 @@ jobs:
         run: cargo build -p storyteller-ui
 
       - name: Commit validated formatting
+        if: github.event_name == 'push'
         shell: bash
         run: |
           if git diff --quiet; then
