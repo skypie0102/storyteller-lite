@@ -26,18 +26,18 @@ pub fn materialize_reviewed_alignment(
     let review = read_audio_review_report(review_path)?;
     let mut alignment_review = review.clone();
     for item in &mut alignment_review.unmatched {
-        let AudioReviewDecision::Assigned {
-            destination,
-            source,
-            ..
-        } = &item.decision
-        else {
-            continue;
+        let graphic_source = match &item.decision {
+            AudioReviewDecision::Assigned {
+                destination,
+                source,
+                ..
+            } if destination.image_href.is_some() => Some(*source),
+            _ => None,
         };
-        if destination.image_href.is_some() {
+        if let Some(source) = graphic_source {
             item.decision = AudioReviewDecision::Excluded {
                 reason: "Graphic Readout is materialized directly on its EPUB image target.".into(),
-                source: *source,
+                source,
             };
         }
     }
