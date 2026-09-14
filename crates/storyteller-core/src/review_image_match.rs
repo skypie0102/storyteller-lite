@@ -187,7 +187,11 @@ fn rank_candidates(candidates: &mut [AudioReviewImageMatchCandidate]) {
                     .document_spine_index
                     .cmp(&right.candidate.document_spine_index)
             })
-            .then_with(|| left.candidate.image_ordinal.cmp(&right.candidate.image_ordinal))
+            .then_with(|| {
+                left.candidate
+                    .image_ordinal
+                    .cmp(&right.candidate.image_ordinal)
+            })
             .then_with(|| left.candidate.image_href.cmp(&right.candidate.image_href))
     });
 }
