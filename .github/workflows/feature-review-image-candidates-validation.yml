@@ -28,6 +28,14 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Apply cancellation API fix
+        shell: pwsh
+        run: |
+          $path = 'crates/storyteller-core/src/review_image.rs'
+          $content = Get-Content -Raw $path
+          $content = $content.Replace('cancellation.cancel();', 'cancellation.request();')
+          Set-Content -NoNewline -Encoding utf8 $path $content
+
       - name: Apply Rust formatting
         run: cargo fmt --all
 
@@ -43,7 +51,7 @@ jobs:
       - name: Build native Slint shell
         run: cargo build -p storyteller-ui
 
-      - name: Commit validated formatting
+      - name: Commit validated source
         shell: bash
         run: |
           if git diff --quiet; then
@@ -52,5 +60,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add crates/storyteller-core/src/review_image.rs
-          git commit -m "style: format review image candidates"
+          git commit -m "fix: validate review image candidates"
           git push
