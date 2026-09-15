@@ -8,20 +8,24 @@ use std::{
     rc::Rc,
 };
 use storyteller_core::{
-    apply_audio_review_decision, prepared_job_sources, read_epub_corpus, review_text_candidates,
-    AlignmentDocument, AlignmentStatus, AudioReviewClassification, AudioReviewDecision,
-    AudioReviewDecisionSource, AudioReviewDestination, AudioReviewEdge, AudioReviewItem,
-    AudioReviewSupplementalPlacement, Job, JobQueue, JobStatus, PipelineStage,
-    DEFAULT_REVIEW_CANDIDATE_LIMIT,
+    apply_audio_review_decision, assign_manual_graphic_readout, prepared_job_sources,
+    read_epub_corpus, review_image_candidates, review_text_candidates, AlignmentDocument,
+    AlignmentStatus, AudioReviewClassification, AudioReviewDecision, AudioReviewDecisionSource,
+    AudioReviewDestination, AudioReviewEdge, AudioReviewItem, AudioReviewSupplementalPlacement,
+    CancellationToken, Job, JobId, JobQueue, JobStatus, PipelineStage,
+    DEFAULT_REVIEW_CANDIDATE_LIMIT, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
+    DEFAULT_REVIEW_IMAGE_LIMIT,
 };
 
-const UI_CANDIDATE_LIMIT: usize = 4;
+const UI_TEXT_CANDIDATE_LIMIT: usize = 4;
+const UI_IMAGE_CANDIDATE_LIMIT: usize = 2;
 const SEEK_STEP_MS: i64 = 5_000;
 
 pub(crate) struct ReviewUiController {
     selected_index: usize,
     seek_ms: u64,
     candidates: Rc<VecModel<ReviewCandidateRow>>,
+    candidate_key: Option<(JobId, usize, String)>,
     preview: Option<Child>,
 }
 
@@ -31,6 +35,7 @@ impl ReviewUiController {
             selected_index: 0,
             seek_ms: 0,
             candidates: Rc::new(VecModel::default()),
+            candidate_key: None,
             preview: None,
         }
     }
@@ -161,6 +166,7 @@ pub(crate) fn install_review_ui(
             };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
+            let is_graphic = line_index < 0;
             let result = review_job(&queue.borrow())
                 .ok_or_else(|| "No book is waiting for audio review.".to_string())
                 .and_then(|job| {
@@ -169,27 +175,66 @@ pub(crate) fn install_review_ui(
                         .unmatched
                         .get(controller.selected_index)
                         .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
-                    let line_index = usize::try_from(line_index)
-                        .map_err(|_| "EPUB text-block index is invalid.".to_string())?;
-                    apply_audio_review_decision(
+                    if line_index >= 0 {
+                        let line_index = usize::try_from(line_index)
+                            .map_err(|_| "EPUB text-block index is invalid.".to_string())?;
+                        return apply_audio_review_decision(
+                            &worker_bridge::audio_review_path(job),
+                            &worker_bridge::audio_review_draft_path(job),
+                            &item.id,
+                            AudioReviewDecision::Assigned {
+                                destination: AudioReviewDestination {
+                                    href: href.to_string(),
+                                    line_index: Some(line_index),
+                                    image_href: None,
+                                    supplemental: None,
+                                },
+                                classification: None,
+                                source: AudioReviewDecisionSource::Manual,
+                            },
+                        );
+                    }
+
+                    let image_index = image_candidate_index(line_index)?;
+                    let image_candidates = load_image_candidates(job, item.alignment_index)?;
+                    let candidate = image_candidates
+                        .get(image_index)
+                        .ok_or_else(|| "Selected EPUB image candidate is stale.".to_string())?;
+                    if candidate.document_href != href.as_str() {
+                        return Err(
+                            "Selected EPUB image candidate changed; choose it again.".into()
+                        );
+                    }
+                    let workspace = worker_bridge::job_workspace(job);
+                    let prepared = prepared_job_sources(job, &workspace)?;
+                    let alignment_path = workspace
+                        .stage_dir(PipelineStage::Align)
+                        .join("alignment.json");
+                    let corpus_path = workspace
+                        .stage_dir(PipelineStage::Analyze)
+                        .join("book-corpus.json");
+                    assign_manual_graphic_readout(
+                        prepared.epub(),
+                        &alignment_path,
+                        &corpus_path,
                         &worker_bridge::audio_review_path(job),
                         &worker_bridge::audio_review_draft_path(job),
                         &item.id,
-                        AudioReviewDecision::Assigned {
-                            destination: AudioReviewDestination {
-                                href: href.to_string(),
-                                line_index: Some(line_index),
-                                image_href: None,
-                                supplemental: None,
-                            },
-                            classification: None,
-                            source: AudioReviewDecisionSource::Manual,
-                        },
+                        &candidate.document_href,
+                        &candidate.image_href,
+                        &CancellationToken::default(),
                     )
                 });
             match result {
                 Ok(()) => {
-                    ui.set_status_text("Text block assigned to audio segment.".into());
+                    ui.set_status_text(
+                        if is_graphic {
+                            "Image assigned as a Graphic Readout for this audio segment."
+                        } else {
+                            "Text block assigned to audio segment."
+                        }
+                        .into(),
+                    );
                     select_next_pending(&queue.borrow(), &mut controller);
                 }
                 Err(error) => ui.set_status_text(error.into()),
@@ -340,6 +385,7 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
         controller.stop_preview();
         controller.selected_index = 0;
         controller.seek_ms = 0;
+        controller.candidate_key = None;
         controller.candidates.set_vec(Vec::new());
         clear_review_properties(ui);
         return;
@@ -347,6 +393,7 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
     let report = match worker_bridge::load_audio_review_report(job) {
         Ok(report) => report,
         Err(error) => {
+            controller.candidate_key = None;
             controller.candidates.set_vec(Vec::new());
             ui.set_review_allocator_status_text(
                 format!("Review data could not be loaded: {error}").into(),
@@ -355,6 +402,7 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
         }
     };
     if report.unmatched.is_empty() {
+        controller.candidate_key = None;
         controller.candidates.set_vec(Vec::new());
         ui.set_review_item_position_text("No unmatched segments".into());
         ui.set_review_allocator_status_text("Nothing requires manual review.".into());
@@ -412,24 +460,18 @@ fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiCon
         .into()
     });
 
-    match load_candidates(job, item.alignment_index) {
-        Ok(candidates) => controller.candidates.set_vec(
-            candidates
-                .into_iter()
-                .map(|candidate| ReviewCandidateRow {
-                    href: candidate.href.into(),
-                    line_index: i32::try_from(candidate.line_index).unwrap_or(i32::MAX),
-                    text: candidate.text.into(),
-                    score: format!("{}%", u32::from(candidate.score_milli) / 10).into(),
-                })
-                .collect::<Vec<_>>(),
-        ),
-        Err(error) => {
-            controller.candidates.set_vec(Vec::new());
-            ui.set_review_allocator_status_text(
-                format!("Could not load text candidates: {error}").into(),
-            );
+    let candidate_key = (job.id, item.alignment_index, item.id.clone());
+    if controller.candidate_key.as_ref() != Some(&candidate_key) {
+        match load_candidate_rows(job, item) {
+            Ok(candidates) => controller.candidates.set_vec(candidates),
+            Err(error) => {
+                controller.candidates.set_vec(Vec::new());
+                ui.set_review_allocator_status_text(
+                    format!("Could not load EPUB candidates: {error}").into(),
+                );
+            }
         }
+        controller.candidate_key = Some(candidate_key);
     }
 }
 
@@ -533,7 +575,43 @@ fn edge_page_destination(
     }
 }
 
-fn load_candidates(
+fn load_candidate_rows(
+    job: &Job,
+    item: &AudioReviewItem,
+) -> Result<Vec<ReviewCandidateRow>, String> {
+    let mut rows = load_text_candidates(job, item.alignment_index)?
+        .into_iter()
+        .map(|candidate| ReviewCandidateRow {
+            href: candidate.href.into(),
+            line_index: i32::try_from(candidate.line_index).unwrap_or(i32::MAX),
+            text: candidate.text.into(),
+            score: format!("{}%", u32::from(candidate.score_milli) / 10).into(),
+        })
+        .collect::<Vec<_>>();
+
+    if item.edge.is_none() {
+        if let Ok(image_candidates) = load_image_candidates(job, item.alignment_index) {
+            for (index, candidate) in image_candidates.into_iter().enumerate() {
+                let line_index = i32::try_from(index)
+                    .ok()
+                    .and_then(|index| index.checked_add(1))
+                    .and_then(|index| index.checked_neg())
+                    .ok_or_else(|| {
+                        "Too many EPUB image candidates for the review UI.".to_string()
+                    })?;
+                rows.push(ReviewCandidateRow {
+                    href: candidate.document_href.clone().into(),
+                    line_index,
+                    text: image_candidate_text(&candidate).into(),
+                    score: "image".into(),
+                });
+            }
+        }
+    }
+    Ok(rows)
+}
+
+fn load_text_candidates(
     job: &Job,
     alignment_index: usize,
 ) -> Result<Vec<storyteller_core::AudioReviewTextCandidate>, String> {
@@ -562,8 +640,74 @@ fn load_candidates(
         &alignment,
         &corpus,
         alignment_index,
-        UI_CANDIDATE_LIMIT.min(DEFAULT_REVIEW_CANDIDATE_LIMIT),
+        UI_TEXT_CANDIDATE_LIMIT.min(DEFAULT_REVIEW_CANDIDATE_LIMIT),
     )
+}
+
+fn load_image_candidates(
+    job: &Job,
+    alignment_index: usize,
+) -> Result<Vec<storyteller_core::AudioReviewImageCandidate>, String> {
+    let workspace = worker_bridge::job_workspace(job);
+    let prepared = prepared_job_sources(job, &workspace)?;
+    let alignment_path = workspace
+        .stage_dir(PipelineStage::Align)
+        .join("alignment.json");
+    let corpus_path = workspace
+        .stage_dir(PipelineStage::Analyze)
+        .join("book-corpus.json");
+    let alignment_data = std::fs::read(&alignment_path).map_err(|error| {
+        format!(
+            "Could not read alignment map {}: {error}",
+            alignment_path.display()
+        )
+    })?;
+    let alignment: AlignmentDocument =
+        serde_json::from_slice(&alignment_data).map_err(|error| {
+            format!(
+                "Could not parse alignment map {}: {error}",
+                alignment_path.display()
+            )
+        })?;
+    let corpus = read_epub_corpus(&corpus_path)?;
+    review_image_candidates(
+        prepared.epub(),
+        &alignment,
+        &corpus,
+        alignment_index,
+        DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
+        UI_IMAGE_CANDIDATE_LIMIT.min(DEFAULT_REVIEW_IMAGE_LIMIT),
+        &CancellationToken::default(),
+    )
+}
+
+fn image_candidate_index(line_index: i32) -> Result<usize, String> {
+    let index = line_index
+        .checked_neg()
+        .and_then(|value| value.checked_sub(1))
+        .ok_or_else(|| "EPUB image candidate index is invalid.".to_string())?;
+    usize::try_from(index).map_err(|_| "EPUB image candidate index is invalid.".to_string())
+}
+
+fn image_candidate_text(candidate: &storyteller_core::AudioReviewImageCandidate) -> String {
+    let evidence = candidate
+        .embedded_text
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    let label = if evidence.is_empty() {
+        candidate
+            .image_href
+            .rsplit('/')
+            .next()
+            .unwrap_or(candidate.image_href.as_str())
+            .to_string()
+    } else {
+        evidence
+    };
+    format!("Graphic Readout · {label}")
 }
 
 fn play_selected(job: &Job, controller: &mut ReviewUiController) -> Result<(), String> {
@@ -661,14 +805,19 @@ fn review_context_text(item: &AudioReviewItem) -> String {
 fn decision_text(decision: &AudioReviewDecision) -> String {
     match decision {
         AudioReviewDecision::Pending => {
-            "Pending — choose a text block or exclude this segment.".into()
+            "Pending — choose an EPUB text/image candidate or exclude this segment.".into()
         }
         AudioReviewDecision::Assigned {
             destination,
             classification,
             ..
         } => {
-            if destination.supplemental.is_some() {
+            if let Some(image_href) = destination.image_href.as_deref() {
+                format!(
+                    "Assigned — Graphic Readout {} in {}",
+                    image_href, destination.href
+                )
+            } else if destination.supplemental.is_some() {
                 format!(
                     "Assigned — {:?} supplemental page anchored at {}",
                     classification, destination.href
