@@ -1,0 +1,30 @@
+name: P3 dedicated review validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p3-dedicated-review-base
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-p3-dedicated-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out feature head
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build native Slint shell
+        run: cargo build -p storyteller-ui
