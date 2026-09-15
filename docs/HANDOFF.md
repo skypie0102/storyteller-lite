@@ -8,12 +8,11 @@ Read this file before making substantial changes.
 - Active Rust + Slint implementation branch: `recovery/rust-slint`.
 - Default branch `main` is **not** current implementation truth.
 - P1 bounded Whisper chunk workers are implemented and Windows-validated.
-- P2 now includes durable per-segment review decisions, reduced manual allocation, Smart/ReviewAll edge behavior, supplemental Introduction/Credits rendering, bounded EPUB image discovery, lazy image text evidence, deterministic image scoring, conservative Smart Graphic Readout assignment, and native image-target Media Overlay rendering.
-- The validated Graphic Readout implementation is integrated in recovery as commit `9673dc7a6f41493e13b24724b3123659fcbaa271`.
-- Final Graphic Readout Windows validation run `34826426511` passed committed-source rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
-- Temporary Graphic Readout validation PR #3 is closed without merge, and its temporary workflow was removed from `feature/graphic-readout`.
-- Hosted CI is intentionally opt-in/manual-only on recovery. **Do not create temporary validation PRs/workflows or dispatch GitHub-hosted runners unless the user explicitly asks.** Prefer local/static validation and report any remaining validation requirement.
-- Unvalidated follow-up work currently lives on `feature/manual-graphic-readout` at `3835be6832182b9b3c7b684cb499c1f71888511f`; do not present or integrate it as validated until it has been checked without violating the hosted-runner rule.
+- P2 now includes durable per-segment review decisions, reduced manual allocation, Smart/ReviewAll edge behavior, supplemental Introduction/Credits rendering, bounded EPUB image discovery, lazy image text evidence, deterministic image scoring, conservative Smart Graphic Readout assignment, manual bounded Graphic Readout allocation, and native image-target Media Overlay rendering.
+- The automatic Graphic Readout implementation was integrated in recovery as commit `9673dc7a6f41493e13b24724b3123659fcbaa271` after Windows validation run `34826426511`.
+- Manual Graphic Readout allocation is integrated in recovery as commit `a27df630a8626d1c0ba846deca8f44acde125fe8` after final Windows validation run `34918789594` passed rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
+- Temporary Graphic Readout validation PRs #3 and #4 were closed without merge and their temporary feature workflows were removed after validation.
+- Recovery CI remains manual/opt-in to avoid unnecessary hosted-runner use. GitHub runners may be used when they are the right validation tool; before rerunning after a failure, inspect the full logs and likely downstream failure surface, batch fixes, and make the next run a meaningful near-final checkpoint rather than using Actions as an edit/compile loop.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
 
@@ -56,7 +55,9 @@ Review decisions are durable per segment:
 
 `review.json` contains the current report and `review-draft.json` preserves decisions outside the disposable Review Audio stage directory. Manual decisions win over automatic Smart recomputation. Review cannot finish while any item remains Pending.
 
-The reduced allocator supports navigation, audio preview/seek, transcript/timing/evidence context, bounded EPUB text candidates, explicit text assignment, explicit exclusion, and manual Introduction/Credits preservation. Text assignment is revalidated against the nearest accepted alignment neighbors before materialization.
+The reduced allocator supports navigation, audio preview/seek, transcript/timing/evidence context, bounded EPUB text candidates, bounded nearby image candidates for non-edge narration, explicit text assignment, manual Graphic Readout assignment, explicit exclusion, and manual Introduction/Credits preservation. Text assignment is revalidated against the nearest accepted alignment neighbors before materialization. Manual image assignment reruns bounded image discovery in core before persisting the destination, rejects edge narration and duplicate image ownership, and never treats a free-form UI path as authority.
+
+Candidate discovery is cached per job + review item in the allocator so the 100 ms UI refresh loop does not repeatedly rescan the EPUB or leak candidates across books. Image discovery remains advisory: failure to discover image candidates does not erase otherwise-valid text choices.
 
 Leading/trailing unmatched segments are marked as Introduction/Credits candidates and may receive bounded FFmpeg silence evidence. Silence is advisory and never by itself authorizes deletion. In Smart mode, anchored edge narration is conservatively preserved as supplemental Introduction/Credits pages; ReviewAll leaves those cases Pending. Smart does not auto-discard unmatched narration.
 
@@ -70,17 +71,21 @@ Lazy image text evidence prefers embedded hints. Optional Tesseract is per-call 
 
 `apply_smart_graphic_readouts` wires that scorer into Smart review for pending **non-edge** items. It assigns only a strong unambiguous bounded image winner, records `GraphicReadout` with `Automatic` provenance, and refuses duplicate image ownership. ReviewAll never applies this automatic image decision.
 
+`assign_manual_graphic_readout` provides the corresponding conservative manual path for unresolved/ambiguous non-edge narration. It reloads the current review item, reruns bounded image discovery, requires the exact current document/image candidate, rejects edge narration and duplicate image ownership, and records `GraphicReadout` with `Manual` provenance. The allocator exposes only discovered candidates rather than arbitrary EPUB paths.
+
 Graphic Readout rendering is implemented. Build EPUB validates each image destination/classification, finds the real `<img>`/SVG image target, reuses or injects a durable fragment ID, and adds the narration as a native Media Overlay cue. Text and Graphic Readout cues on the same XHTML share one SMIL sequence ordered by audio time. Duplicate image targets and overlapping audio cues are hard build errors. Image-only XHTML is supported. Graphic Readout decisions stay out of effective text alignment materialization and are consumed directly from review data by the EPUB builder.
 
-The end-to-end fixture `crates/storyteller-core/tests/graphic_readout.rs` verifies mixed text/image overlay behavior, durable image anchoring, audio-time ordering, and final structural validation.
+The end-to-end fixture `crates/storyteller-core/tests/graphic_readout.rs` verifies mixed text/image overlay behavior, durable image anchoring, audio-time ordering, final structural validation, and manual bounded-image rediscovery → Manual provenance persistence → Build EPUB → independent Validate.
 
-Graphic Readout validation run `34826426511` passed:
+Automatic Graphic Readout validation run `34826426511` passed:
 
 - `cargo fmt --all -- --check`;
 - `cargo clippy --workspace --all-targets -- -D warnings`;
 - `cargo test --workspace`;
 - `cargo build -p storyteller-ui`;
 - aggregate validation gate.
+
+Manual Graphic Readout validation used the same gate set. Run `34918305701` exposed one test-only variable-shadowing compile error in the new regression; the complete log showed Clippy/tests were blocked by that same error while the native Slint build was already green. After fixing that root cause, final run `34918789594` passed all four substantive gates and the aggregate gate.
 
 ### Introduction / Credits supplemental rendering
 
@@ -102,29 +107,12 @@ The builder semantic fingerprint was bumped when Graphic Readout output behavior
 
 `AudioReviewClassification::ExtraAudio` exists, but Lite currently has **no distinct Extra Audio destination/rendering rule**. Recovered legacy evidence documents an optional standalone audio-player page as one historical fallback, but explicitly treats that as a product/interoperability choice rather than a required Lite behavior. Do not invent a separate Extra Audio renderer merely for historical taxonomy compatibility. Add one only if a concrete product requirement and validation strategy justify it.
 
-## Current unvalidated follow-up: manual Graphic Readout allocation
-
-Branch: `feature/manual-graphic-readout` at `3835be6832182b9b3c7b684cb499c1f71888511f`.
-
-Purpose: let unresolved/ambiguous non-edge narration be manually attached to a **bounded discovered image candidate**, without allowing free-form `document_href` / `image_href` destinations.
-
-Current branch work includes:
-
-- core `assign_manual_graphic_readout(...)`, which reloads the review item, reruns bounded image discovery, rejects edge narration and duplicate image ownership, requires the exact current candidate, then records a Manual Graphic Readout decision;
-- unit tests for accepted bounded targets, arbitrary target rejection, edge rejection, and duplicate image ownership;
-- allocator work that appends a small number of bounded image rows to the existing candidate model and revalidates the chosen image at click time;
-- a job-specific candidate cache so EPUB image discovery is not repeated by the 100 ms UI refresh loop and cannot leak across books;
-- advisory image discovery in the allocator: inability to discover image candidates no longer erases otherwise-valid text candidates.
-
-This branch is **not validated or integrated**. Remaining work before integration is formatting/Clippy-oriented review, compile/tests/native UI build when a non-hosted environment is available (or hosted CI only after explicit user authorization), and any resulting fixes. The current Slint section heading still says `EPUB TEXT CANDIDATES` even though clearly prefixed Graphic Readout rows may now appear; rename/polish that presentation when touching the allocator UI, but do not expand it into the old editor.
-
 ## Immediate implementation order
 
-1. Finish static review of `feature/manual-graphic-readout` under the no-hosted-runner rule and keep it unintegrated until validation is possible.
-2. If validation becomes available without hosted runners, run rustfmt/Clippy/tests/native build and integrate only after green validation. Otherwise leave the branch explicitly unvalidated.
-3. Treat Extra Audio as no-op taxonomy unless a real product/output contract emerges; do not add a player-page renderer by default.
-4. Move to P3 main Slint UI alignment once the reduced P2 allocator is coherent: compact creation controls, one rich processing card, seven-stage visualization, real metrics, queue/recent management, and responsive reflow.
-5. Later: interoperability/EPUBCheck testing, packaging/release/update polish, explicit relaunch/resume UX, and real 1–4 worker CPU/CUDA benchmarks.
+1. Treat the reduced P2 allocator as functionally coherent for text, Introduction/Credits, and automatic/manual Graphic Readout paths. Keep weak/ambiguous evidence Pending until the user chooses a bounded destination or exclusion.
+2. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges.
+3. Move to P3 main Slint UI alignment: compact creation controls, one rich processing card, seven-stage visualization, real metrics, queue/recent management, reduced allocator presentation polish, and responsive reflow. The allocator section heading still says `EPUB TEXT CANDIDATES` even though Graphic Readout rows may appear; correct that wording when touching the P3 UI without expanding the allocator into the old editor.
+4. Later: interoperability/EPUBCheck testing, packaging/release/update polish, explicit relaunch/resume UX, and real 1–4 worker CPU/CUDA benchmarks.
 
 ## Recovered invariants worth preserving
 
