@@ -607,7 +607,7 @@ export component AppWindow inherits Window {
                             Button { text: root.needs-review ? "Cancel book" : "Cancel"; clicked => { root.cancel-current(); } }
                             if root.needs-review : Button {
                                 text: "Exclude pending";
-                                clicked => { root.continue-after_review(); }
+                                clicked => { root.continue-after-review(); }
                             }
                             if root.needs-review : Button {
                                 text: "Continue";
