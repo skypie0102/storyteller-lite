@@ -254,7 +254,7 @@ fn manual_graphic_assignment_rediscovery_persists_and_builds() {
     let AudioReviewDecision::Assigned {
         destination,
         classification,
-        source,
+        source: decision_source,
     } = &persisted.unmatched[0].decision
     else {
         panic!("manual Graphic Readout assignment was not persisted");
@@ -263,7 +263,7 @@ fn manual_graphic_assignment_rediscovery_persists_and_builds() {
         *classification,
         Some(AudioReviewClassification::GraphicReadout)
     );
-    assert_eq!(*source, AudioReviewDecisionSource::Manual);
+    assert_eq!(*decision_source, AudioReviewDecisionSource::Manual);
     assert_eq!(destination.href, "OPS/chapter.xhtml");
     assert_eq!(destination.image_href.as_deref(), Some("OPS/diagram.png"));
     assert!(draft_path.is_file());
