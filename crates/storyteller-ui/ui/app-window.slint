@@ -31,12 +31,50 @@ export struct ReviewCandidateRow {
     score: string,
 }
 
+component SourcePickerCard inherits Rectangle {
+    in property <string> label-text;
+    in property <string> source-name;
+    in property <string> empty-hint;
+    in property <string> change-hint;
+    in property <length> card-height: 165px;
+    callback activated();
+
+    min-height: root.card-height;
+    border-width: 1px;
+    border-color: Palette.border;
+    border-radius: 10px;
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 10px;
+
+        Text { text: root.label-text; font-size: 18px; font-weight: 700; }
+        Text {
+            text: root.source-name == "" ? root.empty-hint : root.source-name;
+            font-size: 16px;
+            horizontal-alignment: center;
+            vertical-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: root.source-name == "" ? "or click to browse" : root.change-hint;
+            horizontal-alignment: center;
+            opacity: 0.62;
+        }
+    }
+
+    TouchArea { clicked => { root.activated(); } }
+}
+
 export component AppWindow inherits Window {
     title: "Storyteller OneClick Lite";
     preferred-width: 1040px;
     preferred-height: 760px;
     min-width: 820px;
     min-height: 620px;
+
+    private property <bool> compact-create-layout: root.width < 900px;
 
     in-out property <string> status-text: "Ready";
     in-out property <string> epub-source-name: "";
@@ -156,78 +194,61 @@ export component AppWindow inherits Window {
                 opacity: 0.72;
             }
 
-            HorizontalBox {
+            if !root.compact-create-layout : HorizontalBox {
                 spacing: 16px;
 
-                Rectangle {
+                SourcePickerCard {
                     horizontal-stretch: 1;
-                    min-height: 165px;
-                    border-width: 1px;
-                    border-color: Palette.border;
-                    border-radius: 10px;
-
-                    VerticalBox {
-                        padding: 20px;
-                        spacing: 10px;
-
-                        Text { text: "EPUB"; font-size: 18px; font-weight: 700; }
-                        Text {
-                            text: root.epub-source-name == "" ? "Drop file here" : root.epub-source-name;
-                            font-size: 16px;
-                            horizontal-alignment: center;
-                            vertical-stretch: 1;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: root.epub-source-name == "" ? "or click to browse" : "Click to choose a different EPUB";
-                            horizontal-alignment: center;
-                            opacity: 0.62;
-                        }
-                    }
-                    TouchArea { clicked => { root.browse-epub(); } }
+                    label-text: "EPUB";
+                    source-name: root.epub-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose a different EPUB";
+                    activated => { root.browse-epub(); }
                 }
 
-                Rectangle {
+                SourcePickerCard {
                     horizontal-stretch: 1;
-                    min-height: 165px;
-                    border-width: 1px;
-                    border-color: Palette.border;
-                    border-radius: 10px;
-
-                    VerticalBox {
-                        padding: 20px;
-                        spacing: 10px;
-                        Text { text: "AUDIOBOOK"; font-size: 18px; font-weight: 700; }
-                        Text {
-                            text: root.audio-source-name == "" ? "Drop file here" : root.audio-source-name;
-                            font-size: 16px;
-                            horizontal-alignment: center;
-                            vertical-stretch: 1;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: root.audio-source-name == "" ? "or click to browse" : "Click to choose different audio";
-                            horizontal-alignment: center;
-                            opacity: 0.62;
-                        }
-                    }
-                    TouchArea { clicked => { root.browse-audio(); } }
+                    label-text: "AUDIOBOOK";
+                    source-name: root.audio-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose different audio";
+                    activated => { root.browse-audio(); }
                 }
             }
 
-            HorizontalBox {
+            if root.compact-create-layout : VerticalBox {
+                spacing: 10px;
+
+                SourcePickerCard {
+                    card-height: 110px;
+                    label-text: "EPUB";
+                    source-name: root.epub-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose a different EPUB";
+                    activated => { root.browse-epub(); }
+                }
+
+                SourcePickerCard {
+                    card-height: 110px;
+                    label-text: "AUDIOBOOK";
+                    source-name: root.audio-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose different audio";
+                    activated => { root.browse-audio(); }
+                }
+            }
+
+            if !root.compact-create-layout : HorizontalBox {
                 spacing: 10px;
                 Text { text: "Encoding"; vertical-alignment: center; font-weight: 600; }
                 ComboBox {
                     model: ["Copy", "Opus", "AAC"];
-                    current-index: 1;
+                    current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
                     selected(value) => { root.codec-text = value; }
                 }
                 ComboBox {
                     model: ["32K", "64K", "96K"];
-                    current-index: 1;
+                    current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
                     enabled: root.codec-text != "Copy";
                     selected(value) => { root.bitrate-text = value; }
                 }
@@ -240,6 +261,38 @@ export component AppWindow inherits Window {
                     selected(value) => { root.unmatched-audio-policy-text = value; }
                 }
                 Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
+            }
+
+            if root.compact-create-layout : VerticalBox {
+                spacing: 8px;
+                HorizontalBox {
+                    spacing: 10px;
+                    Text { text: "Encoding"; vertical-alignment: center; font-weight: 600; }
+                    ComboBox {
+                        model: ["Copy", "Opus", "AAC"];
+                        current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                        selected(value) => { root.codec-text = value; }
+                    }
+                    ComboBox {
+                        model: ["32K", "64K", "96K"];
+                        current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                        enabled: root.codec-text != "Copy";
+                        selected(value) => { root.bitrate-text = value; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: "Output next to source"; vertical-alignment: center; opacity: 0.72; }
+                }
+                HorizontalBox {
+                    spacing: 10px;
+                    Text { text: "Unmatched audio"; vertical-alignment: center; opacity: 0.72; }
+                    ComboBox {
+                        model: ["Smart", "Review all"];
+                        current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                        selected(value) => { root.unmatched-audio-policy-text = value; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
+                }
             }
         }
 
