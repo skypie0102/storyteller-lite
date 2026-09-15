@@ -17,6 +17,7 @@ mod resume;
 mod review_assignment;
 #[allow(clippy::too_many_arguments)]
 mod review_graphic;
+mod review_graphic_manual;
 mod review_image;
 mod review_image_match;
 mod review_materialize;
@@ -66,6 +67,7 @@ pub use review_assignment::{
     DEFAULT_REVIEW_CANDIDATE_LIMIT,
 };
 pub use review_graphic::apply_smart_graphic_readouts;
+pub use review_graphic_manual::assign_manual_graphic_readout;
 pub use review_image::{
     review_image_candidates, AudioReviewImageCandidate, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
     DEFAULT_REVIEW_IMAGE_LIMIT,
