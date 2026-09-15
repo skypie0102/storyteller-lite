@@ -654,13 +654,14 @@ export component AppWindow inherits Window {
                     opacity: 0.62;
                 }
 
-                if !root.compact-layout : for row in root.queue-rows : Rectangle {
-                    min-height: 54px;
-                    max-height: 54px;
+                for row in root.queue-rows : Rectangle {
+                    min-height: root.compact-layout ? 72px : 54px;
+                    max-height: root.compact-layout ? 72px : 54px;
                     border-width: 1px;
                     border-color: Palette.border;
                     border-radius: 7px;
-                    HorizontalBox {
+
+                    if !root.compact-layout : HorizontalBox {
                         padding-left: 10px;
                         padding-right: 10px;
                         spacing: 8px;
@@ -677,15 +678,8 @@ export component AppWindow inherits Window {
                         if row.retryable : Button { text: "Retry from start"; clicked => { root.retry-from-start(row.id); } }
                         Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
                     }
-                }
 
-                if root.compact-layout : for row in root.queue-rows : Rectangle {
-                    min-height: 72px;
-                    max-height: 72px;
-                    border-width: 1px;
-                    border-color: Palette.border;
-                    border-radius: 7px;
-                    VerticalBox {
+                    if root.compact-layout : VerticalBox {
                         padding-left: 9px;
                         padding-right: 9px;
                         padding-top: 5px;
