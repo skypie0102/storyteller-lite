@@ -4,8 +4,9 @@ use std::{
     path::{Path, PathBuf},
 };
 use storyteller_core::{
-    build_readaloud_epub, validate_readaloud_epub, AlignmentDocument, AlignmentSegment,
-    AlignmentStatus, AudioReviewClassification, AudioReviewDecision, AudioReviewDecisionSource,
+    assign_manual_graphic_readout, build_readaloud_epub, read_audio_review_report,
+    validate_readaloud_epub, AlignmentDocument, AlignmentSegment, AlignmentStatus,
+    AudioReviewClassification, AudioReviewDecision, AudioReviewDecisionSource,
     AudioReviewDestination, AudioReviewItem, AudioReviewReport, CancellationToken, CorpusPosition,
     EncodedAudioDescriptor, EpubCorpus, EpubSection,
 };
@@ -220,6 +221,70 @@ fn graphic_readout_shares_document_overlay_with_text_and_validates() {
     assert!(text_pos < graphic_pos);
     assert!(smil.contains("clipBegin=\"0:00:01.000\""));
     assert!(smil.contains("clipEnd=\"0:00:02.200\""));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn manual_graphic_assignment_rediscovery_persists_and_builds() {
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let (source, corpus_path, alignment_path, review_path, descriptor_path) = write_inputs(&root);
+    let cancellation = CancellationToken::default();
+
+    let mut review = read_audio_review_report(&review_path).unwrap();
+    review.unmatched[0].decision = AudioReviewDecision::Pending;
+    fs::write(&review_path, serde_json::to_vec_pretty(&review).unwrap()).unwrap();
+    let draft_path = root.join("review-draft.json");
+
+    assign_manual_graphic_readout(
+        &source,
+        &alignment_path,
+        &corpus_path,
+        &review_path,
+        &draft_path,
+        "graphic-segment",
+        "OPS/chapter.xhtml",
+        "OPS/diagram.png",
+        &cancellation,
+    )
+    .unwrap();
+
+    let persisted = read_audio_review_report(&review_path).unwrap();
+    let AudioReviewDecision::Assigned {
+        destination,
+        classification,
+        source,
+    } = &persisted.unmatched[0].decision
+    else {
+        panic!("manual Graphic Readout assignment was not persisted");
+    };
+    assert_eq!(
+        *classification,
+        Some(AudioReviewClassification::GraphicReadout)
+    );
+    assert_eq!(*source, AudioReviewDecisionSource::Manual);
+    assert_eq!(destination.href, "OPS/chapter.xhtml");
+    assert_eq!(destination.image_href.as_deref(), Some("OPS/diagram.png"));
+    assert!(draft_path.is_file());
+
+    let encode_dir = descriptor_path.parent().unwrap();
+    let candidate = root.join("manual-candidate.epub");
+    let build = build_readaloud_epub(
+        &source,
+        &corpus_path,
+        &alignment_path,
+        &review_path,
+        &descriptor_path,
+        encode_dir,
+        &candidate,
+        &cancellation,
+    )
+    .unwrap();
+    assert_eq!(build.synchronized_segments, 2);
+
+    let validation = validate_readaloud_epub(&candidate, &cancellation).unwrap();
+    assert_eq!(validation.synchronized_segments, 2);
 
     let _ = fs::remove_dir_all(root);
 }
