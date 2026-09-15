@@ -322,7 +322,7 @@ export component AppWindow inherits Window {
 
                     HorizontalBox {
                         spacing: 6px;
-                        for stage in root.active-stages : Rectangle {
+                        for stage in root.active-stage-details : Rectangle {
                             horizontal-stretch: 1;
                             min-height: 48px;
                             border-width: 1px;
@@ -345,7 +345,7 @@ export component AppWindow inherits Window {
                                     color: stage.state == "Active" ? Palette.accent-foreground : Palette.alternate-foreground;
                                 }
                                 Text {
-                                    text: stage.state;
+                                    text: stage.elapsed == "" ? stage.state : stage.state + " • " + stage.elapsed;
                                     font-size: 10px;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
