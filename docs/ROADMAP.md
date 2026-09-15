@@ -102,17 +102,34 @@ Validate independently reopens the candidate EPUB and audits package/SMIL/text-o
 
 P2 should now be treated as functionally complete unless real books expose another narrowly scoped unmatched-audio gap.
 
-## P3 — main Slint UI alignment — active next phase
+## P3 — main Slint UI alignment — active
 
-Bring the main experience closer to the supplied UI guides without turning them into a fixed pixel canvas:
+Validated baseline now implemented:
 
-- compact creation controls;
-- one rich processing card;
-- clear seven-stage visualization;
-- real timing/backend/model/match metrics only when available;
-- queue/recent management that remains visible and understandable;
-- responsive reflow for narrower windows;
-- reduced allocator presentation that clearly represents mixed text/image choices without restoring the old editor complexity. The current allocator heading `EPUB TEXT CANDIDATES` should be corrected now that Graphic Readout candidates can appear.
+- review presentation clearly represents mixed bounded text/image destinations and `… & Next` behavior;
+- seven-stage visualization shows real elapsed time per stage when available;
+- creation source pickers/options reflow below 900px while preserving the wide-window hierarchy;
+- active `Queue Another Book`, review headings/actions, bottom job actions, and queue/recent entries also reflow below 900px;
+- real timing/backend/model/match/current-activity data remains the only metrics surface;
+- queue/recent management remains visible and understandable in both wide and compact layouts.
+
+Validation runs:
+
+- review presentation: `34919543203`;
+- stage elapsed timing: `34926648718`;
+- responsive creation layout: `34927154367`;
+- responsive active/review/queue layout: `34927928639`.
+
+Integrated recovery commits for those slices are `1a645685549a0796b960d18723bb0cd42799c79d`, `c79c834328edabc4fef72d0d0cd5fb8343499411`, `c8a6461eaeb4d2535af26172876b729cf0d2abf5`, and `17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8` respectively.
+
+Remaining P3 work should stay presentation-focused:
+
+- make NeedsReview read as a dedicated unresolved-audio surface rather than a normal processing card with an embedded allocator;
+- add localized scrolling/overflow where real content can exceed the supported 620px minimum height;
+- polish settings and secondary-metadata reflow/hiding at narrower widths;
+- keep the reduced allocator focused on safe bounded decisions rather than restoring old editor complexity.
+
+The current minimum width remains 820px. Do not lower it until the review/settings surfaces have explicit compact behavior and have been validated at the narrower target.
 
 ## P4 — installer archaeology only when needed
 
