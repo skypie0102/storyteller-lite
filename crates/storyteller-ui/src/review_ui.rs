@@ -201,7 +201,9 @@ pub(crate) fn install_review_ui(
                         .get(image_index)
                         .ok_or_else(|| "Selected EPUB image candidate is stale.".to_string())?;
                     if candidate.document_href != href.as_str() {
-                        return Err("Selected EPUB image candidate changed; choose it again.".into());
+                        return Err(
+                            "Selected EPUB image candidate changed; choose it again.".into()
+                        );
                     }
                     let workspace = worker_bridge::job_workspace(job);
                     let prepared = prepared_job_sources(job, &workspace)?;
@@ -573,7 +575,10 @@ fn edge_page_destination(
     }
 }
 
-fn load_candidate_rows(job: &Job, item: &AudioReviewItem) -> Result<Vec<ReviewCandidateRow>, String> {
+fn load_candidate_rows(
+    job: &Job,
+    item: &AudioReviewItem,
+) -> Result<Vec<ReviewCandidateRow>, String> {
     let mut rows = load_text_candidates(job, item.alignment_index)?
         .into_iter()
         .map(|candidate| ReviewCandidateRow {
@@ -591,7 +596,9 @@ fn load_candidate_rows(job: &Job, item: &AudioReviewItem) -> Result<Vec<ReviewCa
                     .ok()
                     .and_then(|index| index.checked_add(1))
                     .and_then(|index| index.checked_neg())
-                    .ok_or_else(|| "Too many EPUB image candidates for the review UI.".to_string())?;
+                    .ok_or_else(|| {
+                        "Too many EPUB image candidates for the review UI.".to_string()
+                    })?;
                 rows.push(ReviewCandidateRow {
                     href: candidate.document_href.clone().into(),
                     line_index,

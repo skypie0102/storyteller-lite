@@ -1,8 +1,9 @@
 use crate::{
     apply_audio_review_decision, read_audio_review_report, read_epub_corpus,
     review_image_candidates, AlignmentDocument, AudioReviewClassification, AudioReviewDecision,
-    AudioReviewDecisionSource, AudioReviewDestination, AudioReviewImageCandidate, AudioReviewReport,
-    CancellationToken, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT, DEFAULT_REVIEW_IMAGE_LIMIT,
+    AudioReviewDecisionSource, AudioReviewDestination, AudioReviewImageCandidate,
+    AudioReviewReport, CancellationToken, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
+    DEFAULT_REVIEW_IMAGE_LIMIT,
 };
 use std::{fs, path::Path};
 
@@ -60,13 +61,8 @@ pub fn assign_manual_graphic_readout(
         DEFAULT_REVIEW_IMAGE_LIMIT,
         cancellation,
     )?;
-    let candidate = validate_manual_graphic_target(
-        &report,
-        item_id,
-        &candidates,
-        document_href,
-        image_href,
-    )?;
+    let candidate =
+        validate_manual_graphic_target(&report, item_id, &candidates, document_href, image_href)?;
 
     apply_audio_review_decision(
         report_path,
@@ -197,7 +193,10 @@ mod tests {
         let error = validate_manual_graphic_target(
             &report,
             "manual",
-            &[candidate("OPS/Text/diagram.xhtml", "OPS/Images/diagram.png")],
+            &[candidate(
+                "OPS/Text/diagram.xhtml",
+                "OPS/Images/diagram.png",
+            )],
             "OPS/Text/diagram.xhtml",
             "OPS/Images/not-a-candidate.png",
         )
