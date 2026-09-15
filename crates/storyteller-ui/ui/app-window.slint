@@ -74,7 +74,7 @@ export component AppWindow inherits Window {
     min-width: 820px;
     min-height: 620px;
 
-    private property <bool> compact-create-layout: root.width < 900px;
+    private property <bool> compact-layout: root.width < 900px;
 
     in-out property <string> status-text: "Ready";
     in-out property <string> epub-source-name: "";
@@ -194,7 +194,7 @@ export component AppWindow inherits Window {
                 opacity: 0.72;
             }
 
-            if !root.compact-create-layout : HorizontalBox {
+            if !root.compact-layout : HorizontalBox {
                 spacing: 16px;
 
                 SourcePickerCard {
@@ -216,7 +216,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            if root.compact-create-layout : VerticalBox {
+            if root.compact-layout : VerticalBox {
                 spacing: 10px;
 
                 SourcePickerCard {
@@ -238,7 +238,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            if !root.compact-create-layout : HorizontalBox {
+            if !root.compact-layout : HorizontalBox {
                 spacing: 10px;
                 Text { text: "Encoding"; vertical-alignment: center; font-weight: 600; }
                 ComboBox {
@@ -263,7 +263,7 @@ export component AppWindow inherits Window {
                 Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
             }
 
-            if root.compact-create-layout : VerticalBox {
+            if root.compact-layout : VerticalBox {
                 spacing: 8px;
                 HorizontalBox {
                     spacing: 10px;
@@ -296,7 +296,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.has-active-job : Rectangle {
+        if root.has-active-job && !root.compact-layout : Rectangle {
             min-height: 64px;
             max-height: 64px;
             border-width: 1px;
@@ -334,6 +334,59 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+            }
+        }
+
+        if root.has-active-job && root.compact-layout : Rectangle {
+            min-height: 84px;
+            max-height: 84px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            VerticalBox {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 4px;
+
+                HorizontalBox {
+                    spacing: 7px;
+                    Text { text: "QUEUE ANOTHER BOOK"; font-size: 11px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
+                    Button {
+                        horizontal-stretch: 1;
+                        text: root.epub-source-name == "" ? "Choose EPUB" : root.epub-source-name;
+                        clicked => { root.browse-epub(); }
+                    }
+                    Button {
+                        horizontal-stretch: 1;
+                        text: root.audio-source-name == "" ? "Choose audio" : root.audio-source-name;
+                        clicked => { root.browse-audio(); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 7px;
+                    ComboBox {
+                        model: ["Copy", "Opus", "AAC"];
+                        current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                        selected(value) => { root.codec-text = value; }
+                    }
+                    ComboBox {
+                        model: ["32K", "64K", "96K"];
+                        current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                        enabled: root.codec-text != "Copy";
+                        selected(value) => { root.bitrate-text = value; }
+                    }
+                    ComboBox {
+                        model: ["Smart", "Review all"];
+                        current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                        selected(value) => { root.unmatched-audio-policy-text = value; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+                }
             }
         }
 
@@ -419,7 +472,8 @@ export component AppWindow inherits Window {
                         VerticalBox {
                             padding: 10px;
                             spacing: 7px;
-                            HorizontalBox {
+
+                            if !root.compact-layout : HorizontalBox {
                                 spacing: 8px;
                                 Text { text: "REVIEW UNMATCHED AUDIO"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
@@ -427,6 +481,16 @@ export component AppWindow inherits Window {
                                 Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
                                 Button { text: "Next"; enabled: root.review-can-next; clicked => { root.review-next(); } }
                             }
+
+                            if root.compact-layout : HorizontalBox {
+                                spacing: 7px;
+                                Text { text: "REVIEW UNMATCHED AUDIO"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
+                                Button { text: "Next"; enabled: root.review-can-next; clicked => { root.review-next(); } }
+                            }
+
                             Text { text: root.review-summary-text; wrap: word-wrap; opacity: 0.82; }
                             HorizontalBox {
                                 spacing: 7px;
@@ -447,7 +511,8 @@ export component AppWindow inherits Window {
                                 opacity: 0.68;
                                 wrap: word-wrap;
                             }
-                            HorizontalBox {
+
+                            if !root.compact-layout : HorizontalBox {
                                 spacing: 8px;
                                 Text { text: "EPUB DESTINATION CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
@@ -458,6 +523,19 @@ export component AppWindow inherits Window {
                                 }
                                 Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
                             }
+
+                            if root.compact-layout : HorizontalBox {
+                                spacing: 7px;
+                                Text { text: "EPUB DESTINATIONS"; font-size: 10px; font-weight: 700; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                if root.review-can-preserve-edge : Button {
+                                    text: root.review-preserve-edge-text;
+                                    primary: true;
+                                    clicked => { root.review-preserve-edge(); }
+                                }
+                                Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
+                            }
+
                             for candidate in root.review-candidates : Rectangle {
                                 min-height: 42px;
                                 max-height: 42px;
@@ -488,7 +566,7 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    HorizontalBox {
+                    if !root.compact-layout : HorizontalBox {
                         spacing: 10px;
                         if root.active-metrics-text != "" : Text {
                             text: root.active-metrics-text;
@@ -515,6 +593,35 @@ export component AppWindow inherits Window {
                             clicked => { root.pause-after-book(); }
                         }
                     }
+
+                    if root.compact-layout : VerticalBox {
+                        spacing: 5px;
+                        if root.active-metrics-text != "" : Text {
+                            text: root.active-metrics-text;
+                            opacity: 0.78;
+                            wrap: word-wrap;
+                        }
+                        HorizontalBox {
+                            spacing: 7px;
+                            Rectangle { horizontal-stretch: 1; }
+                            Button { text: root.needs-review ? "Cancel book" : "Cancel"; clicked => { root.cancel-current(); } }
+                            if root.needs-review : Button {
+                                text: "Exclude pending";
+                                clicked => { root.continue-after-review(); }
+                            }
+                            if root.needs-review : Button {
+                                text: "Continue";
+                                primary: true;
+                                enabled: root.review-complete;
+                                clicked => { root.finish-review(); }
+                            }
+                            if !root.needs-review : Button {
+                                text: root.pause-action-text;
+                                enabled: root.pause-action-text != "Pause requested";
+                                clicked => { root.pause-after-book(); }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -531,7 +638,7 @@ export component AppWindow inherits Window {
 
         Rectangle {
             vertical-stretch: 1;
-            min-height: 150px;
+            min-height: root.compact-layout ? 125px : 150px;
             border-width: 1px;
             border-color: Palette.border;
             border-radius: 10px;
@@ -546,7 +653,8 @@ export component AppWindow inherits Window {
                     vertical-stretch: 1;
                     opacity: 0.62;
                 }
-                for row in root.queue-rows : Rectangle {
+
+                if !root.compact-layout : for row in root.queue-rows : Rectangle {
                     min-height: 54px;
                     max-height: 54px;
                     border-width: 1px;
@@ -568,6 +676,36 @@ export component AppWindow inherits Window {
                         if row.waiting : Button { text: "↓"; enabled: row.can-move-down; clicked => { root.move-waiting(row.id, false); } }
                         if row.retryable : Button { text: "Retry from start"; clicked => { root.retry-from-start(row.id); } }
                         Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
+                    }
+                }
+
+                if root.compact-layout : for row in root.queue-rows : Rectangle {
+                    min-height: 72px;
+                    max-height: 72px;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 7px;
+                    VerticalBox {
+                        padding-left: 9px;
+                        padding-right: 9px;
+                        padding-top: 5px;
+                        padding-bottom: 5px;
+                        spacing: 3px;
+                        HorizontalBox {
+                            spacing: 7px;
+                            Text { text: row.position; min-width: 20px; max-width: 20px; vertical-alignment: center; opacity: 0.58; }
+                            Text { text: row.title; overflow: elide; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+                            Text { text: row.status; vertical-alignment: center; opacity: 0.68; }
+                        }
+                        HorizontalBox {
+                            spacing: 6px;
+                            if row.detail != "" : Text { text: row.detail; overflow: elide; font-size: 10px; opacity: 0.62; horizontal-stretch: 1; vertical-alignment: center; }
+                            if row.detail == "" : Rectangle { horizontal-stretch: 1; }
+                            if row.waiting : Button { text: "↑"; enabled: row.can-move-up; clicked => { root.move-waiting(row.id, true); } }
+                            if row.waiting : Button { text: "↓"; enabled: row.can-move-down; clicked => { root.move-waiting(row.id, false); } }
+                            if row.retryable : Button { text: "Retry"; clicked => { root.retry-from-start(row.id); } }
+                            Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
+                        }
                     }
                 }
             }
