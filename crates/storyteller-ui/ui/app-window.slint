@@ -296,7 +296,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.has-active-job && !root.compact-layout : Rectangle {
+        if root.has-active-job && !root.compact-layout && !root.needs-review : Rectangle {
             min-height: 64px;
             max-height: 64px;
             border-width: 1px;
@@ -337,7 +337,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.has-active-job && root.compact-layout : Rectangle {
+        if root.has-active-job && root.compact-layout && !root.needs-review : Rectangle {
             min-height: 84px;
             max-height: 84px;
             border-width: 1px;
@@ -392,7 +392,7 @@ export component AppWindow inherits Window {
 
         if root.has-active-job : VerticalBox {
             spacing: 12px;
-            Text { text: "ACTIVE JOB"; font-size: 14px; font-weight: 700; opacity: 0.72; }
+            Text { text: root.needs-review ? "REVIEW AUDIO" : "ACTIVE JOB"; font-size: 14px; font-weight: 700; opacity: 0.72; }
 
             Rectangle {
                 min-height: root.needs-review ? 520px : 250px;
@@ -423,8 +423,8 @@ export component AppWindow inherits Window {
                     }
 
                     ProgressIndicator { progress: root.active-overall-progress; }
-                    Text { text: root.active-activity-text; font-size: 17px; font-weight: 600; wrap: word-wrap; }
-                    if root.active-context-text != "" : Text { text: root.active-context-text; opacity: 0.72; wrap: word-wrap; }
+                    if !root.needs-review : Text { text: root.active-activity-text; font-size: 17px; font-weight: 600; wrap: word-wrap; }
+                    if !root.needs-review && root.active-context-text != "" : Text { text: root.active-context-text; opacity: 0.72; wrap: word-wrap; }
 
                     HorizontalBox {
                         spacing: 6px;
@@ -462,7 +462,7 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    if root.active-timing-text != "" : Text { text: root.active-timing-text; opacity: 0.78; wrap: word-wrap; }
+                    if !root.needs-review && root.active-timing-text != "" : Text { text: root.active-timing-text; opacity: 0.78; wrap: word-wrap; }
 
                     if root.needs-review : Rectangle {
                         min-height: 335px;
@@ -475,7 +475,7 @@ export component AppWindow inherits Window {
 
                             if !root.compact-layout : HorizontalBox {
                                 spacing: 8px;
-                                Text { text: "REVIEW UNMATCHED AUDIO"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+                                Text { text: "UNRESOLVED AUDIO"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
                                 Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
                                 Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
@@ -484,7 +484,7 @@ export component AppWindow inherits Window {
 
                             if root.compact-layout : HorizontalBox {
                                 spacing: 7px;
-                                Text { text: "REVIEW UNMATCHED AUDIO"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                Text { text: "UNRESOLVED AUDIO"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
                                 Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
                                 Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
@@ -568,14 +568,14 @@ export component AppWindow inherits Window {
 
                     if !root.compact-layout : HorizontalBox {
                         spacing: 10px;
-                        if root.active-metrics-text != "" : Text {
+                        if !root.needs-review && root.active-metrics-text != "" : Text {
                             text: root.active-metrics-text;
                             opacity: 0.78;
                             vertical-alignment: center;
                             horizontal-stretch: 1;
                             wrap: word-wrap;
                         }
-                        if root.active-metrics-text == "" : Rectangle { horizontal-stretch: 1; }
+                        if root.needs-review || root.active-metrics-text == "" : Rectangle { horizontal-stretch: 1; }
                         Button { text: root.needs-review ? "Cancel book" : "Cancel"; clicked => { root.cancel-current(); } }
                         if root.needs-review : Button {
                             text: "Exclude all pending & continue";
@@ -596,7 +596,7 @@ export component AppWindow inherits Window {
 
                     if root.compact-layout : VerticalBox {
                         spacing: 5px;
-                        if root.active-metrics-text != "" : Text {
+                        if !root.needs-review && root.active-metrics-text != "" : Text {
                             text: root.active-metrics-text;
                             opacity: 0.78;
                             wrap: word-wrap;
