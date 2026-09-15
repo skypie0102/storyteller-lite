@@ -1,0 +1,84 @@
+name: Manual Graphic Readout validation
+
+on:
+  pull_request:
+    branches:
+      - validation/manual-graphic-readout-base
+
+permissions:
+  contents: write
+
+concurrency:
+  group: storyteller-lite-manual-graphic-readout-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out feature head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Apply and commit rustfmt
+        shell: pwsh
+        run: |
+          cargo fmt --all
+          git diff --quiet -- crates
+          if ($LASTEXITCODE -ne 0) {
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add crates
+            git commit -m "chore: apply rustfmt to manual Graphic Readout slice"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+          } else {
+            Write-Host "No rustfmt changes to commit."
+          }
+          Write-Host "Validated source commit: $(git rev-parse HEAD)"
+
+      - name: Rust formatting
+        id: fmt
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        id: clippy
+        continue-on-error: true
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        id: tests
+        continue-on-error: true
+        run: cargo test --workspace
+
+      - name: Build native Slint shell
+        id: build
+        continue-on-error: true
+        run: cargo build -p storyteller-ui
+
+      - name: Require all validation gates
+        if: always()
+        shell: pwsh
+        run: |
+          $failed = @()
+          if ("${{ steps.fmt.outcome }}" -ne "success") { $failed += "rustfmt" }
+          if ("${{ steps.clippy.outcome }}" -ne "success") { $failed += "clippy" }
+          if ("${{ steps.tests.outcome }}" -ne "success") { $failed += "tests" }
+          if ("${{ steps.build.outcome }}" -ne "success") { $failed += "build" }
+          if ($failed.Count -gt 0) {
+            Write-Error ("Validation gates failed: " + ($failed -join ", "))
+            exit 1
+          }
+          Write-Host "All manual Graphic Readout validation gates passed."
