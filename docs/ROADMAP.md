@@ -19,7 +19,7 @@ Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The lega
 - Weak or ambiguous evidence stays unresolved instead of being forced.
 - Publication happens only after independent structural validation.
 - EPUB destinations are bounded/revalidated; arbitrary paths from UI state are never authoritative.
-- GitHub-hosted Actions are intentionally opt-in/manual-only. Do not create temporary validation PRs/workflows or dispatch hosted runners unless the user explicitly asks.
+- Recovery Actions are intentionally opt-in/manual-only. GitHub-hosted runners may be used as deliberate validation checkpoints; after a failure, inspect the full log/failure surface, batch fixes, and avoid repeated one-error-at-a-time runner cycles.
 
 ## Scope kept in Lite
 
@@ -41,7 +41,7 @@ Windows validation for P1: run `34732299289`.
 
 The conservative monotonic block-safe aligner uses Whisper timestamps as timing authority, accepts strong monotonic EPUB matches, prevents accepted matches from crossing normalized XHTML block boundaries, and leaves weak evidence unmatched.
 
-### P2 Review Audio — substantially complete
+### P2 Review Audio — functionally complete
 
 Implemented:
 
@@ -59,7 +59,9 @@ Implemented:
 12. Deterministic transcript-to-image evidence scoring with conservative phrase/coverage/similarity/distinctive-word thresholds and ambiguity margin.
 13. Smart high-confidence Graphic Readout assignment for pending non-edge items only, with manual decisions preserved, ReviewAll kept non-automatic, and duplicate target ownership rejected.
 14. Graphic Readout EPUB rendering to the existing image target using native Media Overlay cues. Text and image narration on the same XHTML share one SMIL sequence; cues are audio-time ordered and overlap/duplicate targets are rejected.
-15. End-to-end Graphic Readout fixture covering mixed text/image overlays and final structural validation.
+15. Manual Graphic Readout allocation for unresolved/ambiguous non-edge narration. The allocator exposes only bounded discovered image candidates; core reruns discovery before persistence, rejects edge narration and duplicate image ownership, and records Manual provenance.
+16. Job-specific allocator candidate caching so image discovery is not repeated by the UI refresh loop or leaked across books; image discovery remains advisory and cannot erase text choices.
+17. End-to-end Graphic Readout coverage for both automatic mixed text/image overlays and manual bounded-image rediscovery → durable decision → EPUB build → final structural validation.
 
 Validation history:
 
@@ -69,9 +71,10 @@ Validation history:
 - bounded image discovery: `34811582552`;
 - lazy image evidence: `34815433905`;
 - deterministic image scoring: `34820045285`;
-- Smart Graphic Readout assignment + rendering: `34826426511`.
+- Smart Graphic Readout assignment + rendering: `34826426511`;
+- manual Graphic Readout allocation: final green run `34918789594`.
 
-The Graphic Readout slice is integrated in recovery as commit `9673dc7a6f41493e13b24724b3123659fcbaa271`.
+The automatic Graphic Readout slice was integrated as `9673dc7a6f41493e13b24724b3123659fcbaa271`. Manual bounded Graphic Readout allocation is integrated as `a27df630a8626d1c0ba846deca8f44acde125fe8`.
 
 ### Encode — implemented
 
@@ -93,38 +96,13 @@ Graphic Readout can share an XHTML/SMIL sequence with normal text cues or create
 
 Validate independently reopens the candidate EPUB and audits package/SMIL/text-or-image/audio relationships, clip ranges, duration consistency, duplicates, resource resolution, and mimetype rules before publication. New rendering paths must extend regression coverage rather than weakening this audit.
 
-## P2 remaining work
-
-### Manual Graphic Readout allocator — active feature branch
-
-Branch: `feature/manual-graphic-readout` at `3835be6832182b9b3c7b684cb499c1f71888511f`.
-
-Goal: unresolved/ambiguous **non-edge** narration may be manually attached to a nearby discovered image, but only through the same bounded candidate model used by Smart. The UI must never authorize a free-form `(document_href, image_href)` pair.
-
-Work in progress currently includes:
-
-- a core manual assignment API that reruns bounded image discovery before persisting the decision;
-- duplicate-image and edge-region rejection;
-- focused pure validation tests;
-- candidate-list UI work that mixes a small number of clearly labeled Graphic Readout rows with existing text candidates and revalidates the selected image on click;
-- a job-specific candidate cache so EPUB image discovery is not repeated on every UI refresh and cannot carry across jobs;
-- advisory image discovery so an image-scanning problem does not remove otherwise-valid text assignment choices.
-
-Remaining before integration:
-
-1. complete formatting/Clippy-oriented static review;
-2. run compile/tests/native Slint build in a non-hosted environment when available, or use GitHub-hosted CI only after explicit user authorization;
-3. fix any validation findings;
-4. integrate only after green validation;
-5. during allocator UI polish, rename the current `EPUB TEXT CANDIDATES` heading to reflect mixed text/image rows without expanding the UI into the old editor.
-
-### Extra Audio — no renderer planned by default
+## Extra Audio — no renderer planned by default
 
 `ExtraAudio` exists in the small classification enum, but recovered evidence does not establish a distinct required Lite output contract. A historical standalone audio-player page is only a possible product/interoperability fallback, not compatibility debt. Do **not** add a player-page/Extra Audio renderer merely because the old application had an `other` category. Add behavior only when there is a concrete user-facing requirement and a validation strategy.
 
-After the manual Graphic Readout allocator is coherent, P2 should be considered functionally complete unless real books expose another narrowly scoped unmatched-audio gap.
+P2 should now be treated as functionally complete unless real books expose another narrowly scoped unmatched-audio gap.
 
-## P3 — main Slint UI alignment
+## P3 — main Slint UI alignment — active next phase
 
 Bring the main experience closer to the supplied UI guides without turning them into a fixed pixel canvas:
 
@@ -134,7 +112,7 @@ Bring the main experience closer to the supplied UI guides without turning them 
 - real timing/backend/model/match metrics only when available;
 - queue/recent management that remains visible and understandable;
 - responsive reflow for narrower windows;
-- reduced allocator presentation that clearly separates text/image choices without restoring the old editor complexity.
+- reduced allocator presentation that clearly represents mixed text/image choices without restoring the old editor complexity. The current allocator heading `EPUB TEXT CANDIDATES` should be corrected now that Graphic Readout candidates can appear.
 
 ## P4 — installer archaeology only when needed
 
