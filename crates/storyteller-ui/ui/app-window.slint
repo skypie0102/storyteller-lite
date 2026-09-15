@@ -359,7 +359,7 @@ export component AppWindow inherits Window {
                     if root.active-timing-text != "" : Text { text: root.active-timing-text; opacity: 0.78; wrap: word-wrap; }
 
                     if root.needs-review : Rectangle {
-                        min-height: 315px;
+                        min-height: 335px;
                         border-width: 1px;
                         border-color: Palette.border;
                         border-radius: 7px;
@@ -368,7 +368,7 @@ export component AppWindow inherits Window {
                             spacing: 7px;
                             HorizontalBox {
                                 spacing: 8px;
-                                Text { text: "UNMATCHED AUDIO ALLOCATOR"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+                                Text { text: "REVIEW UNMATCHED AUDIO"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
                                 Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
                                 Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
@@ -388,16 +388,22 @@ export component AppWindow inherits Window {
                             if root.review-preview-status-text != "" : Text { text: root.review-preview-status-text; font-size: 11px; opacity: 0.72; overflow: elide; }
                             Text { text: root.review-item-transcript-text; wrap: word-wrap; max-height: 54px; }
                             Text { text: root.review-item-decision-text; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
+                            Text {
+                                text: "Choose a bounded EPUB text block or nearby image. Assigning or excluding advances to the next pending segment.";
+                                font-size: 10px;
+                                opacity: 0.68;
+                                wrap: word-wrap;
+                            }
                             HorizontalBox {
                                 spacing: 8px;
-                                Text { text: "EPUB TEXT CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                Text { text: "EPUB DESTINATION CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
                                 Rectangle { horizontal-stretch: 1; }
                                 if root.review-can-preserve-edge : Button {
                                     text: root.review-preserve-edge-text;
                                     primary: true;
                                     clicked => { root.review-preserve-edge(); }
                                 }
-                                Button { text: "Exclude segment"; clicked => { root.review-exclude(); } }
+                                Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
                             }
                             for candidate in root.review-candidates : Rectangle {
                                 min-height: 42px;
@@ -416,10 +422,13 @@ export component AppWindow inherits Window {
                                         HorizontalBox {
                                             spacing: 6px;
                                             Text { text: candidate.href; overflow: elide; font-size: 9px; opacity: 0.58; horizontal-stretch: 1; }
-                                            Text { text: candidate.score; font-size: 9px; opacity: 0.58; }
+                                            Text { text: candidate.line-index < 0 ? "Graphic Readout" : candidate.score; font-size: 9px; opacity: 0.58; }
                                         }
                                     }
-                                    Button { text: "Assign"; clicked => { root.review-assign(candidate.href, candidate.line-index); } }
+                                    Button {
+                                        text: candidate.line-index < 0 ? "Assign image & Next" : "Assign text & Next";
+                                        clicked => { root.review-assign(candidate.href, candidate.line-index); }
+                                    }
                                 }
                             }
                             Text { text: root.review-allocator-status-text; font-size: 11px; opacity: 0.78; wrap: word-wrap; }
