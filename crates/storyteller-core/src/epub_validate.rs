@@ -270,7 +270,18 @@ fn audit_smil<R: Read + Seek>(
             Ok(Event::Start(element)) => {
                 let qname = element.name();
                 let name = local_name(qname.as_ref());
-                if name == b"par" {
+                if name == b"seq" {
+                    let textref = attribute_value(&element, b"textref")?
+                        .ok_or("Media Overlay seq is missing epub:textref.")?;
+                    validate_textref_target(
+                        &textref,
+                        smil_dir,
+                        expected_xhtml_path,
+                        archive,
+                        xhtml_ids,
+                        cancellation,
+                    )?;
+                } else if name == b"par" {
                     if in_par {
                         return Err("Media Overlay contains nested par elements.".into());
                     }
@@ -361,6 +372,33 @@ fn audit_smil<R: Read + Seek>(
         segment_count,
         duration_ms,
     })
+}
+
+fn validate_textref_target<R: Read + Seek>(
+    src: &str,
+    smil_dir: &str,
+    expected_xhtml_path: &str,
+    archive: &mut ZipArchive<R>,
+    cache: &mut HashMap<String, HashSet<String>>,
+    cancellation: &CancellationToken,
+) -> Result<(), String> {
+    if src.contains('#') {
+        return validate_text_target(
+            src,
+            smil_dir,
+            expected_xhtml_path,
+            archive,
+            cache,
+            cancellation,
+        );
+    }
+    let archive_path = resolve_archive_href(smil_dir, src)?;
+    if archive_path != expected_xhtml_path {
+        return Err(format!(
+            "Media Overlay textref target {archive_path} does not match its associated XHTML item {expected_xhtml_path}."
+        ));
+    }
+    Ok(())
 }
 
 fn validate_text_target<R: Read + Seek>(

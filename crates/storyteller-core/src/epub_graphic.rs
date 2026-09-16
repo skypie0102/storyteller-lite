@@ -229,8 +229,9 @@ pub(crate) fn build_combined_smil(
     }
 
     let mut duration_ms = 0u64;
-    let mut xml = String::from(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq>",
+    let mut xml = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:textref=\"{}\">",
+        escape_xml(text_href),
     );
     for cue in &cues {
         let clip_duration = cue.end_ms - cue.start_ms;
@@ -502,6 +503,7 @@ mod tests {
         assert_eq!(duration, 2000);
         assert_eq!(count, 2);
         assert!(smil.find("image-anchor").unwrap() < smil.find("text-anchor").unwrap());
+        assert!(smil.contains("epub:textref=\"../Text/ch.xhtml\""));
     }
 
     #[test]

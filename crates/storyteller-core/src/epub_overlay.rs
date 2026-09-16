@@ -432,8 +432,9 @@ pub(crate) fn build_supplemental_smil(
     };
     let duration = end_ms - start_ms;
     let xml = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:type=\"{}\"><par id=\"stl-extra-par-{}\"><text src=\"{}#{}\"/><audio src=\"{}\" clipBegin=\"{}\" clipEnd=\"{}\"/></par></seq></body></smil>",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:type=\"{}\" epub:textref=\"{}\"><par id=\"stl-extra-par-{}\"><text src=\"{}#{}\"/><audio src=\"{}\" clipBegin=\"{}\" clipEnd=\"{}\"/></par></seq></body></smil>",
         epub_type,
+        escape_xml(text_href),
         sequence + 1,
         escape_xml(text_href),
         escape_xml(&uri_fragment(paragraph_id)),
@@ -525,8 +526,9 @@ pub(crate) fn build_smil(
     audio_href: &str,
     section_index: usize,
 ) -> Result<(String, u64), String> {
-    let mut xml = String::from(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq>",
+    let mut xml = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:textref=\"{}\">",
+        escape_xml(text_href),
     );
     let mut duration_ms = 0u64;
 
