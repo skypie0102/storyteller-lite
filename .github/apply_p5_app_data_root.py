@@ -128,12 +128,6 @@ replace_exact(
 )
 replace_exact(
     "crates/storyteller-ui/src/runtime_setup.rs",
-    "managed_app_root()",
-    "persistent_app_root()",
-    expected=4,
-)
-replace_exact(
-    "crates/storyteller-ui/src/runtime_setup.rs",
     '''fn managed_app_root() -> Option<PathBuf> {
     env::var_os("LOCALAPPDATA")
         .filter(|value| !value.is_empty())
@@ -147,6 +141,12 @@ fn managed_app_root_from(local_app_data: &Path) -> PathBuf {
 
 ''',
     "",
+)
+replace_exact(
+    "crates/storyteller-ui/src/runtime_setup.rs",
+    "managed_app_root()",
+    "persistent_app_root()",
+    expected=4,
 )
 replace_exact(
     "crates/storyteller-ui/src/runtime_setup.rs",
