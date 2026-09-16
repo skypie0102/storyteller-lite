@@ -102,47 +102,63 @@ Validate independently reopens the candidate EPUB and audits package/SMIL/text-o
 
 P2 should now be treated as functionally complete unless real books expose another narrowly scoped unmatched-audio gap.
 
-## P3 — main Slint UI alignment — active
+## P3 — main Slint UI alignment — functionally complete
 
-Validated baseline now implemented:
+The supported 820×620 window now implements the intended Lite hierarchy without restoring the historical editor complexity:
 
-- review presentation clearly represents mixed bounded text/image destinations and `… & Next` behavior;
+- review presentation clearly represents mixed bounded text/image destinations and assign/exclude-and-advance behavior;
 - seven-stage visualization shows real elapsed time per stage when available;
 - creation source pickers/options reflow below 900px while preserving the wide-window hierarchy;
-- active `Queue Another Book`, review headings/actions, bottom job actions, and queue/recent entries also reflow below 900px;
-- real timing/backend/model/match/current-activity data remains the only metrics surface;
-- queue/recent management remains visible and understandable in both wide and compact layouts.
+- active `Queue Another Book`, review headings/actions, bottom active-job actions, and queue/recent entries also reflow below 900px;
+- `NeedsReview` is promoted to a dedicated `REVIEW AUDIO` surface and suppresses unrelated processing/queue-another noise;
+- review content scrolls locally at short window heights, and queue/recent is hidden while review is active so bounded decisions remain usable at the 620px minimum height;
+- queue/recent uses a local `ListView` for unbounded waiting/history rows;
+- Settings keeps its title/back and action footer fixed while its long runtime body scrolls, and worker/runtime/action controls reflow below 900px;
+- long top-level status text is bounded/elided instead of competing with the app title;
+- only real timing/backend/model/match/current-activity data is shown; no synthetic metrics were added.
 
 Validation runs:
 
 - review presentation: `34919543203`;
 - stage elapsed timing: `34926648718`;
 - responsive creation layout: `34927154367`;
-- responsive active/review/queue layout: `34927928639`.
+- responsive active/review/queue layout: `34927928639`;
+- dedicated review presentation: `34952813936`;
+- queue/recent local scrolling: `34953863269`;
+- Settings local scrolling: `35058804437`;
+- compact review/settings/header polish: `35059503255`.
 
-Integrated recovery commits for those slices are `1a645685549a0796b960d18723bb0cd42799c79d`, `c79c834328edabc4fef72d0d0cd5fb8343499411`, `c8a6461eaeb4d2535af26172876b729cf0d2abf5`, and `17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8` respectively.
+Integrated recovery commits for those slices are:
 
-Remaining P3 work should stay presentation-focused:
+- `1a645685549a0796b960d18723bb0cd42799c79d`;
+- `c79c834328edabc4fef72d0d0cd5fb8343499411`;
+- `c8a6461eaeb4d2535af26172876b729cf0d2abf5`;
+- `17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8`;
+- `1602021a9c52eadb66fa7bc73937e56dacfd4c57`;
+- `26d11580e328da36d7a6169be22ec91e2ef3a157`;
+- `e98adae2dc0fff77923fd62d02768c9b01609e8f`;
+- `fe5b140b2319229b4083c6aa4d1c7d386a604bbd`.
 
-- make NeedsReview read as a dedicated unresolved-audio surface rather than a normal processing card with an embedded allocator;
-- add localized scrolling/overflow where real content can exceed the supported 620px minimum height;
-- polish settings and secondary-metadata reflow/hiding at narrower widths;
-- keep the reduced allocator focused on safe bounded decisions rather than restoring old editor complexity.
+These UI-only slices were validated with the relevant native gate, `cargo build -p storyteller-ui`, rather than repeatedly spending full workspace test runs when no Rust/backend behavior changed.
 
-The current minimum width remains 820px. Do not lower it until the review/settings surfaces have explicit compact behavior and have been validated at the narrower target.
+Keep the current 820px minimum width unless real use justifies and validates a narrower contract. Lowering it is not required to complete P3.
 
 ## P4 — installer archaeology only when needed
 
 Inspect the supplied v0.39.0 installer only when a live Lite behavior is still ambiguous. Verify documented provenance/hash first and record evidence before implementation. Do not broaden scope simply because a legacy feature exists.
 
-## P5 — later polish and compatibility
+## P5 — interoperability and release polish — active next phase
 
-After P2/P3 stabilize:
+Begin with external interoperability validation around the already-independent internal publication audit:
 
-- explicit relaunch/checkpoint-resume UX once persistence behavior is fully defined;
-- diagnostics and packaging/release/update polish;
-- EPUBCheck and reading-system interoperability testing;
-- deliberate additional EPUB compatibility policy only where needed;
+- add EPUBCheck validation for generated regression EPUBs as a development/CI interoperability gate, not a runtime dependency;
+- exercise representative reading-system-sensitive Media Overlay structures, especially mixed text/image overlays and supplemental Introduction/Credits pages;
+- preserve the internal validator as the required product publication gate rather than replacing it with an external Java tool;
+- pin/verify development tooling deliberately and avoid unverified downloads in validation workflows;
+- after interoperability stabilizes, continue packaging/release/update polish and explicit relaunch/checkpoint-resume UX.
+
+Later evidence work:
+
 - benchmark 1–4 Whisper workers across representative CPU/CUDA systems before changing defaults or adding VRAM/hardware-aware clamping.
 
 ## Engineering migration rule
