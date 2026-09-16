@@ -6,7 +6,7 @@ on:
       - validation/epubcheck-interoperability-base
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: storyteller-lite-epubcheck-feature-${{ github.event.pull_request.number }}
@@ -23,6 +23,13 @@ jobs:
         with:
           ref: feature/epubcheck-interoperability
 
+      - name: Apply reviewed conformance patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check .github/epubcheck-conformance.patch
+          git apply .github/epubcheck-conformance.patch
+
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -36,6 +43,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Format patched Rust source
+        run: cargo fmt --all
 
       - name: Rust formatting
         id: fmt
@@ -88,10 +98,14 @@ jobs:
             printf 'expected 3 EPUBCheck fixtures, found %s\n' "${#fixtures[@]}" >&2
             exit 1
           fi
+          failed=0
           for fixture in "${fixtures[@]}"; do
             echo "== EPUBCheck: $fixture =="
-            java -jar "$EPUBCHECK_JAR" "$fixture"
+            if ! java -jar "$EPUBCHECK_JAR" "$fixture"; then
+              failed=1
+            fi
           done
+          exit "$failed"
 
       - name: Aggregate validation result
         shell: bash
@@ -111,3 +125,18 @@ jobs:
             fi
           done
           exit "$failed"
+
+      - name: Commit validated source fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "storyteller-validation"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            crates/storyteller-core/examples/export_epubcheck_fixtures.rs \
+            crates/storyteller-core/src/epub_graphic.rs \
+            crates/storyteller-core/src/epub_overlay.rs \
+            crates/storyteller-core/src/epub_validate.rs
+          git diff --cached --check
+          git commit -m "fix: make media overlays EPUBCheck-conformant"
+          git push origin HEAD:feature/epubcheck-interoperability

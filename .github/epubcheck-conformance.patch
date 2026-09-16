@@ -1,0 +1,106 @@
+diff --git a/crates/storyteller-core/src/epub_graphic.rs b/crates/storyteller-core/src/epub_graphic.rs
+--- a/crates/storyteller-core/src/epub_graphic.rs
++++ b/crates/storyteller-core/src/epub_graphic.rs
+@@ -211,9 +211,10 @@ pub(crate) fn build_combined_smil(
+     }
+ 
+     let mut duration_ms = 0u64;
+-    let mut xml = String::from(
+-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq>",
++    let mut xml = format!(
++        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:textref=\"{}\">",
++        escape_xml(text_href),
+     );
+     for cue in &cues {
+         let clip_duration = cue.end_ms - cue.start_ms;
+@@ -512,6 +513,7 @@ mod tests {
+         assert_eq!(duration, 2000);
+         assert_eq!(count, 2);
+         assert!(smil.find("image-anchor").unwrap() < smil.find("text-anchor").unwrap());
++        assert!(smil.contains("epub:textref=\"../Text/ch.xhtml\""));
+     }
+ 
+     #[test]
+diff --git a/crates/storyteller-core/src/epub_overlay.rs b/crates/storyteller-core/src/epub_overlay.rs
+--- a/crates/storyteller-core/src/epub_overlay.rs
++++ b/crates/storyteller-core/src/epub_overlay.rs
+@@ -413,8 +413,9 @@ pub(crate) fn build_supplemental_smil(
+     };
+     let duration = end_ms - start_ms;
+     let xml = format!(
+-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:type=\"{}\"><par id=\"stl-extra-par-{}\"><text src=\"{}#{}\"/><audio src=\"{}\" clipBegin=\"{}\" clipEnd=\"{}\"/></par></seq></body></smil>",
++        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:type=\"{}\" epub:textref=\"{}\"><par id=\"stl-extra-par-{}\"><text src=\"{}#{}\"/><audio src=\"{}\" clipBegin=\"{}\" clipEnd=\"{}\"/></par></seq></body></smil>",
+         epub_type,
++        escape_xml(text_href),
+         sequence + 1,
+         escape_xml(text_href),
+         escape_xml(&uri_fragment(paragraph_id)),
+@@ -503,9 +504,10 @@ pub(crate) fn build_smil(
+     audio_href: &str,
+     section_index: usize,
+ ) -> Result<(String, u64), String> {
+-    let mut xml = String::from(
+-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq>",
++    let mut xml = format!(
++        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<smil xmlns=\"http://www.w3.org/ns/SMIL\" xmlns:epub=\"http://www.idpf.org/2007/ops\" version=\"3.0\"><body><seq epub:textref=\"{}\">",
++        escape_xml(text_href),
+     );
+     let mut duration_ms = 0u64;
+ 
+diff --git a/crates/storyteller-core/src/epub_validate.rs b/crates/storyteller-core/src/epub_validate.rs
+--- a/crates/storyteller-core/src/epub_validate.rs
++++ b/crates/storyteller-core/src/epub_validate.rs
+@@ -280,7 +280,17 @@ fn audit_smil<R: Read + Seek>(
+             Ok(Event::Start(element)) => {
+                 let qname = element.name();
+                 let name = local_name(qname.as_ref());
+-                if name == b"par" {
++                if name == b"seq" {
++                    let textref = attribute_value(&element, b"textref")?
++                        .ok_or("Media Overlay seq is missing epub:textref.")?;
++                    validate_textref_target(
++                        &textref,
++                        smil_dir,
++                        expected_xhtml_path,
++                        archive,
++                        xhtml_ids,
++                        cancellation,
++                    )?;
++                } else if name == b"par" {
+                     if in_par {
+                         return Err("Media Overlay contains nested par elements.".into());
+                     }
+@@ -379,6 +389,30 @@ fn audit_smil<R: Read + Seek>(
+     })
+ }
+ 
++fn validate_textref_target<R: Read + Seek>(
++    src: &str,
++    smil_dir: &str,
++    expected_xhtml_path: &str,
++    archive: &mut ZipArchive<R>,
++    cache: &mut HashMap<String, HashSet<String>>,
++    cancellation: &CancellationToken,
++) -> Result<(), String> {
++    if src.contains('#') {
++        return validate_text_target(
++            src,
++            smil_dir,
++            expected_xhtml_path,
++            archive,
++            cache,
++            cancellation,
++        );
++    }
++    let archive_path = resolve_archive_href(smil_dir, src)?;
++    if archive_path != expected_xhtml_path {
++        return Err(format!(
++            "Media Overlay textref target {archive_path} does not match its associated XHTML item {expected_xhtml_path}."
++        ));
++    }
++    Ok(())
++}
++
+ fn validate_text_target<R: Read + Seek>(
+     src: &str,
+     smil_dir: &str,
