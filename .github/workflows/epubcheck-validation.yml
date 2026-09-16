@@ -1,0 +1,79 @@
+name: Manual EPUBCheck interoperability
+
+# External conformance validation is development-only and intentionally manual.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-epubcheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  epubcheck:
+    name: EPUBCheck 5.4.0 interoperability
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Core lint
+        run: cargo clippy -p storyteller-core --all-targets -- -D warnings
+
+      - name: Core tests
+        run: cargo test -p storyteller-core
+
+      - name: Export standards-clean EPUB fixtures
+        run: cargo run -p storyteller-core --example export_epubcheck_fixtures -- target/epubcheck-fixtures
+
+      - name: Download and verify EPUBCheck 5.4.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="5.4.0"
+          expected_sha256="33350c61038e71dfb3d45a76aed04bf5481e6d5500cb780f6e98db8bbd15a28c"
+          archive="$RUNNER_TEMP/epubcheck-${version}.zip"
+          extract_dir="$RUNNER_TEMP/epubcheck-${version}"
+          curl --fail --location --silent --show-error \
+            "https://github.com/w3c/epubcheck/releases/download/v${version}/epubcheck-${version}.zip" \
+            --output "$archive"
+          echo "${expected_sha256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$extract_dir"
+          unzip -q "$archive" -d "$extract_dir"
+          jar_path="$(find "$extract_dir" -type f -name epubcheck.jar -print -quit)"
+          test -n "$jar_path"
+          echo "EPUBCHECK_JAR=$jar_path" >> "$GITHUB_ENV"
+
+      - name: Validate exported EPUBs with EPUBCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t fixtures < <(find target/epubcheck-fixtures -maxdepth 1 -type f -name '*.epub' -print | sort)
+          if [[ "${#fixtures[@]}" -ne 3 ]]; then
+            printf 'expected 3 EPUBCheck fixtures, found %s\n' "${#fixtures[@]}" >&2
+            exit 1
+          fi
+          for fixture in "${fixtures[@]}"; do
+            echo "== EPUBCheck: $fixture =="
+            java -jar "$EPUBCHECK_JAR" "$fixture"
+          done
