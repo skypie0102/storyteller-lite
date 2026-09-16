@@ -74,11 +74,7 @@ pub struct PipelineWorkerHandle {
 
 impl PipelineWorkerHandle {
     pub fn request_cancellation(&self) {
-        let Some(worker) = self.worker.as_ref() else {
-            return false;
-        };
-        worker.request_cancellation();
-        true
+        self.cancellation.request();
     }
 
     pub fn drain_updates(&self) -> Vec<Job> {
@@ -256,9 +252,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        JobInputs, JobSettings, PipelineStage, StageStatus,
-    };
+    use crate::{JobInputs, JobSettings, PipelineStage, StageStatus};
     use std::{fs, path::PathBuf};
     use uuid::Uuid;
 
