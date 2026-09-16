@@ -1,6 +1,6 @@
 use crate::{
-    AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobInputs, JobQueue, JobSettings,
-    JobStatus, PipelineProgress, PipelineStage, ResumeContext, StageCheckpoint,
+    job::StageCheckpoint, AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job,
+    JobInputs, JobQueue, JobSettings, JobStatus, PipelineProgress, PipelineStage,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -72,6 +72,7 @@ pub fn write_queue_recovery(path: &Path, queue: &JobQueue) -> Result<usize, Stri
         return Ok(0);
     }
 
+    let recovered_jobs = jobs.len();
     let parent = path
         .parent()
         .ok_or("Queue recovery path has no parent directory.")?;
@@ -116,12 +117,7 @@ pub fn write_queue_recovery(path: &Path, queue: &JobQueue) -> Result<usize, Stri
             path.display()
         )
     })?;
-    let decoded: QueueRecoveryFile = serde_json::from_slice(
-        &fs::read(path)
-            .map_err(|error| format!("Could not verify queue recovery file: {error}"))?,
-    )
-    .map_err(|error| format!("Written queue recovery file is invalid: {error}"))?;
-    Ok(decoded.jobs.len())
+    Ok(recovered_jobs)
 }
 
 pub fn read_queue_recovery(path: &Path) -> Result<QueueRecovery, String> {
@@ -206,10 +202,7 @@ impl JobRecoveryRecord {
             .parse()
             .map_err(|error| format!("Recovered job id is invalid: {error}"))?;
         let codec = parse_codec(&self.audio_codec)?;
-        let bitrate = self
-            .audio_bitrate_kbps
-            .map(parse_bitrate)
-            .transpose()?;
+        let bitrate = self.audio_bitrate_kbps.map(parse_bitrate).transpose()?;
         let audio = AudioEncoding::new(codec, bitrate)?;
         let settings = JobSettings {
             audio,
@@ -250,7 +243,8 @@ impl JobRecoveryRecord {
                 }
             }
             last_index = Some(stage.index());
-            if self.previous_status == RecoveryStatus::NeedsReview && stage.index() >= review_index {
+            if self.previous_status == RecoveryStatus::NeedsReview && stage.index() >= review_index
+            {
                 continue;
             }
             checkpoints.push(StageCheckpoint {
@@ -298,7 +292,9 @@ fn parse_bitrate(value: u16) -> Result<AudioBitrate, String> {
         32 => Ok(AudioBitrate::Kbps32),
         64 => Ok(AudioBitrate::Kbps64),
         96 => Ok(AudioBitrate::Kbps96),
-        _ => Err(format!("Recovered audio bitrate is unsupported: {value} kbps")),
+        _ => Err(format!(
+            "Recovered audio bitrate is unsupported: {value} kbps"
+        )),
     }
 }
 
@@ -338,6 +334,7 @@ fn temporary_recovery_path(path: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ResumeContext;
     use std::fs;
     use uuid::Uuid;
 
@@ -372,7 +369,10 @@ mod tests {
     }
 
     fn recovery_path() -> PathBuf {
-        std::env::temp_dir().join(format!("storyteller-queue-recovery-{}.json", Uuid::new_v4()))
+        std::env::temp_dir().join(format!(
+            "storyteller-queue-recovery-{}.json",
+            Uuid::new_v4()
+        ))
     }
 
     #[test]
@@ -393,7 +393,10 @@ mod tests {
         assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
         let restored = recovered.queue.job(id).unwrap();
         assert_eq!(restored.status, JobStatus::Waiting);
-        assert_eq!(restored.resume_plan(&context).unwrap().reusable(), &[PipelineStage::Prepare]);
+        assert_eq!(
+            restored.resume_plan(&context).unwrap().reusable(),
+            &[PipelineStage::Prepare]
+        );
         let _ = fs::remove_file(path);
     }
 

@@ -58,13 +58,7 @@ impl WorkerBridge {
         stage_rows: &Rc<VecModel<StageRow>>,
         detail_stage_rows: &Rc<VecModel<StageDetailRow>>,
     ) {
-        self.load_recovery_once(
-            ui_weak,
-            queue,
-            queue_rows,
-            stage_rows,
-            detail_stage_rows,
-        );
+        self.load_recovery_once(ui_weak, queue, queue_rows, stage_rows, detail_stage_rows);
         self.persist_recovery_if_due(queue);
         self.poll_runtime_setup(ui_weak);
 
