@@ -105,7 +105,8 @@ pub fn spawn_pipeline_worker<B: PipelineBackend>(
             Ok(plan) => plan,
             Err(error) => return finish_preflight_failure(job, sender, error),
         };
-        job.progress.set_activity(resume_activity(&validated_resume))?;
+        job.progress
+            .set_activity(resume_activity(&validated_resume))?;
         let _ = sender.send(job.clone());
 
         let mut observer = |snapshot: &Job| {
@@ -163,7 +164,8 @@ pub fn spawn_pipeline_worker_with_preflight<B: PipelineBackend>(
             Ok(plan) => plan,
             Err(error) => return finish_preflight_failure(job, sender, error),
         };
-        job.progress.set_activity(resume_activity(&validated_resume))?;
+        job.progress
+            .set_activity(resume_activity(&validated_resume))?;
         let _ = sender.send(job.clone());
 
         let mut observer = |snapshot: &Job| {
