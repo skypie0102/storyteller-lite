@@ -1,0 +1,58 @@
+name: P5 ffmpeg pin validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p5-ffmpeg-pin-base
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Windows pinned ffmpeg validation
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply reviewed ffmpeg pin patch
+        run: python .github/apply_p5_ffmpeg_pin.py
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Apply rustfmt before validation
+        run: cargo fmt --all
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Strict UI Clippy
+        run: cargo clippy -p storyteller-ui --all-targets -- -D warnings
+
+      - name: UI tests
+        run: cargo test -p storyteller-ui
+
+      - name: Build native Slint shell
+        run: cargo build -p storyteller-ui
+
+      - name: Commit validated product files
+        shell: pwsh
+        run: |
+          git add crates/storyteller-ui/src/runtime_setup.rs docs/RUNTIME.md
+          if (-not (git diff --cached --quiet)) {
+            git config user.name "storyteller-validation"
+            git config user.email "actions@users.noreply.github.com"
+            git commit -m "fix: pin automatic ffmpeg runtime build [skip ci]"
+            git push origin HEAD:${{ github.head_ref }}
+          }
