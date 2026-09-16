@@ -13,7 +13,8 @@ Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The lega
 - Long-running work never runs on the Slint UI thread.
 - Exactly one weighted overall progress bar, backed only by real structured measurements.
 - Source files are never intentionally overwritten; output defaults next to the source EPUB.
-- Resume reuses only a validated contiguous prefix of checkpoints; stale semantics invalidate downstream stages.
+- Resume reuses only a validated contiguous prefix of checkpoints; stale semantics or invalid stage artifacts invalidate downstream stages before execution begins.
+- Relaunch recovery never auto-runs recovered work. Recoverable jobs are restored into a paused queue and require an explicit Resume queue action.
 - Human review decisions are explicit and durable.
 - Smart decisions are conservative, auditable, and reversible before publication.
 - Weak or ambiguous evidence stays unresolved instead of being forced.
@@ -163,13 +164,24 @@ A manual-only `.github/workflows/epubcheck-validation.yml` gate runs rustfmt, st
 
 The first external run exposed a real conformance defect: Storyteller-generated SMIL `<seq>` elements lacked required `epub:textref`. All text, supplemental, and mixed Graphic Readout generation paths now emit the required reference, and the internal validator independently requires/resolves it so the same class of defect is caught before publication. The final run passed EPUBCheck 5.4.0 on all three fixtures.
 
+### Validated checkpoint resume and relaunch recovery — implemented
+
+Two related P5 hardening slices are now integrated:
+
+- `19ecde9b5082393a9ccb056a3abe189bfa89393a` makes worker startup validate checkpoint fingerprints and each stage's artifact manifest before cached stages are reused. The first invalid point truncates downstream checkpoints and resets execution from that stage. Core validation run `35067743420` passed rustfmt, strict `storyteller-core` Clippy, and all core tests.
+- `8c0c3d35dff44e0d616077d627a3a4e1e5c478fe` adds a versioned durable recoverable-queue snapshot and Slint-shell lifecycle integration. Interrupted Running jobs restore as Waiting; recoverable work always restores with the queue paused; terminal jobs are omitted and remove the recovery file when no work remains; malformed versions, duplicate IDs, non-contiguous checkpoints, bad stage ordering, and blank fingerprints are rejected. A job that was waiting at Review Audio is rewound before Review Audio so unresolved human review cannot be bypassed after relaunch; the existing durable review draft remains the source for manual decisions when that stage reruns.
+
+The UI bridge loads recovery once and checkpoints recoverable queue state at a throttled one-second cadence rather than every 100 ms UI poll. The recovery file is stored under the existing app data root as `queue-recovery.json` (`%LOCALAPPDATA%\Storyteller OneClick Lite` on Windows, with the existing temp-directory fallback where `LOCALAPPDATA` is unavailable).
+
+Final Windows validation run `35068910791` passed rustfmt, strict workspace Clippy, all workspace tests, and the native Slint build. Temporary validation PRs #14 and #15 were closed without merge and their temporary validation scaffolding was removed.
+
 ### P5 next work
 
 Continue with reading-system and release interoperability rather than adding more P2/P3 feature scope:
 
 - exercise exported books in representative reading systems where automation or reproducible fixture evidence is practical, recording reader-specific limitations separately from EPUBCheck conformance;
 - audit packaging/release/update behavior and owned runtime discovery so installed builds remain self-contained and predictable;
-- add explicit relaunch/checkpoint-resume UX where the current recovery behavior is only implicit;
+- exercise the new paused relaunch recovery against packaged/installed builds and preserve the explicit-resume contract if release plumbing changes lifecycle behavior;
 - keep release validation opt-in/manual until the packaging surface is stable enough to justify broader automation.
 
 Later evidence work:
