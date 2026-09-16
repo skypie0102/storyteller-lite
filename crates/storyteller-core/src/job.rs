@@ -300,6 +300,8 @@ impl Job {
         plan: &ValidatedResumePlan,
     ) -> Result<(), String> {
         self.progress.reset_from(PipelineStage::Prepare);
+        self.checkpoints
+            .retain(|saved| plan.reusable().contains(&saved.stage));
         for stage in plan.reusable() {
             self.progress.mark_cached(*stage, None)?;
         }
@@ -320,6 +322,21 @@ mod tests {
         }
     }
 
+    fn context() -> ResumeContext {
+        ResumeContext {
+            epub_source: "epub:one".into(),
+            audiobook_source: "audio:one".into(),
+            whisper_backend: "whisper:one".into(),
+            alignment_backend: "align:one".into(),
+            audio_backend: "audio:one".into(),
+            ocr_backend: "ocr:one".into(),
+            epub_backend: "epub:one".into(),
+            effective_language: "auto".into(),
+            effective_whisper_model: "model:one".into(),
+            settings: JobSettings::default(),
+        }
+    }
+
     #[test]
     fn whisper_worker_count_is_bounded_for_queued_jobs() {
         let settings = JobSettings {
@@ -333,5 +350,32 @@ mod tests {
             ..JobSettings::default()
         };
         assert!(Job::new(inputs(), invalid).is_err());
+    }
+
+    #[test]
+    fn applying_validated_resume_plan_drops_downstream_checkpoints() {
+        let mut job = Job::new(inputs(), JobSettings::default()).unwrap();
+        let context = context();
+        for stage in [PipelineStage::Prepare, PipelineStage::Analyze] {
+            job.progress.start_stage(stage, "test").unwrap();
+            job.progress.complete_stage(stage, 1).unwrap();
+            job.checkpoint_completed_stage(stage, &context).unwrap();
+        }
+
+        let validated = ValidatedResumePlan::new(
+            vec![PipelineStage::Prepare],
+            Some(crate::InvalidResumeStage {
+                stage: PipelineStage::Analyze,
+                reason: "missing artifact".into(),
+            }),
+        );
+        job.apply_validated_resume_plan(&validated).unwrap();
+
+        assert_eq!(
+            job.resume_plan(&context).unwrap().reusable(),
+            &[PipelineStage::Prepare]
+        );
+        assert_eq!(job.checkpoints.len(), 1);
+        assert_eq!(job.checkpoints[0].stage, PipelineStage::Prepare);
     }
 }
