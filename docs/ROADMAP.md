@@ -94,7 +94,7 @@ Graphic Readout can share an XHTML/SMIL sequence with normal text cues or create
 
 ### Validate — implemented
 
-Validate independently reopens the candidate EPUB and audits package/SMIL/text-or-image/audio relationships, clip ranges, duration consistency, duplicates, resource resolution, and mimetype rules before publication. New rendering paths must extend regression coverage rather than weakening this audit.
+Validate independently reopens the candidate EPUB and audits package/SMIL/text-or-image/audio relationships, clip ranges, duration consistency, duplicates, resource resolution, Media Overlay sequence text references, and mimetype rules before publication. New rendering paths must extend regression coverage rather than weakening this audit.
 
 ## Extra Audio — no renderer planned by default
 
@@ -147,15 +147,30 @@ Keep the current 820px minimum width unless real use justifies and validates a n
 
 Inspect the supplied v0.39.0 installer only when a live Lite behavior is still ambiguous. Verify documented provenance/hash first and record evidence before implementation. Do not broaden scope simply because a legacy feature exists.
 
-## P5 — interoperability and release polish — active next phase
+## P5 — interoperability and release polish — active
 
-Begin with external interoperability validation around the already-independent internal publication audit:
+### External EPUB interoperability baseline — implemented
 
-- add EPUBCheck validation for generated regression EPUBs as a development/CI interoperability gate, not a runtime dependency;
-- exercise representative reading-system-sensitive Media Overlay structures, especially mixed text/image overlays and supplemental Introduction/Credits pages;
-- preserve the internal validator as the required product publication gate rather than replacing it with an external Java tool;
-- pin/verify development tooling deliberately and avoid unverified downloads in validation workflows;
-- after interoperability stabilizes, continue packaging/release/update polish and explicit relaunch/checkpoint-resume UX.
+The first P5 slice is integrated as `ef7900ceb5efd3541d8b33f056d3f3ff8d9920e8` and validated on Linux in run `35065877026`.
+
+It adds a development-only fixture exporter that produces three representative books through the real builder and internal validator:
+
+- normal text Media Overlay;
+- supplemental Introduction/Credits pages;
+- mixed text + Graphic Readout Media Overlay.
+
+A manual-only `.github/workflows/epubcheck-validation.yml` gate runs rustfmt, strict `storyteller-core` Clippy, core tests, fixture export, a pinned EPUBCheck 5.4.0 download, SHA-256 verification (`33350c61038e71dfb3d45a76aed04bf5481e6d5500cb780f6e98db8bbd15a28c`), and EPUBCheck across all three exported books. Java/EPUBCheck are development tooling only and are not runtime dependencies or substitutes for Lite's internal publication validator.
+
+The first external run exposed a real conformance defect: Storyteller-generated SMIL `<seq>` elements lacked required `epub:textref`. All text, supplemental, and mixed Graphic Readout generation paths now emit the required reference, and the internal validator independently requires/resolves it so the same class of defect is caught before publication. The final run passed EPUBCheck 5.4.0 on all three fixtures.
+
+### P5 next work
+
+Continue with reading-system and release interoperability rather than adding more P2/P3 feature scope:
+
+- exercise exported books in representative reading systems where automation or reproducible fixture evidence is practical, recording reader-specific limitations separately from EPUBCheck conformance;
+- audit packaging/release/update behavior and owned runtime discovery so installed builds remain self-contained and predictable;
+- add explicit relaunch/checkpoint-resume UX where the current recovery behavior is only implicit;
+- keep release validation opt-in/manual until the packaging surface is stable enough to justify broader automation.
 
 Later evidence work:
 
