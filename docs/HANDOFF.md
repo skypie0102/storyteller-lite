@@ -15,7 +15,8 @@ Read this file before making substantial changes.
 - The first P5 interoperability slice is integrated as `ef7900ceb5efd3541d8b33f056d3f3ff8d9920e8`. It adds standards-clean representative EPUB fixtures, a manual EPUBCheck 5.4.0 gate, required Media Overlay `epub:textref` output, and matching internal-validator enforcement. Final interoperability run `35065877026` passed rustfmt, strict core Clippy, core tests, fixture export, pinned EPUBCheck checksum verification, and EPUBCheck on text-overlay, supplemental Introduction/Credits, and Graphic Readout outputs.
 - Validated resume preflight is integrated as `19ecde9b5082393a9ccb056a3abe189bfa89393a`. Worker startup now revalidates both semantic checkpoint fingerprints and stage artifact manifests before reusing cached stages; the first invalid stage truncates downstream checkpoints. Core run `35067743420` passed rustfmt, strict core Clippy, and core tests.
 - Durable paused relaunch recovery is integrated as `8c0c3d35dff44e0d616077d627a3a4e1e5c478fe`. Recoverable jobs persist to a versioned queue snapshot, interrupted Running work restores as Waiting, restored work never auto-runs, terminal jobs are omitted, and a job that was waiting at Review Audio is rewound before Review Audio so unresolved human review cannot be bypassed across relaunch. Final Windows run `35068910791` passed rustfmt, strict workspace Clippy, all workspace tests, and the native Slint build.
-- Temporary validation PRs #3 through #15 were closed without merge and their temporary feature workflows/scaffolding were removed after validation.
+- P5 Windows packaging/runtime hardening now includes per-user owned runtime storage (`234064e2a70f4fafbab7ee34be5bc5ffbc7fbc05`), a self-describing/verified manual developer-test package (`503ada36a0f000abf9dfd581f4941d6242f7654d`), and one shared app-data-root contract across runtime setup/import/recovery (`b236c503b73fc2829ad8830d4084cd93cb0d1a22`). Automatic FFmpeg/whisper/model installs no longer require the executable directory to be writable. Final shared-root Windows run `35076642104` passed strict UI Clippy, UI tests, and the native Slint build.
+- Temporary validation PRs #3 through #17 were closed without merge and their temporary feature workflows/scaffolding were removed after validation.
 - Recovery CI remains manual/opt-in to avoid unnecessary hosted-runner use. GitHub runners may be used when they are the right validation tool; before rerunning after a failure, inspect the full logs and likely downstream failure surface, batch fixes, and make the next run a meaningful near-final checkpoint rather than using Actions as an edit/compile loop.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
@@ -133,7 +134,7 @@ Validation history for this slice:
 
 Worker startup now applies the existing resume rules instead of trusting in-memory Completed stages. It first invalidates stale semantic fingerprints, obtains the contiguous fingerprint resume plan, validates that plan against each stage's artifact manifest in the job workspace, truncates downstream checkpoints to the validated reusable prefix, and marks only that verified prefix Cached. A retry/relaunch therefore cannot reuse a missing, modified, or semantically stale artifact simply because an old `Job` snapshot still says that stage completed.
 
-The durable relaunch layer persists only recoverable queue state: job identity, immutable source/output/settings fields, the previous recoverable status, and completed checkpoint fingerprints. It does **not** persist transient progress percentages, elapsed live metrics, terminal history, or a live worker object. The versioned snapshot is `queue-recovery.json` under the existing app-data root (`%LOCALAPPDATA%\Storyteller OneClick Lite` on Windows; existing temp-directory fallback elsewhere).
+The durable relaunch layer persists only recoverable queue state: job identity, immutable source/output/settings fields, the previous recoverable status, and completed checkpoint fingerprints. It does **not** persist transient progress percentages, elapsed live metrics, terminal history, or a live worker object. The versioned snapshot is `queue-recovery.json` under the shared app-data root (`%LOCALAPPDATA%\Storyteller OneClick Lite` on Windows; temp-directory fallback only where persistent app data is unavailable).
 
 Restore is intentionally conservative:
 
@@ -152,6 +153,16 @@ Validation history:
 
 - resume preflight integration `19ecde9b5082393a9ccb056a3abe189bfa89393a`, core run `35067743420` green;
 - relaunch recovery integration `8c0c3d35dff44e0d616077d627a3a4e1e5c478fe`, final Windows run `35068910791` green across formatting, strict workspace Clippy, all workspace tests, and native Slint build.
+
+### Windows runtime storage and developer-test package
+
+Owned mutable runtime data is no longer tied to the executable directory. `runtime_setup.rs` installs automatic FFmpeg/whisper/model downloads under `%LOCALAPPDATA%\Storyteller OneClick Lite\tools` / `models`, and discovery checks that managed location while retaining portable-adjacent tools, explicit environment variables, PATH, imported builds, and bounded legacy discovery. Integration commit: `234064e2a70f4fafbab7ee34be5bc5ffbc7fbc05`.
+
+The manual Windows package is still a developer-test artifact, not a public installer/update channel. `.github/workflows/windows-build.yml` builds with `--locked`, emits `BUILD.json` with package version, commit, actual Rust host target, executable name, and SHA-256, independently verifies `SHA256SUMS.txt`, and rejects an unexpected package file set. Artifact name: `StoryTeller-Lite-Windows-x64-Developer-Test`. Package-provenance integration commit: `503ada36a0f000abf9dfd581f4941d6242f7654d`.
+
+`crates/storyteller-ui/src/app_paths.rs` is now the single UI-side authority for the `Storyteller OneClick Lite` per-user root. Runtime setup, local whisper archive import, and relaunch recovery share it. Missing or empty `LOCALAPPDATA` is treated as unavailable rather than becoming a relative path; persistent runtime installation/import fails explicitly in that case, while recovery intentionally retains its temp fallback. Integration commit `b236c503b73fc2829ad8830d4084cd93cb0d1a22`; final Windows run `35076642104` passed patch/whitespace/rustfmt, strict `storyteller-ui` Clippy, UI tests, and native Slint build. Run `35076520019` failed only in temporary patch-count scaffolding before Rust and was fully inspected before the corrected retry.
+
+For the earlier managed-runtime storage slice, the substantive gates in run `35074193551` passed; the workflow's final bookkeeping push was rejected only because the Actions token could not update a workflow file. Bookkeeping-only run `35075247777` then persisted the exact validated Rust/docs without recompiling.
 
 ## Extra Audio decision
 
@@ -188,10 +199,11 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 
 1. Treat P2 and P3 as functionally complete unless real books or real window use expose a narrowly scoped regression.
 2. Keep the internal validator + manual EPUBCheck baseline intact; new output/rendering paths should extend representative external fixtures when appropriate rather than weakening either gate.
-3. Preserve the validated-resume and explicit paused-relaunch contracts; exercise them through installed/packaged builds before changing lifecycle behavior.
-4. Continue P5 with reading-system interoperability evidence plus packaging/release/update and owned-runtime polish. Do not turn EPUBCheck/Java into a shipped dependency.
-5. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
-6. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
+3. Exercise the exported text/supplemental/Graphic Readout fixtures in representative reading systems and record reader-specific limitations separately from EPUBCheck conformance.
+4. Exercise validated resume plus explicit paused relaunch through developer-test/installed-like launch conditions, including Running/Waiting recovery and NeedsReview rewind. Do not weaken the explicit Resume queue contract.
+5. Preserve the per-user runtime root and the verified `BUILD.json`/SHA-256 developer-test package contract. Do not invent a public installer or auto-update channel without a concrete distribution requirement.
+6. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
+7. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
 
 ## Recovered invariants worth preserving
 
@@ -201,6 +213,7 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 - Weak/ambiguous evidence remains Pending rather than being forced.
 - Resume trusts only the contiguous checkpoint prefix whose semantic fingerprints and stage artifacts still validate.
 - Relaunch never silently resumes processing; recovered work returns paused and requires explicit user action.
+- Owned mutable runtimes live in per-user application data; a packaged executable must not require its own directory to be writable.
 - Final output is independently audited after review decisions are applied.
 - External EPUBCheck is an interoperability development gate, not a substitute for deterministic internal validation before publication.
 - Historical OCR/scoring thresholds are test vectors, not permanent product constants.
