@@ -5,12 +5,14 @@ on:
     branches:
       - validation/p5-packaged-relaunch-smoke-base
     paths:
+      - Cargo.lock
+      - .github/apply_p5_lock_sync.py
       - .github/scripts/packaged-relaunch-smoke.ps1
       - .github/workflows/windows-build.yml
       - .github/workflows/feature-p5-packaged-relaunch-smoke-validation.yml
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: p5-packaged-relaunch-smoke-${{ github.event.pull_request.number }}
@@ -32,6 +34,12 @@ jobs:
         shell: pwsh
         run: git diff --check origin/validation/p5-packaged-relaunch-smoke-base...HEAD
 
+      - name: Repair stale UI lockfile entry
+        run: python .github/apply_p5_lock_sync.py
+
+      - name: Check repaired lockfile whitespace
+        run: git diff --check -- Cargo.lock
+
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -51,3 +59,14 @@ jobs:
         shell: pwsh
         run: |
           & .github\scripts\packaged-relaunch-smoke.ps1 -Executable dist\StoryTeller-Lite.exe
+
+      - name: Persist validated lockfile repair
+        shell: pwsh
+        run: |
+          git config user.name "storyteller-validation"
+          git config user.email "actions@users.noreply.github.com"
+          git add Cargo.lock
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "build: sync Cargo.lock for UI recovery deps [skip ci]"
+            git push origin HEAD:feature/p5-packaged-relaunch-smoke
+          }
