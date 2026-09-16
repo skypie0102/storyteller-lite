@@ -121,8 +121,9 @@ pub(crate) fn install_missing_dependencies(
         return Ok(());
     }
 
-    let app_root = current_executable_dir().ok_or_else(|| {
-        "Could not determine the StoryTeller Lite application folder.".to_string()
+    let app_root = managed_app_root().ok_or_else(|| {
+        "Windows LOCALAPPDATA is unavailable, so the persistent StoryTeller Lite runtime folder could not be determined."
+            .to_string()
     })?;
     let tools_dir = app_root.join("tools");
     let models_dir = app_root.join("models");
@@ -231,6 +232,9 @@ fn find_executable(
         candidates.push(executable_dir.join("tools").join(&file_name));
         candidates.push(executable_dir.join(&file_name));
     }
+    if let Some(app_root) = managed_app_root() {
+        candidates.push(app_root.join("tools").join(&file_name));
+    }
     if let Some(path) = env::var_os("PATH") {
         candidates.extend(env::split_paths(&path).map(|entry| entry.join(&file_name)));
     }
@@ -264,10 +268,19 @@ fn find_whisper_executable() -> Option<PathBuf> {
         }
     }
 
+    if let Some(app_root) = managed_app_root() {
+        for name in &names {
+            candidates.push(WhisperCandidate {
+                path: app_root.join("tools").join(name),
+                source_rank: 1,
+            });
+        }
+    }
+
     for path in persistent_whisper_executables() {
         candidates.push(WhisperCandidate {
             path,
-            source_rank: 1,
+            source_rank: 2,
         });
     }
 
@@ -276,7 +289,7 @@ fn find_whisper_executable() -> Option<PathBuf> {
             for name in &names {
                 candidates.push(WhisperCandidate {
                     path: entry.join(name),
-                    source_rank: 2,
+                    source_rank: 3,
                 });
             }
         }
@@ -486,13 +499,8 @@ fn find_whisper_model(model_name: &str) -> Option<PathBuf> {
 
     let file_name = format!("ggml-{model_name}.bin");
     let mut candidates = Vec::new();
-    if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
-        candidates.push(
-            PathBuf::from(local_app_data)
-                .join("Storyteller OneClick Lite")
-                .join("models")
-                .join(&file_name),
-        );
+    if let Some(app_root) = managed_app_root() {
+        candidates.push(app_root.join("models").join(&file_name));
     }
     if let Some(executable_dir) = current_executable_dir() {
         candidates.push(executable_dir.join("models").join(&file_name));
@@ -779,6 +787,17 @@ fn probe_executable(path: &Path, arguments: &[&str]) -> bool {
         .unwrap_or(false)
 }
 
+fn managed_app_root() -> Option<PathBuf> {
+    env::var_os("LOCALAPPDATA")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .map(|root| managed_app_root_from(&root))
+}
+
+fn managed_app_root_from(local_app_data: &Path) -> PathBuf {
+    local_app_data.join("Storyteller OneClick Lite")
+}
+
 fn current_executable_dir() -> Option<PathBuf> {
     env::current_exe()
         .ok()
@@ -849,5 +868,21 @@ mod tests {
         assert!(is_cuda_whisper_build(Path::new(
             "C:\\cache\\whisper-cpp-windows-x64-cuda-13.1.0\\whisper-cli.exe"
         )));
+    }
+
+    #[test]
+    fn managed_runtime_root_is_per_user() {
+        let root = managed_app_root_from(Path::new("local-app-data"));
+        assert_eq!(
+            root,
+            PathBuf::from("local-app-data").join("Storyteller OneClick Lite")
+        );
+        assert_eq!(
+            root.join("tools").join(executable_file_name("ffmpeg")),
+            PathBuf::from("local-app-data")
+                .join("Storyteller OneClick Lite")
+                .join("tools")
+                .join(executable_file_name("ffmpeg"))
+        );
     }
 }

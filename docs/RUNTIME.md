@@ -16,7 +16,7 @@ A different model name may be supplied by `JobSettings` as model selection is ex
 
 ### ffmpeg
 
-The runtime checks an explicit `STORYTELLER_FFMPEG` override first, then the portable application/tool folders and `PATH`. Settings probes the resolved executable with `ffmpeg -version` before reporting it ready.
+The runtime checks an explicit `STORYTELLER_FFMPEG` override first, then the portable application/tool folders, the managed per-user `tools/` folder under `%LOCALAPPDATA%\Storyteller OneClick Lite`, and `PATH`. Settings probes the resolved executable with `ffmpeg -version` before reporting it ready.
 
 ### whisper.cpp CLI and CUDA builds
 
@@ -24,7 +24,8 @@ The runtime checks an explicit `STORYTELLER_FFMPEG` override first, then the por
 
 On Windows, automatic discovery searches:
 
-- the portable StoryTeller application and `tools/` folders;
+- the portable StoryTeller application and adjacent `tools/` folders;
+- the managed per-user `%LOCALAPPDATA%\Storyteller OneClick Lite\tools\` folder;
 - `PATH`;
 - bounded persistent-runtime searches under `%LOCALAPPDATA%`, `%APPDATA%`, `%PROGRAMDATA%`, the user's profile, and `.cache`;
 - known StoryTeller/whisper folder names and direct child folders whose names contain StoryTeller, whisper, or historical project/vendor hints.
@@ -42,7 +43,7 @@ whisper-cpp-windows-x64-cuda-*.tgz
 whisper-cpp-windows-x64-cuda-*.zip
 ```
 
-If a compatible cached archive is found but no runnable CLI is available, **Download missing** tries to reuse/extract that archive into the current portable `tools/` folder before downloading a replacement. Both `whisper-cli.exe` and legacy `main.exe` archive layouts are supported, and sibling runtime DLLs/resources are copied with the executable.
+If a compatible cached archive is found but no runnable CLI is available, **Download missing** tries to reuse/extract that archive into the managed per-user `tools/` folder before downloading a replacement. Both `whisper-cli.exe` and legacy `main.exe` archive layouts are supported, and sibling runtime DLLs/resources are copied with the executable.
 
 Immediately before a processing worker starts, StoryTeller Lite re-runs runtime discovery and binds the exact resolved ffmpeg, whisper.cpp, and model paths into the backend environment. Therefore the CUDA/CPU executable shown by Settings is the executable Analyze will launch, unless the user supplied an explicit override.
 
@@ -54,7 +55,7 @@ A model is reported ready only when the candidate is a non-empty regular file.
 
 ## Settings runtime manager
 
-Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. The whisper row identifies a detected CUDA build explicitly. If anything is missing, **Download missing** offers an explicit, user-initiated portable install on Windows. Processing never silently starts a multi-gigabyte model download.
+Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. The whisper row identifies a detected CUDA build explicitly. If anything is missing, **Download missing** offers an explicit, user-initiated per-user install on Windows. Owned downloads do not require the application/EXE directory itself to be writable. Processing never silently starts a multi-gigabyte model download.
 
 ### Importing an existing whisper.cpp archive
 
@@ -76,13 +77,15 @@ Lite searches the extracted tree for `whisper-cli.exe`, falling back to legacy `
 
 On successful import, the verified executable is selected immediately for the current app session and a runtime re-scan updates Settings. Future launches rediscover the persistent extracted copy automatically. The original archive is not modified and may be moved or deleted after a successful import.
 
-Downloads are performed on a background thread so the Slint UI remains responsive. Missing dependencies are installed beside the portable application:
+Downloads are performed on a background thread so the Slint UI remains responsive. Missing dependencies are installed into the managed per-user application-data root:
 
 ```text
-tools/ffmpeg.exe
-tools/whisper-cli.exe
-models/ggml-large-v3-turbo.bin
+%LOCALAPPDATA%\Storyteller OneClick Lite\tools\ffmpeg.exe
+%LOCALAPPDATA%\Storyteller OneClick Lite\tools\whisper-cli.exe
+%LOCALAPPDATA%\Storyteller OneClick Lite\models\ggml-large-v3-turbo.bin
 ```
+
+Portable adjacent `tools/` / `models/` resources remain valid discovery inputs for deliberately self-contained bundles, but automatic downloads no longer mutate the application directory.
 
 Current download behavior and integrity checks:
 
@@ -91,9 +94,9 @@ Current download behavior and integrity checks:
 - If `nvidia-smi` confirms an NVIDIA GPU and whisper.cpp is missing, the downloader prefers an official CUDA/cuBLAS-enabled Windows x64 asset, falling back to the CPU x64 asset only if a compatible CUDA asset is unavailable.
 - `large-v3-turbo`: the canonical whisper.cpp model download; the staged file must match the pinned SHA-256 before it is moved into `models/`.
 
-After installation, StoryTeller Lite probes ffmpeg and whisper.cpp again and re-runs dependency detection before displaying the final state. If one dependency succeeds and a later dependency fails, the successful portable file is retained and the next attempt downloads only what is still missing.
+After installation, StoryTeller Lite probes ffmpeg and whisper.cpp again and re-runs dependency detection before displaying the final state. If one dependency succeeds and a later dependency fails, the successful per-user managed file is retained and the next attempt downloads only what is still missing.
 
-Automatic installation is currently Windows-focused and uses PowerShell. The portable application directory must be writable; a build placed under a protected directory such as `Program Files` may need to be moved to a user-writable folder before installing dependencies. The current downloader does not expose mid-download cancellation yet.
+Automatic installation is currently Windows-focused and uses PowerShell. `%LOCALAPPDATA%` must be available and writable for managed downloads, so an installed EXE may live under a protected directory such as `Program Files` without requiring elevation merely to install StoryTeller-owned runtime dependencies. The current downloader does not expose mid-download cancellation yet.
 
 Missing dependencies still produce explicit Analyze/setup errors if the user chooses not to install them from Settings.
 
