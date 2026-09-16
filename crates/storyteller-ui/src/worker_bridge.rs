@@ -38,6 +38,7 @@ pub(crate) struct WorkerBridge {
     runtime_install: Option<RuntimeInstallState>,
     runtime_settings_was_open: bool,
     recovery_loaded: bool,
+    recovery_persistence_blocked: bool,
     last_recovery_save: Option<Instant>,
 }
 
@@ -193,20 +194,42 @@ impl WorkerBridge {
             }
             Err(error) => {
                 eprintln!("Queue recovery could not be loaded: {error}");
+                let status = match recovery_state::quarantine_queue() {
+                    Ok(Some(preserved)) => {
+                        self.last_recovery_save = Some(Instant::now());
+                        format!(
+                            "Recovery state could not be loaded: {error} The unreadable snapshot was preserved at {}.",
+                            preserved.display()
+                        )
+                    }
+                    Ok(None) => {
+                        self.last_recovery_save = Some(Instant::now());
+                        format!("Recovery state could not be loaded: {error}")
+                    }
+                    Err(preserve_error) => {
+                        self.recovery_persistence_blocked = true;
+                        eprintln!(
+                            "Unreadable queue recovery could not be preserved; automatic recovery saving is disabled for this session: {preserve_error}"
+                        );
+                        format!(
+                            "Recovery state could not be loaded: {error} The unreadable snapshot could not be preserved, so automatic recovery saving is disabled for this session: {preserve_error}"
+                        )
+                    }
+                };
                 refresh_if_open(
                     ui_weak,
                     queue,
                     queue_rows,
                     stage_rows,
                     detail_stage_rows,
-                    Some(format!("Recovery state could not be loaded: {error}")),
+                    Some(status),
                 );
             }
         }
     }
 
     fn persist_recovery_if_due(&mut self, queue: &Rc<RefCell<JobQueue>>) {
-        if !self.recovery_loaded {
+        if !self.recovery_loaded || self.recovery_persistence_blocked {
             return;
         }
         let due = self
