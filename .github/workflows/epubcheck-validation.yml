@@ -73,7 +73,11 @@ jobs:
             printf 'expected 3 EPUBCheck fixtures, found %s\n' "${#fixtures[@]}" >&2
             exit 1
           fi
+          failed=0
           for fixture in "${fixtures[@]}"; do
             echo "== EPUBCheck: $fixture =="
-            java -jar "$EPUBCHECK_JAR" "$fixture"
+            if ! java -jar "$EPUBCHECK_JAR" "$fixture"; then
+              failed=1
+            fi
           done
+          exit "$failed"
