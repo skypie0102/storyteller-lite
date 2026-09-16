@@ -1,3 +1,4 @@
+mod app_paths;
 mod review_ui;
 mod runtime_import;
 mod worker_bridge;
