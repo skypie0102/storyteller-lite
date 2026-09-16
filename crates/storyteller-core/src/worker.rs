@@ -1,6 +1,7 @@
 use crate::{
     fingerprint_job_sources, run_pipeline, CancellationToken, Job, JobOutcome, JobWorkspace,
     PipelineBackend, PipelineRunState, ResumeContext, RuntimeCoordinator, SourceFingerprints,
+    ValidatedResumePlan,
 };
 use std::{sync::mpsc, thread};
 
@@ -100,6 +101,14 @@ pub fn spawn_pipeline_worker<B: PipelineBackend>(
 ) -> Result<PipelineWorkerHandle, String> {
     resume_context.validate()?;
     spawn_worker(job, move |job, cancellation, sender| {
+        let validated_resume = match apply_validated_resume(job, &workspace, &resume_context) {
+            Ok(plan) => plan,
+            Err(error) => return finish_preflight_failure(job, sender, error),
+        };
+        job.progress
+            .set_activity(resume_activity(&validated_resume))?;
+        let _ = sender.send(job.clone());
+
         let mut observer = |snapshot: &Job| {
             let _ = sender.send(snapshot.clone());
         };
@@ -151,6 +160,14 @@ pub fn spawn_pipeline_worker_with_preflight<B: PipelineBackend>(
                 return Ok(PipelineRunState::Failed(error));
             }
         };
+        let validated_resume = match apply_validated_resume(job, &workspace, &resume_context) {
+            Ok(plan) => plan,
+            Err(error) => return finish_preflight_failure(job, sender, error),
+        };
+        job.progress
+            .set_activity(resume_activity(&validated_resume))?;
+        let _ = sender.send(job.clone());
+
         let mut observer = |snapshot: &Job| {
             let _ = sender.send(snapshot.clone());
         };
@@ -164,6 +181,44 @@ pub fn spawn_pipeline_worker_with_preflight<B: PipelineBackend>(
             &mut observer,
         )
     })
+}
+
+fn apply_validated_resume(
+    job: &mut Job,
+    workspace: &JobWorkspace,
+    resume_context: &ResumeContext,
+) -> Result<ValidatedResumePlan, String> {
+    job.invalidate_stale_cache(resume_context)?;
+    let resume_plan = job.resume_plan(resume_context)?;
+    let validated = workspace.validate_resume_plan(&resume_plan);
+    job.apply_validated_resume_plan(&validated)?;
+    Ok(validated)
+}
+
+fn resume_activity(plan: &ValidatedResumePlan) -> String {
+    if let Some(invalid) = plan.invalid() {
+        return format!(
+            "Rebuilding from {}: {}",
+            invalid.stage.label(),
+            invalid.reason
+        );
+    }
+    match (plan.reusable().len(), plan.next_stage()) {
+        (0, _) => "Starting pipeline".into(),
+        (count, Some(stage)) => format!("Resuming at {} ({count} cached stages)", stage.label()),
+        (count, None) => format!("Verified all {count} pipeline stages from cache"),
+    }
+}
+
+fn finish_preflight_failure(
+    job: &mut Job,
+    sender: &mpsc::Sender<Job>,
+    error: String,
+) -> Result<PipelineRunState, String> {
+    let _ = job.progress.set_activity("Resume preflight failed");
+    let _ = job.finish(JobOutcome::Failed(error.clone()), 0);
+    let _ = sender.send(job.clone());
+    Ok(PipelineRunState::Failed(error))
 }
 
 fn spawn_worker<F>(job: Job, run: F) -> Result<PipelineWorkerHandle, String>
@@ -194,4 +249,122 @@ where
         updates,
         join,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{JobInputs, JobSettings, PipelineStage, StageStatus};
+    use std::{fs, path::PathBuf};
+    use uuid::Uuid;
+
+    fn job() -> Job {
+        Job::new(
+            JobInputs {
+                title: "Resume Test".into(),
+                epub_path: PathBuf::from("source.epub"),
+                audiobook_path: PathBuf::from("audio.m4b"),
+                output_path: PathBuf::from("output.epub"),
+            },
+            JobSettings::default(),
+        )
+        .unwrap()
+    }
+
+    fn context(job: &Job) -> ResumeContext {
+        ResumeContext {
+            epub_source: "epub:one".into(),
+            audiobook_source: "audio:one".into(),
+            whisper_backend: "whisper:one".into(),
+            alignment_backend: "align:one".into(),
+            audio_backend: "audio:one".into(),
+            ocr_backend: "ocr:one".into(),
+            epub_backend: "epub:one".into(),
+            effective_language: "auto".into(),
+            effective_whisper_model: "model:one".into(),
+            settings: job.settings.clone(),
+        }
+    }
+
+    fn checkpoint(job: &mut Job, stage: PipelineStage, context: &ResumeContext) {
+        job.progress.start_stage(stage, "test").unwrap();
+        job.progress.complete_stage(stage, 1).unwrap();
+        job.checkpoint_completed_stage(stage, context).unwrap();
+    }
+
+    fn temp_workspace() -> JobWorkspace {
+        JobWorkspace::new(
+            std::env::temp_dir().join(format!("storyteller-resume-{}", Uuid::new_v4())),
+        )
+    }
+
+    fn capture_artifact(workspace: &JobWorkspace, stage: PipelineStage, name: &str) {
+        let stage_dir = workspace.stage_dir(stage);
+        fs::create_dir_all(&stage_dir).unwrap();
+        fs::write(stage_dir.join(name), b"artifact").unwrap();
+        workspace
+            .capture_stage_artifacts(stage, &[PathBuf::from(name)])
+            .unwrap();
+    }
+
+    #[test]
+    fn resume_preflight_reuses_only_contiguous_valid_artifacts() {
+        let mut job = job();
+        let context = context(&job);
+        checkpoint(&mut job, PipelineStage::Prepare, &context);
+        checkpoint(&mut job, PipelineStage::Analyze, &context);
+
+        let workspace = temp_workspace();
+        capture_artifact(&workspace, PipelineStage::Prepare, "prepared.bin");
+
+        let validated = apply_validated_resume(&mut job, &workspace, &context).unwrap();
+        assert_eq!(validated.reusable(), &[PipelineStage::Prepare]);
+        assert_eq!(
+            validated.invalid().map(|invalid| invalid.stage),
+            Some(PipelineStage::Analyze)
+        );
+        assert_eq!(
+            job.progress.stages()[PipelineStage::Prepare.index()].status,
+            StageStatus::Cached
+        );
+        assert_eq!(
+            job.progress.stages()[PipelineStage::Analyze.index()].status,
+            StageStatus::Pending
+        );
+        assert_eq!(
+            job.resume_plan(&context).unwrap().reusable(),
+            &[PipelineStage::Prepare]
+        );
+
+        let _ = workspace.clear();
+    }
+
+    #[test]
+    fn resume_preflight_invalidates_changed_backend_from_first_affected_stage() {
+        let mut job = job();
+        let context = context(&job);
+        checkpoint(&mut job, PipelineStage::Prepare, &context);
+        checkpoint(&mut job, PipelineStage::Analyze, &context);
+
+        let workspace = temp_workspace();
+        capture_artifact(&workspace, PipelineStage::Prepare, "prepared.bin");
+        capture_artifact(&workspace, PipelineStage::Analyze, "transcript.json");
+
+        let mut changed = context.clone();
+        changed.whisper_backend = "whisper:two".into();
+        let validated = apply_validated_resume(&mut job, &workspace, &changed).unwrap();
+
+        assert_eq!(validated.reusable(), &[PipelineStage::Prepare]);
+        assert!(validated.invalid().is_none());
+        assert_eq!(
+            job.progress.stages()[PipelineStage::Prepare.index()].status,
+            StageStatus::Cached
+        );
+        assert_eq!(
+            job.progress.stages()[PipelineStage::Analyze.index()].status,
+            StageStatus::Pending
+        );
+
+        let _ = workspace.clear();
+    }
 }
