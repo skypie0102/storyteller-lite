@@ -150,6 +150,11 @@ jobs:
             throw "Developer-test package contains an unexpected file set: $($difference | Out-String)"
           }
 
+      - name: Smoke-test packaged relaunch recovery
+        shell: pwsh
+        run: |
+          & .github\scripts\packaged-relaunch-smoke.ps1 -Executable dist\StoryTeller-Lite.exe
+
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
