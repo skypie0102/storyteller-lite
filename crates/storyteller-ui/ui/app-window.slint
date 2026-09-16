@@ -75,6 +75,7 @@ export component AppWindow inherits Window {
     min-height: 620px;
 
     private property <bool> compact-layout: root.width < 900px;
+    private property <bool> short-layout: root.height < 700px;
 
     in-out property <string> status-text: "Ready";
     in-out property <string> epub-source-name: "";
@@ -165,6 +166,9 @@ export component AppWindow inherits Window {
             Text {
                 text: root.status-text;
                 vertical-alignment: center;
+                horizontal-alignment: right;
+                max-width: root.compact-layout ? 240px : 420px;
+                overflow: elide;
                 opacity: 0.72;
             }
 
@@ -392,10 +396,12 @@ export component AppWindow inherits Window {
 
         if root.has-active-job : VerticalBox {
             spacing: 12px;
+            vertical-stretch: root.needs-review ? 1 : 0;
             Text { text: root.needs-review ? "REVIEW AUDIO" : "ACTIVE JOB"; font-size: 14px; font-weight: 700; opacity: 0.72; }
 
             Rectangle {
-                min-height: root.needs-review ? 520px : 250px;
+                vertical-stretch: root.needs-review ? 1 : 0;
+                min-height: root.needs-review ? (root.short-layout ? 410px : 520px) : 250px;
                 border-width: 1px;
                 border-color: Palette.border;
                 border-radius: 10px;
@@ -465,7 +471,8 @@ export component AppWindow inherits Window {
                     if !root.needs-review && root.active-timing-text != "" : Text { text: root.active-timing-text; opacity: 0.78; wrap: word-wrap; }
 
                     if root.needs-review : Rectangle {
-                        min-height: 335px;
+                        vertical-stretch: 1;
+                        min-height: root.short-layout ? 180px : 335px;
                         border-width: 1px;
                         border-color: Palette.border;
                         border-radius: 7px;
@@ -491,78 +498,87 @@ export component AppWindow inherits Window {
                                 Button { text: "Next"; enabled: root.review-can-next; clicked => { root.review-next(); } }
                             }
 
-                            Text { text: root.review-summary-text; wrap: word-wrap; opacity: 0.82; }
-                            HorizontalBox {
-                                spacing: 7px;
-                                Text { text: root.review-item-time-text; font-weight: 600; vertical-alignment: center; }
-                                Text { text: root.review-seek-text; opacity: 0.72; vertical-alignment: center; }
-                                Rectangle { horizontal-stretch: 1; }
-                                Button { text: "-5s"; clicked => { root.review-seek-relative(-1); } }
-                                Button { text: "Play"; clicked => { root.review-play(); } }
-                                Button { text: "+5s"; clicked => { root.review-seek-relative(1); } }
-                                Button { text: "Stop"; clicked => { root.review-stop(); } }
-                            }
-                            if root.review-preview-status-text != "" : Text { text: root.review-preview-status-text; font-size: 11px; opacity: 0.72; overflow: elide; }
-                            Text { text: root.review-item-transcript-text; wrap: word-wrap; max-height: 54px; }
-                            Text { text: root.review-item-decision-text; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
-                            Text {
-                                text: "Choose a bounded EPUB text block or nearby image. Assigning or excluding advances to the next pending segment.";
-                                font-size: 10px;
-                                opacity: 0.68;
-                                wrap: word-wrap;
-                            }
+                            ScrollView {
+                                vertical-stretch: 1;
+                                horizontal-scrollbar-policy: always-off;
 
-                            if !root.compact-layout : HorizontalBox {
-                                spacing: 8px;
-                                Text { text: "EPUB DESTINATION CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
-                                Rectangle { horizontal-stretch: 1; }
-                                if root.review-can-preserve-edge : Button {
-                                    text: root.review-preserve-edge-text;
-                                    primary: true;
-                                    clicked => { root.review-preserve-edge(); }
-                                }
-                                Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
-                            }
-
-                            if root.compact-layout : HorizontalBox {
-                                spacing: 7px;
-                                Text { text: "EPUB DESTINATIONS"; font-size: 10px; font-weight: 700; vertical-alignment: center; }
-                                Rectangle { horizontal-stretch: 1; }
-                                if root.review-can-preserve-edge : Button {
-                                    text: root.review-preserve-edge-text;
-                                    primary: true;
-                                    clicked => { root.review-preserve-edge(); }
-                                }
-                                Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
-                            }
-
-                            for candidate in root.review-candidates : Rectangle {
-                                min-height: 42px;
-                                max-height: 42px;
-                                border-width: 1px;
-                                border-color: Palette.border;
-                                border-radius: 5px;
-                                HorizontalBox {
-                                    padding-left: 7px;
-                                    padding-right: 7px;
+                                VerticalBox {
                                     spacing: 7px;
-                                    VerticalBox {
-                                        horizontal-stretch: 1;
-                                        spacing: 1px;
-                                        Text { text: candidate.text; overflow: elide; font-size: 11px; }
+
+                                    Text { text: root.review-summary-text; wrap: word-wrap; opacity: 0.82; }
+                                    HorizontalBox {
+                                        spacing: 7px;
+                                        Text { text: root.review-item-time-text; font-weight: 600; vertical-alignment: center; }
+                                        Text { text: root.review-seek-text; opacity: 0.72; vertical-alignment: center; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        Button { text: "-5s"; clicked => { root.review-seek-relative(-1); } }
+                                        Button { text: "Play"; clicked => { root.review-play(); } }
+                                        Button { text: "+5s"; clicked => { root.review-seek-relative(1); } }
+                                        Button { text: "Stop"; clicked => { root.review-stop(); } }
+                                    }
+                                    if root.review-preview-status-text != "" : Text { text: root.review-preview-status-text; font-size: 11px; opacity: 0.72; overflow: elide; }
+                                    Text { text: root.review-item-transcript-text; wrap: word-wrap; max-height: 54px; }
+                                    Text { text: root.review-item-decision-text; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
+                                    Text {
+                                        text: "Choose a bounded EPUB text block or nearby image. Assigning or excluding advances to the next pending segment.";
+                                        font-size: 10px;
+                                        opacity: 0.68;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if !root.compact-layout : HorizontalBox {
+                                        spacing: 8px;
+                                        Text { text: "EPUB DESTINATION CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if root.review-can-preserve-edge : Button {
+                                            text: root.review-preserve-edge-text;
+                                            primary: true;
+                                            clicked => { root.review-preserve-edge(); }
+                                        }
+                                        Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
+                                    }
+
+                                    if root.compact-layout : HorizontalBox {
+                                        spacing: 7px;
+                                        Text { text: "EPUB DESTINATIONS"; font-size: 10px; font-weight: 700; vertical-alignment: center; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if root.review-can-preserve-edge : Button {
+                                            text: root.review-preserve-edge-text;
+                                            primary: true;
+                                            clicked => { root.review-preserve-edge(); }
+                                        }
+                                        Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
+                                    }
+
+                                    for candidate in root.review-candidates : Rectangle {
+                                        min-height: 42px;
+                                        max-height: 42px;
+                                        border-width: 1px;
+                                        border-color: Palette.border;
+                                        border-radius: 5px;
                                         HorizontalBox {
-                                            spacing: 6px;
-                                            Text { text: candidate.href; overflow: elide; font-size: 9px; opacity: 0.58; horizontal-stretch: 1; }
-                                            Text { text: candidate.line-index < 0 ? "Graphic Readout" : candidate.score; font-size: 9px; opacity: 0.58; }
+                                            padding-left: 7px;
+                                            padding-right: 7px;
+                                            spacing: 7px;
+                                            VerticalBox {
+                                                horizontal-stretch: 1;
+                                                spacing: 1px;
+                                                Text { text: candidate.text; overflow: elide; font-size: 11px; }
+                                                HorizontalBox {
+                                                    spacing: 6px;
+                                                    Text { text: candidate.href; overflow: elide; font-size: 9px; opacity: 0.58; horizontal-stretch: 1; }
+                                                    Text { text: candidate.line-index < 0 ? "Graphic Readout" : candidate.score; font-size: 9px; opacity: 0.58; }
+                                                }
+                                            }
+                                            Button {
+                                                text: candidate.line-index < 0 ? "Assign image & Next" : "Assign text & Next";
+                                                clicked => { root.review-assign(candidate.href, candidate.line-index); }
+                                            }
                                         }
                                     }
-                                    Button {
-                                        text: candidate.line-index < 0 ? "Assign image & Next" : "Assign text & Next";
-                                        clicked => { root.review-assign(candidate.href, candidate.line-index); }
-                                    }
+                                    Text { text: root.review-allocator-status-text; font-size: 11px; opacity: 0.78; wrap: word-wrap; }
                                 }
                             }
-                            Text { text: root.review-allocator-status-text; font-size: 11px; opacity: 0.78; wrap: word-wrap; }
                         }
                     }
 
@@ -626,9 +642,9 @@ export component AppWindow inherits Window {
             }
         }
 
-        Rectangle { min-height: 1px; max-height: 1px; background: Palette.border; opacity: 0.5; }
+        if !root.needs-review : Rectangle { min-height: 1px; max-height: 1px; background: Palette.border; opacity: 0.5; }
 
-        HorizontalBox {
+        if !root.needs-review : HorizontalBox {
             spacing: 10px;
             Text { text: "QUEUE & RECENT"; font-size: 14px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
@@ -636,7 +652,7 @@ export component AppWindow inherits Window {
             if root.queue-paused : Button { text: "Resume queue"; clicked => { root.resume-queue(); } }
         }
 
-        Rectangle {
+        if !root.needs-review : Rectangle {
             vertical-stretch: 1;
             min-height: root.compact-layout ? 125px : 150px;
             border-width: 1px;
@@ -757,13 +773,13 @@ export component AppWindow inherits Window {
                 }
 
                 Rectangle {
-                    min-height: 84px;
-                    max-height: 84px;
+                    min-height: root.compact-layout ? 112px : 84px;
+                    max-height: root.compact-layout ? 112px : 84px;
                     border-width: 1px;
                     border-color: Palette.border;
                     border-radius: 10px;
 
-                    HorizontalBox {
+                    if !root.compact-layout : HorizontalBox {
                         padding-left: 18px;
                         padding-right: 18px;
                         spacing: 12px;
@@ -789,9 +805,32 @@ export component AppWindow inherits Window {
                             horizontal-stretch: 1;
                         }
                     }
+
+                    if root.compact-layout : VerticalBox {
+                        padding: 12px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Whisper workers"; font-size: 16px; font-weight: 700; vertical-alignment: center; }
+                            Rectangle { horizontal-stretch: 1; }
+                            ComboBox {
+                                model: ["1", "2", "3", "4"];
+                                current-index: root.whisper-workers-text == "2" ? 1
+                                    : root.whisper-workers-text == "3" ? 2
+                                    : root.whisper-workers-text == "4" ? 3
+                                    : 0;
+                                selected(value) => { root.whisper-workers-text = value; }
+                            }
+                        }
+                        Text {
+                            text: "Maximum simultaneous transcription chunks. CPU thread allocation stays automatic.";
+                            opacity: 0.72;
+                            wrap: word-wrap;
+                        }
+                    }
                 }
 
-                HorizontalBox {
+                if !root.compact-layout : HorizontalBox {
                     spacing: 10px;
                     Text {
                         text: "RUNTIME DEPENDENCIES";
@@ -806,6 +845,12 @@ export component AppWindow inherits Window {
                         font-weight: 600;
                         vertical-alignment: center;
                     }
+                }
+
+                if root.compact-layout : VerticalBox {
+                    spacing: 4px;
+                    Text { text: "RUNTIME DEPENDENCIES"; font-size: 14px; font-weight: 700; opacity: 0.72; }
+                    Text { text: root.runtime-summary-text; font-weight: 600; wrap: word-wrap; opacity: 0.82; }
                 }
 
                 Rectangle {
@@ -862,7 +907,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        HorizontalBox {
+        if !root.compact-layout : HorizontalBox {
             spacing: 10px;
             Button {
                 text: "Re-scan";
@@ -885,6 +930,39 @@ export component AppWindow inherits Window {
                 text: "Done";
                 enabled: !root.runtime-busy;
                 clicked => { root.settings-open = false; }
+            }
+        }
+
+        if root.compact-layout : VerticalBox {
+            spacing: 6px;
+            HorizontalBox {
+                spacing: 8px;
+                Button {
+                    text: "Re-scan";
+                    enabled: !root.runtime-busy;
+                    clicked => { root.runtime-refresh-requested = true; }
+                }
+                Button {
+                    text: "Import whisper archive…";
+                    enabled: !root.runtime-busy;
+                    clicked => { root.import-whisper-archive(); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            HorizontalBox {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: root.runtime-busy ? "Working…" : root.runtime-ready ? "Dependencies ready" : "Download missing";
+                    primary: !root.runtime-ready;
+                    enabled: !root.runtime-busy && !root.runtime-ready;
+                    clicked => { root.runtime-install-requested = true; }
+                }
+                Button {
+                    text: "Done";
+                    enabled: !root.runtime-busy;
+                    clicked => { root.settings-open = false; }
+                }
             }
         }
     }
