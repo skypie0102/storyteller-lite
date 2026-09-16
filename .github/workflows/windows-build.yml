@@ -51,9 +51,13 @@ jobs:
           if ($null -eq $app) {
             throw "storyteller-ui package metadata was not found."
           }
-          $rustcHost = ((rustc -vV | Select-String '^host:').Line -replace '^host:\s*', '').Trim()
-          if ([string]::IsNullOrWhiteSpace($rustcHost)) {
+          $hostLine = rustc -vV | Select-String '^host:' | Select-Object -First 1
+          if ($null -eq $hostLine) {
             throw "Could not determine the Rust host target."
+          }
+          $rustcHost = ($hostLine.Line -replace '^host:\s*', '').Trim()
+          if ([string]::IsNullOrWhiteSpace($rustcHost)) {
+            throw "Rust reported an empty host target."
           }
 
           $exeHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -102,7 +106,14 @@ jobs:
           if ($null -eq $app) {
             throw "storyteller-ui package metadata was not found during verification."
           }
-          $rustcHost = ((rustc -vV | Select-String '^host:').Line -replace '^host:\s*', '').Trim()
+          $hostLine = rustc -vV | Select-String '^host:' | Select-Object -First 1
+          if ($null -eq $hostLine) {
+            throw "Could not determine the Rust host target during verification."
+          }
+          $rustcHost = ($hostLine.Line -replace '^host:\s*', '').Trim()
+          if ([string]::IsNullOrWhiteSpace($rustcHost)) {
+            throw "Rust reported an empty host target during verification."
+          }
 
           if ($manifest.product -ne "StoryTeller Lite") {
             throw "BUILD.json product is unexpected."
