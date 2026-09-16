@@ -80,7 +80,7 @@ Portable adjacent `tools/` / `models/` resources remain valid discovery inputs f
 
 Current download behavior and integrity checks:
 
-- ffmpeg: Gyan Windows Essentials ZIP plus the provider's published `.sha256`; the archive hash must match before extraction.
+- ffmpeg: pinned Gyan/Codex FFmpeg `9.0.1` Windows Essentials ZIP (`ffmpeg-9.0.1-essentials_build.zip`), built from FFmpeg source commit `bf1b838f2a`; the downloaded archive must match SHA-256 `fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9` before extraction. Lite does not follow the moving `ffmpeg-release-essentials.zip` URL during automatic install.
 - whisper.cpp: pinned `ggml-org/whisper.cpp` binary build `b5130`, built from commit `927cfce34f31707e17f2bff35c349632fb9e2c3a` (the same target commit as stable `v1.9.4`). CPU uses `whisper-bin-x64.zip` with SHA-256 `f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c`; NVIDIA systems use `whisper-cublas-12.4.0-bin-x64.zip` with SHA-256 `af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7`. Lite does not query recent releases during automatic install.
 - `nvidia-smi` selects the pinned CUDA 12.4 archive; otherwise Lite selects the pinned CPU archive. A user who needs a different compatible whisper.cpp build can provide it through explicit runtime discovery/override or **Import whisper archive…**.
 - `large-v3-turbo`: the canonical whisper.cpp model download; the staged file must match the pinned SHA-256 before it is moved into `models/`.
