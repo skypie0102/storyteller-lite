@@ -8,11 +8,11 @@ Read this file before making substantial changes.
 - Active Rust + Slint implementation branch: `recovery/rust-slint`.
 - Default branch `main` is **not** current implementation truth.
 - P1 bounded Whisper chunk workers are implemented and Windows-validated.
-- P2 now includes durable per-segment review decisions, reduced manual allocation, Smart/ReviewAll edge behavior, supplemental Introduction/Credits rendering, bounded EPUB image discovery, lazy image text evidence, deterministic image scoring, conservative Smart Graphic Readout assignment, manual bounded Graphic Readout allocation, and native image-target Media Overlay rendering.
-- The automatic Graphic Readout implementation was integrated in recovery as commit `9673dc7a6f41493e13b24724b3123659fcbaa271` after Windows validation run `34826426511`.
-- Manual Graphic Readout allocation is integrated in recovery as commit `a27df630a8626d1c0ba846deca8f44acde125fe8` after final Windows validation run `34918789594` passed rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
-- P3 UI alignment has a validated baseline: mixed review destinations/presentation (`1a645685549a0796b960d18723bb0cd42799c79d`, run `34919543203`), real elapsed time in the seven-stage strip (`c79c834328edabc4fef72d0d0cd5fb8343499411`, run `34926648718`), responsive creation controls below 900px (`c8a6461eaeb4d2535af26172876b729cf0d2abf5`, run `34927154367`), and responsive active/review/queue controls (`17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8`, run `34927928639`).
-- Temporary validation PRs #3 through #8 were closed without merge and their temporary feature workflows were removed after validation.
+- P2 includes durable per-segment review decisions, reduced manual allocation, Smart/ReviewAll edge behavior, supplemental Introduction/Credits rendering, bounded EPUB image discovery, lazy image text evidence, deterministic image scoring, conservative Smart Graphic Readout assignment, manual bounded Graphic Readout allocation, and native image-target Media Overlay rendering.
+- The automatic Graphic Readout implementation was integrated as `9673dc7a6f41493e13b24724b3123659fcbaa271` after Windows validation run `34826426511`.
+- Manual Graphic Readout allocation was integrated as `a27df630a8626d1c0ba846deca8f44acde125fe8` after final Windows validation run `34918789594` passed rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
+- P3 main Slint alignment is functionally complete for the supported 820×620 minimum window. The validated sequence now includes mixed review presentation (`1a645685549a0796b960d18723bb0cd42799c79d`, run `34919543203`), real stage elapsed time (`c79c834328edabc4fef72d0d0cd5fb8343499411`, run `34926648718`), responsive creation (`c8a6461eaeb4d2535af26172876b729cf0d2abf5`, run `34927154367`), responsive active/review/queue controls (`17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8`, run `34927928639`), dedicated Review Audio presentation (`1602021a9c52eadb66fa7bc73937e56dacfd4c57`, run `34952813936`), locally scrollable queue/recent (`26d11580e328da36d7a6169be22ec91e2ef3a157`, run `34953863269`), locally scrollable Settings (`e98adae2dc0fff77923fd62d02768c9b01609e8f`, run `35058804437`), and final compact review/settings polish (`fe5b140b2319229b4083c6aa4d1c7d386a604bbd`, run `35059503255`).
+- Temporary validation PRs #3 through #12 were closed without merge and their temporary feature workflows were removed after validation.
 - Recovery CI remains manual/opt-in to avoid unnecessary hosted-runner use. GitHub runners may be used when they are the right validation tool; before rerunning after a failure, inspect the full logs and likely downstream failure surface, batch fixes, and make the next run a meaningful near-final checkpoint rather than using Actions as an edit/compile loop.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
@@ -108,33 +108,40 @@ The builder semantic fingerprint was bumped when Graphic Readout output behavior
 
 `AudioReviewClassification::ExtraAudio` exists, but Lite currently has **no distinct Extra Audio destination/rendering rule**. Recovered legacy evidence documents an optional standalone audio-player page as one historical fallback, but explicitly treats that as a product/interoperability choice rather than a required Lite behavior. Do not invent a separate Extra Audio renderer merely for historical taxonomy compatibility. Add one only if a concrete product requirement and validation strategy justify it.
 
-## P3 UI state
+## P3 UI state — functionally complete
 
-The main Slint UI now has a validated P3 baseline rather than only the earlier functional shell:
+The main Slint UI now follows the intended Lite hierarchy for the supported 820×620 minimum window without recreating the historical editor:
 
-- review copy represents mixed bounded text/image destinations and the existing assign/exclude-and-advance behavior;
+- creation source pickers/options and active queue-another controls reflow below 900px;
+- review is visually promoted to a dedicated `REVIEW AUDIO` mode, suppressing unrelated queue-another and processing noise while decisions are required;
+- review content is locally scrollable at short window heights, and queue/recent is temporarily hidden during review so unresolved-audio decisions remain usable at the 620px minimum height;
+- mixed bounded text/image destinations and assign/exclude-and-advance behavior are explicit;
 - the seven-stage strip displays real per-stage elapsed time when available;
-- creation source pickers/options reflow below 900px while preserving the wide-window hierarchy;
-- active `Queue Another Book`, review headings/actions, bottom active-job actions, and queue/recent rows have a compact path below 900px;
+- queue/recent uses `ListView`, so unbounded history/waiting rows scroll locally and only visible delegates are instantiated;
+- Settings keeps its header/back and bottom actions fixed while the runtime body scrolls, and its worker/runtime/action rows reflow below 900px;
+- long top-level status text is bounded/elided rather than competing with the application title;
 - only real backend-provided timing/backend/model/match/activity data is shown; no synthetic metrics were added.
 
-The app still uses an 820px minimum width. The next P3 work should make NeedsReview feel like a dedicated unresolved-audio surface as required by `docs/ui-guides/README.md`, then add localized overflow/scroll behavior where real content can exceed the supported 620px minimum height. Settings responsiveness/secondary metadata hiding can be polished after that. Do not re-expand the allocator into the historical general-purpose editor.
-
-P3 UI validation runs so far:
+P3 UI validation runs:
 
 - review presentation: `34919543203`;
 - stage elapsed timing: `34926648718`;
 - responsive creation layout: `34927154367`;
-- responsive active/review/queue layout: `34927928639`.
+- responsive active/review/queue layout: `34927928639`;
+- dedicated review presentation: `34952813936`;
+- queue/recent local scrolling: `34953863269`;
+- Settings local scrolling: `35058804437`;
+- compact review/settings/header polish: `35059503255`.
 
-These UI-only slices were validated with the relevant native gate, `cargo build -p storyteller-ui`, rather than repeatedly spending full workspace test runs when no Rust/backend behavior changed.
+These UI-only slices were validated with the relevant native gate, `cargo build -p storyteller-ui`, rather than repeatedly spending full workspace test runs when no Rust/backend behavior changed. Keep the 820px minimum width unless real usage justifies and validates a narrower contract; lowering it is not required to complete P3.
 
 ## Immediate implementation order
 
-1. Treat P2 as functionally coherent for text, Introduction/Credits, and automatic/manual Graphic Readout paths. Keep weak/ambiguous evidence Pending until the user chooses a bounded destination or exclusion.
+1. Treat P2 and P3 as functionally complete unless real books or real window use expose a narrowly scoped regression.
 2. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges.
-3. Continue P3 with a dedicated NeedsReview presentation, then localized overflow/scroll behavior and remaining settings/narrow-window polish. Preserve one real overall progress bar and the queue-first hierarchy.
-4. Later: interoperability/EPUBCheck testing, packaging/release/update polish, explicit relaunch/resume UX, and real 1–4 worker CPU/CUDA benchmarks.
+3. Skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
+4. Move next to P5 interoperability, beginning with EPUBCheck/reading-system validation around the already-independent final EPUB audit. Then continue packaging/release/update polish and explicit relaunch/checkpoint-resume UX.
+5. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
 
 ## Recovered invariants worth preserving
 
