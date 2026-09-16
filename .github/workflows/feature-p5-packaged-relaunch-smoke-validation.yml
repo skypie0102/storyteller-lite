@@ -30,7 +30,7 @@ jobs:
 
       - name: Check patch whitespace
         shell: pwsh
-        run: git diff --check validation/p5-packaged-relaunch-smoke-base...HEAD
+        run: git diff --check origin/validation/p5-packaged-relaunch-smoke-base...HEAD
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
