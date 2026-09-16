@@ -23,12 +23,8 @@ jobs:
         with:
           ref: feature/epubcheck-interoperability
 
-      - name: Apply reviewed conformance patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          git apply --check .github/epubcheck-conformance.patch
-          git apply .github/epubcheck-conformance.patch
+      - name: Apply reviewed conformance transform
+        run: python .github/apply_epubcheck_fix.py
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
