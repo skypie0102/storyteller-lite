@@ -1,4 +1,5 @@
 mod app_paths;
+mod recovery_smoke;
 mod review_ui;
 mod runtime_import;
 mod worker_bridge;
@@ -26,6 +27,14 @@ struct PendingSources {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    if std::env::args_os().any(|argument| argument == "--recovery-smoke") {
+        if let Err(error) = recovery_smoke::run() {
+            eprintln!("Packaged recovery smoke failed: {error}");
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
     let ui = AppWindow::new()?;
     let pending = Rc::new(RefCell::new(PendingSources::default()));
     let queue = Rc::new(RefCell::new(JobQueue::default()));

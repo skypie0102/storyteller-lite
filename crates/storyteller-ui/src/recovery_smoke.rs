@@ -6,10 +6,8 @@ use storyteller_core::{
 };
 
 pub(crate) fn run() -> Result<(), String> {
-    let smoke_root = recovery_app_root().join(format!(
-        "package-recovery-smoke-{}",
-        std::process::id()
-    ));
+    let smoke_root =
+        recovery_app_root().join(format!("package-recovery-smoke-{}", std::process::id()));
     if smoke_root.exists() {
         fs::remove_dir_all(&smoke_root).map_err(|error| {
             format!(
@@ -76,7 +74,9 @@ fn run_at(root: &std::path::Path) -> Result<(), String> {
         return Err("Interrupted Running job did not restore as Waiting.".into());
     }
     if running.resume_plan(&context)?.reusable() != [PipelineStage::Prepare] {
-        return Err("Interrupted Running job did not preserve its validated Prepare checkpoint.".into());
+        return Err(
+            "Interrupted Running job did not preserve its validated Prepare checkpoint.".into(),
+        );
     }
 
     let review = recovered.queue.job(review_id)?;
