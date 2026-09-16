@@ -45,6 +45,24 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target\release\storyteller-ui.exe dist\StoryTeller-Lite.exe
+
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
+          if ($null -eq $app) {
+            throw "storyteller-ui package metadata was not found."
+          }
+
+          $exeHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{
+            product = "StoryTeller Lite"
+            package = "storyteller-ui"
+            version = $app.version
+            commit = $env:GITHUB_SHA
+            target = "x86_64-pc-windows-msvc"
+            executable = "StoryTeller-Lite.exe"
+            sha256 = $exeHash
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 dist\BUILD.json
+
           @'
           StoryTeller Lite — Windows developer-test build
 
@@ -69,13 +87,39 @@ jobs:
 
           This is a developer-test build, not a public release.
           '@ | Set-Content -Encoding UTF8 dist\README.txt
-          "commit=${env:GITHUB_SHA}" | Set-Content -Encoding ASCII dist\BUILD.txt
-          (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash + "  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
+          "$exeHash  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
+
+      - name: Verify developer-test package
+        shell: pwsh
+        run: |
+          $manifest = Get-Content dist\BUILD.json -Raw | ConvertFrom-Json
+          if ($manifest.commit -ne $env:GITHUB_SHA) {
+            throw "BUILD.json commit does not match the checked-out commit."
+          }
+          if ($manifest.executable -ne "StoryTeller-Lite.exe") {
+            throw "BUILD.json executable name is unexpected."
+          }
+
+          $actualHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.sha256 -ne $actualHash) {
+            throw "BUILD.json SHA-256 does not match StoryTeller-Lite.exe."
+          }
+          $recordedHash = ((Get-Content dist\SHA256SUMS.txt -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if ($recordedHash -ne $actualHash) {
+            throw "SHA256SUMS.txt does not match StoryTeller-Lite.exe."
+          }
+
+          $expectedFiles = @("BUILD.json", "README.txt", "SHA256SUMS.txt", "StoryTeller-Lite.exe") | Sort-Object
+          $actualFiles = Get-ChildItem dist -File | ForEach-Object Name | Sort-Object
+          $difference = Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $actualFiles
+          if ($difference) {
+            throw "Developer-test package contains an unexpected file set: $($difference | Out-String)"
+          }
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: StoryTeller-Lite-Windows-x64-Whisper-Archive-Import
+          name: StoryTeller-Lite-Windows-x64-Developer-Test
           path: dist/
           if-no-files-found: error
           retention-days: 3
