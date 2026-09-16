@@ -10,6 +10,8 @@ $smokeRoot = Join-Path $env:RUNNER_TEMP ("storyteller-packaged-relaunch-" + [gui
 $localAppData = Join-Path $smokeRoot 'localappdata'
 $appData = Join-Path $localAppData 'Storyteller OneClick Lite'
 $recoveryPath = Join-Path $appData 'queue-recovery.json'
+$stdoutPath = Join-Path $smokeRoot 'storyteller.stdout.log'
+$stderrPath = Join-Path $smokeRoot 'storyteller.stderr.log'
 $jobId = '11111111-1111-4111-8111-111111111111'
 
 New-Item -ItemType Directory -Force $appData | Out-Null
@@ -37,15 +39,27 @@ $seed = [ordered]@{
 $seed | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $recoveryPath
 
 $previousLocalAppData = $env:LOCALAPPDATA
+$previousSlintBackend = $env:SLINT_BACKEND
 $process = $null
 try {
     $env:LOCALAPPDATA = $localAppData
-    $process = Start-Process -FilePath $resolvedExecutable -WorkingDirectory (Split-Path $resolvedExecutable) -PassThru
+    # Hosted Windows runners do not provide a reliable GPU/OpenGL surface. Slint's
+    # production Winit backend supports a software renderer, which keeps the smoke
+    # focused on packaged startup/recovery rather than runner graphics capabilities.
+    $env:SLINT_BACKEND = 'winit-software'
+    $process = Start-Process `
+        -FilePath $resolvedExecutable `
+        -WorkingDirectory (Split-Path $resolvedExecutable) `
+        -RedirectStandardOutput $stdoutPath `
+        -RedirectStandardError $stderrPath `
+        -PassThru
 
     Start-Sleep -Seconds 6
     $process.Refresh()
     if ($process.HasExited) {
-        throw "Packaged StoryTeller Lite exited during the relaunch smoke test with code $($process.ExitCode)."
+        $stdout = if (Test-Path -LiteralPath $stdoutPath) { (Get-Content -LiteralPath $stdoutPath -Raw).Trim() } else { '' }
+        $stderr = if (Test-Path -LiteralPath $stderrPath) { (Get-Content -LiteralPath $stderrPath -Raw).Trim() } else { '' }
+        throw "Packaged StoryTeller Lite exited during the relaunch smoke test with code $($process.ExitCode). stdout=[$stdout] stderr=[$stderr]"
     }
     if (-not (Test-Path -LiteralPath $recoveryPath -PathType Leaf)) {
         throw 'The packaged app removed the seeded recovery file instead of preserving paused work.'
@@ -87,6 +101,12 @@ finally {
     }
     else {
         $env:LOCALAPPDATA = $previousLocalAppData
+    }
+    if ($null -eq $previousSlintBackend) {
+        Remove-Item Env:SLINT_BACKEND -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:SLINT_BACKEND = $previousSlintBackend
     }
     Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
