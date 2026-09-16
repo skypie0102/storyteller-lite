@@ -1,4 +1,4 @@
-import { Button, ComboBox, HorizontalBox, ListView, Palette, ProgressIndicator, VerticalBox } from "std-widgets.slint";
+import { Button, ComboBox, HorizontalBox, ListView, Palette, ProgressIndicator, ScrollView, VerticalBox } from "std-widgets.slint";
 
 export struct QueueRow {
     id: string,
@@ -742,118 +742,125 @@ export component AppWindow inherits Window {
             opacity: 0.5;
         }
 
-        Text {
-            text: "PROCESSING";
-            font-size: 14px;
-            font-weight: 700;
-            opacity: 0.72;
-        }
-
-        Rectangle {
-            min-height: 84px;
-            max-height: 84px;
-            border-width: 1px;
-            border-color: Palette.border;
-            border-radius: 10px;
-
-            HorizontalBox {
-                padding-left: 18px;
-                padding-right: 18px;
-                spacing: 12px;
-                Text {
-                    text: "Whisper workers";
-                    font-size: 16px;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
-                ComboBox {
-                    model: ["1", "2", "3", "4"];
-                    current-index: root.whisper-workers-text == "2" ? 1
-                        : root.whisper-workers-text == "3" ? 2
-                        : root.whisper-workers-text == "4" ? 3
-                        : 0;
-                    selected(value) => { root.whisper-workers-text = value; }
-                }
-                Text {
-                    text: "Maximum simultaneous transcription chunks. CPU thread allocation stays automatic.";
-                    vertical-alignment: center;
-                    opacity: 0.72;
-                    wrap: word-wrap;
-                    horizontal-stretch: 1;
-                }
-            }
-        }
-
-        HorizontalBox {
-            spacing: 10px;
-            Text {
-                text: "RUNTIME DEPENDENCIES";
-                font-size: 14px;
-                font-weight: 700;
-                opacity: 0.72;
-                vertical-alignment: center;
-            }
-            Rectangle { horizontal-stretch: 1; }
-            Text {
-                text: root.runtime-summary-text;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
-        }
-
-        Rectangle {
-            min-height: 305px;
-            border-width: 1px;
-            border-color: Palette.border;
-            border-radius: 10px;
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
 
             VerticalBox {
-                padding: 18px;
-                spacing: 14px;
+                spacing: 16px;
 
                 Text {
-                    text: "StoryTeller Lite scans existing runtime locations automatically. If you already have a whisper.cpp archive, you can import that file directly instead of relying on discovery or downloading another build.";
-                    wrap: word-wrap;
-                    opacity: 0.78;
-                }
-
-                Text { text: "ffmpeg"; font-size: 16px; font-weight: 700; }
-                Text { text: root.runtime-ffmpeg-text; wrap: word-wrap; opacity: 0.76; }
-
-                Text { text: "whisper.cpp CLI"; font-size: 16px; font-weight: 700; }
-                Text { text: root.runtime-whisper-text; wrap: word-wrap; opacity: 0.76; }
-
-                Text { text: "Whisper model — large-v3-turbo"; font-size: 16px; font-weight: 700; }
-                Text { text: root.runtime-model-text; wrap: word-wrap; opacity: 0.76; }
-
-                Rectangle {
-                    min-height: 1px;
-                    max-height: 1px;
-                    background: Palette.border;
-                    opacity: 0.5;
-                }
-
-                Text {
-                    text: "Import whisper archive accepts .zip, .tgz, and .tar.gz files such as whisper-cpp-windows-x64-cuda-13.1.0.tar.gz. The selected local file is extracted into Lite's persistent runtime folder and is never uploaded. Automatic downloads remain opt-in and verified separately.";
-                    wrap: word-wrap;
+                    text: "PROCESSING";
+                    font-size: 14px;
+                    font-weight: 700;
                     opacity: 0.72;
                 }
 
-                if root.runtime-install-status-text != "" : Text {
-                    text: root.runtime-install-status-text;
-                    font-weight: root.runtime-busy ? 700 : 500;
+                Rectangle {
+                    min-height: 84px;
+                    max-height: 84px;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 10px;
+
+                    HorizontalBox {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 12px;
+                        Text {
+                            text: "Whisper workers";
+                            font-size: 16px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        ComboBox {
+                            model: ["1", "2", "3", "4"];
+                            current-index: root.whisper-workers-text == "2" ? 1
+                                : root.whisper-workers-text == "3" ? 2
+                                : root.whisper-workers-text == "4" ? 3
+                                : 0;
+                            selected(value) => { root.whisper-workers-text = value; }
+                        }
+                        Text {
+                            text: "Maximum simultaneous transcription chunks. CPU thread allocation stays automatic.";
+                            vertical-alignment: center;
+                            opacity: 0.72;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    Text {
+                        text: "RUNTIME DEPENDENCIES";
+                        font-size: 14px;
+                        font-weight: 700;
+                        opacity: 0.72;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.runtime-summary-text;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    min-height: 305px;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 10px;
+
+                    VerticalBox {
+                        padding: 18px;
+                        spacing: 14px;
+
+                        Text {
+                            text: "StoryTeller Lite scans existing runtime locations automatically. If you already have a whisper.cpp archive, you can import that file directly instead of relying on discovery or downloading another build.";
+                            wrap: word-wrap;
+                            opacity: 0.78;
+                        }
+
+                        Text { text: "ffmpeg"; font-size: 16px; font-weight: 700; }
+                        Text { text: root.runtime-ffmpeg-text; wrap: word-wrap; opacity: 0.76; }
+
+                        Text { text: "whisper.cpp CLI"; font-size: 16px; font-weight: 700; }
+                        Text { text: root.runtime-whisper-text; wrap: word-wrap; opacity: 0.76; }
+
+                        Text { text: "Whisper model — large-v3-turbo"; font-size: 16px; font-weight: 700; }
+                        Text { text: root.runtime-model-text; wrap: word-wrap; opacity: 0.76; }
+
+                        Rectangle {
+                            min-height: 1px;
+                            max-height: 1px;
+                            background: Palette.border;
+                            opacity: 0.5;
+                        }
+
+                        Text {
+                            text: "Import whisper archive accepts .zip, .tgz, and .tar.gz files such as whisper-cpp-windows-x64-cuda-13.1.0.tar.gz. The selected local file is extracted into Lite's persistent runtime folder and is never uploaded. Automatic downloads remain opt-in and verified separately.";
+                            wrap: word-wrap;
+                            opacity: 0.72;
+                        }
+
+                        if root.runtime-install-status-text != "" : Text {
+                            text: root.runtime-install-status-text;
+                            font-weight: root.runtime-busy ? 700 : 500;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                Text {
+                    text: "Imported whisper.cpp builds are stored under %LOCALAPPDATA%\\Storyteller OneClick Lite\\runtime\\whisper\\ so they remain available even if the portable EXE is moved. New downloads are still placed beside the portable app.";
                     wrap: word-wrap;
+                    opacity: 0.68;
                 }
             }
         }
-
-        Text {
-            text: "Imported whisper.cpp builds are stored under %LOCALAPPDATA%\\Storyteller OneClick Lite\\runtime\\whisper\\ so they remain available even if the portable EXE is moved. New downloads are still placed beside the portable app.";
-            wrap: word-wrap;
-            opacity: 0.68;
-        }
-
-        Rectangle { vertical-stretch: 1; }
 
         HorizontalBox {
             spacing: 10px;
