@@ -15,8 +15,13 @@ const MODEL_URL: &str =
 const FFMPEG_ZIP_URL: &str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
 const FFMPEG_SHA_URL: &str =
     "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256";
-const WHISPER_RELEASES_API: &str =
-    "https://api.github.com/repos/ggml-org/whisper.cpp/releases?per_page=10";
+const WHISPER_BUILD_TAG: &str = "b5130";
+const WHISPER_DOWNLOAD_BASE: &str = "https://github.com/ggml-org/whisper.cpp/releases/download";
+const WHISPER_CPU_ASSET: &str = "whisper-bin-x64.zip";
+const WHISPER_CPU_SHA256: &str = "f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c";
+const WHISPER_CUDA_ASSET: &str = "whisper-cublas-12.4.0-bin-x64.zip";
+const WHISPER_CUDA_SHA256: &str =
+    "af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7";
 const LEGACY_SCAN_ENTRY_LIMIT: usize = 8_000;
 const LEGACY_SCAN_DEPTH: usize = 7;
 
@@ -181,10 +186,13 @@ pub(crate) fn install_missing_dependencies(
             if !installed_from_cache {
                 let prefer_cuda = nvidia_gpu_available();
                 progress(if prefer_cuda {
-                    "NVIDIA GPU detected; downloading and verifying a CUDA-enabled whisper.cpp build…"
-                        .into()
+                    format!(
+                        "NVIDIA GPU detected; downloading and verifying pinned whisper.cpp CUDA build {WHISPER_BUILD_TAG}…"
+                    )
                 } else {
-                    "Downloading and verifying whisper.cpp…".into()
+                    format!(
+                        "Downloading and verifying pinned whisper.cpp CPU build {WHISPER_BUILD_TAG}…"
+                    )
                 });
                 install_whisper(&tools_dir, &temp_dir, prefer_cuda)?;
                 let installed = tools_dir.join(executable_file_name("whisper-cli"));
@@ -603,22 +611,13 @@ fn install_whisper(tools_dir: &Path, temp_dir: &Path, prefer_cuda: bool) -> Resu
     let zip_path = temp_dir.join("whisper.zip");
     let extract_dir = temp_dir.join("whisper");
     let target = tools_dir.join(executable_file_name("whisper-cli"));
+    let (asset_name, expected_sha256) = whisper_download_asset(prefer_cuda);
+    let url = format!("{WHISPER_DOWNLOAD_BASE}/{WHISPER_BUILD_TAG}/{asset_name}");
     let script = format!(
         r#"$ErrorActionPreference='Stop';
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;
-$headers=@{{'User-Agent'='StoryTeller-Lite'}};
-$releases=Invoke-RestMethod -Headers $headers -Uri {api};
-$assets=$releases | ForEach-Object {{ $_.assets }};
-$asset=$null;
-if ({prefer_cuda}) {{
-  $asset=$assets | Where-Object {{ $_.name -match '(?i)^whisper-(cublas-.*-bin-x64|bin-win-cuda-.*x64)\.zip$' }} | Sort-Object name -Descending | Select-Object -First 1;
-}}
-if (-not $asset) {{ $asset=$assets | Where-Object {{ $_.name -eq 'whisper-bin-x64.zip' }} | Select-Object -First 1; }}
-if (-not $asset) {{ throw 'No official Windows x64 whisper.cpp binary asset was found.' }}
-$digest=[string]$asset.digest;
-if (-not $digest.StartsWith('sha256:')) {{ throw 'The whisper.cpp release asset did not publish a SHA-256 digest.' }}
-Invoke-WebRequest -UseBasicParsing -Headers $headers -Uri $asset.browser_download_url -OutFile {zip};
-$expected=$digest.Substring(7).ToUpperInvariant();
+Invoke-WebRequest -UseBasicParsing -Uri {url} -OutFile {zip};
+$expected={expected}.ToUpperInvariant();
 $actual=(Get-FileHash {zip} -Algorithm SHA256).Hash.ToUpperInvariant();
 if ($actual -ne $expected) {{ throw 'whisper.cpp SHA-256 verification failed.' }}
 Expand-Archive -LiteralPath {zip} -DestinationPath {extract} -Force;
@@ -627,14 +626,22 @@ if (-not $cli) {{ $cli=Get-ChildItem -LiteralPath {extract} -Filter main.exe -Re
 if (-not $cli) {{ throw 'Neither whisper-cli.exe nor legacy main.exe was present in the downloaded archive.' }}
 Get-ChildItem -LiteralPath $cli.Directory.FullName | ForEach-Object {{ Copy-Item -LiteralPath $_.FullName -Destination {tools} -Recurse -Force }};
 if ($cli.Name -ieq 'main.exe') {{ Copy-Item -LiteralPath $cli.FullName -Destination {target} -Force; }}"#,
-        api = ps_string(WHISPER_RELEASES_API),
-        prefer_cuda = if prefer_cuda { "$true" } else { "$false" },
+        url = ps_string(&url),
+        expected = ps_string(expected_sha256),
         zip = ps_path(&zip_path),
         extract = ps_path(&extract_dir),
         tools = ps_path(tools_dir),
         target = ps_path(&target),
     );
     run_powershell(&script)
+}
+
+fn whisper_download_asset(prefer_cuda: bool) -> (&'static str, &'static str) {
+    if prefer_cuda {
+        (WHISPER_CUDA_ASSET, WHISPER_CUDA_SHA256)
+    } else {
+        (WHISPER_CPU_ASSET, WHISPER_CPU_SHA256)
+    }
 }
 
 fn install_whisper_from_archive(
@@ -858,5 +865,20 @@ mod tests {
         assert!(is_cuda_whisper_build(Path::new(
             "C:\\cache\\whisper-cpp-windows-x64-cuda-13.1.0\\whisper-cli.exe"
         )));
+    }
+
+    #[test]
+    fn automatic_whisper_downloads_are_pinned_by_asset_and_digest() {
+        assert_eq!(
+            whisper_download_asset(false),
+            (WHISPER_CPU_ASSET, WHISPER_CPU_SHA256)
+        );
+        assert_eq!(
+            whisper_download_asset(true),
+            (WHISPER_CUDA_ASSET, WHISPER_CUDA_SHA256)
+        );
+        assert_eq!(WHISPER_BUILD_TAG, "b5130");
+        assert_eq!(WHISPER_CPU_SHA256.len(), 64);
+        assert_eq!(WHISPER_CUDA_SHA256.len(), 64);
     }
 }
