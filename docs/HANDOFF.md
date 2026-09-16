@@ -11,8 +11,9 @@ Read this file before making substantial changes.
 - P2 includes durable per-segment review decisions, reduced manual allocation, Smart/ReviewAll edge behavior, supplemental Introduction/Credits rendering, bounded EPUB image discovery, lazy image text evidence, deterministic image scoring, conservative Smart Graphic Readout assignment, manual bounded Graphic Readout allocation, and native image-target Media Overlay rendering.
 - The automatic Graphic Readout implementation was integrated as `9673dc7a6f41493e13b24724b3123659fcbaa271` after Windows validation run `34826426511`.
 - Manual Graphic Readout allocation was integrated as `a27df630a8626d1c0ba846deca8f44acde125fe8` after final Windows validation run `34918789594` passed rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
-- P3 main Slint alignment is functionally complete for the supported 820×620 minimum window. The validated sequence now includes mixed review presentation (`1a645685549a0796b960d18723bb0cd42799c79d`, run `34919543203`), real stage elapsed time (`c79c834328edabc4fef72d0d0cd5fb8343499411`, run `34926648718`), responsive creation (`c8a6461eaeb4d2535af26172876b729cf0d2abf5`, run `34927154367`), responsive active/review/queue controls (`17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8`, run `34927928639`), dedicated Review Audio presentation (`1602021a9c52eadb66fa7bc73937e56dacfd4c57`, run `34952813936`), locally scrollable queue/recent (`26d11580e328da36d7a6169be22ec91e2ef3a157`, run `34953863269`), locally scrollable Settings (`e98adae2dc0fff77923fd62d02768c9b01609e8f`, run `35058804437`), and final compact review/settings polish (`fe5b140b2319229b4083c6aa4d1c7d386a604bbd`, run `35059503255`).
-- Temporary validation PRs #3 through #12 were closed without merge and their temporary feature workflows were removed after validation.
+- P3 main Slint alignment is functionally complete for the supported 820×620 minimum window. The validated sequence includes mixed review presentation (`1a645685549a0796b960d18723bb0cd42799c79d`, run `34919543203`), real stage elapsed time (`c79c834328edabc4fef72d0d0cd5fb8343499411`, run `34926648718`), responsive creation (`c8a6461eaeb4d2535af26172876b729cf0d2abf5`, run `34927154367`), responsive active/review/queue controls (`17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8`, run `34927928639`), dedicated Review Audio presentation (`1602021a9c52eadb66fa7bc73937e56dacfd4c57`, run `34952813936`), locally scrollable queue/recent (`26d11580e328da36d7a6169be22ec91e2ef3a157`, run `34953863269`), locally scrollable Settings (`e98adae2dc0fff77923fd62d02768c9b01609e8f`, run `35058804437`), and final compact review/settings polish (`fe5b140b2319229b4083c6aa4d1c7d386a604bbd`, run `35059503255`).
+- The first P5 interoperability slice is integrated as `ef7900ceb5efd3541d8b33f056d3f3ff8d9920e8`. It adds standards-clean representative EPUB fixtures, a manual EPUBCheck 5.4.0 gate, required Media Overlay `epub:textref` output, and matching internal-validator enforcement. Final interoperability run `35065877026` passed rustfmt, strict core Clippy, core tests, fixture export, pinned EPUBCheck checksum verification, and EPUBCheck on text-overlay, supplemental Introduction/Credits, and Graphic Readout outputs.
+- Temporary validation PRs #3 through #13 were closed without merge and their temporary feature workflows were removed after validation.
 - Recovery CI remains manual/opt-in to avoid unnecessary hosted-runner use. GitHub runners may be used when they are the right validation tool; before rerunning after a failure, inspect the full logs and likely downstream failure surface, batch fixes, and make the next run a meaningful near-final checkpoint rather than using Actions as an edit/compile loop.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
@@ -102,7 +103,27 @@ Relevant Windows validation runs:
 
 Encode creates the final Copy/Opus/AAC representation. Build EPUB consumes the effective reviewed text alignment plus supplemental and Graphic Readout review destinations. Validate independently reopens the candidate EPUB and audits package/SMIL/text-or-image/audio relationships, positive non-overlapping clip ranges, durations, duplicates, and mimetype rules before publication.
 
+All generated SMIL sequences now include the EPUB Media Overlays `epub:textref` relationship back to their associated XHTML document. The internal validator requires that attribute on every generated `seq`, resolves it relative to the SMIL file, and rejects a target that does not match the package-associated XHTML. This was added after EPUBCheck exposed the missing relationship in the first standards-clean Graphic Readout fixture.
+
 The builder semantic fingerprint was bumped when Graphic Readout output behavior landed so stale build checkpoints are not silently reused.
+
+### EPUBCheck interoperability baseline
+
+External conformance checking is development-only and supplements—rather than replaces—the internal publication validator. `.github/workflows/epubcheck-validation.yml` is manual-only and currently pins EPUBCheck 5.4.0. It downloads the official `epubcheck-5.4.0.zip`, verifies SHA-256 `33350c61038e71dfb3d45a76aed04bf5481e6d5500cb780f6e98db8bbd15a28c`, and runs EPUBCheck under Temurin Java 21. Java and EPUBCheck are **not** runtime dependencies of Storyteller Lite.
+
+`crates/storyteller-core/examples/export_epubcheck_fixtures.rs` builds three deliberately standards-clean test books through the real Storyteller builder and internal validator:
+
+- ordinary text Media Overlay;
+- supplemental Introduction/Credits pages around a normal chapter;
+- mixed text + Graphic Readout Media Overlay.
+
+The exporter uses a valid navigation document, required package metadata, a valid tiny PNG, and a real tiny MP3 so external failures describe Storyteller output rather than deliberately fake test resources. Existing internal fixtures may still use synthetic bytes when their purpose is purely structural; do not indiscriminately point EPUBCheck at every unit-test EPUB.
+
+Validation history for this slice:
+
+- run `35064940210` exposed both rustfmt-only exporter wrapping and the real missing `seq epub:textref` conformance defect;
+- run `35065707149` failed immediately in temporary patch-application scaffolding and did not exercise product code;
+- final run `35065877026` passed formatting, strict core Clippy, all core tests, fixture export/internal validation, official EPUBCheck checksum verification, EPUBCheck on all three fixtures, and the aggregate gate.
 
 ## Extra Audio decision
 
@@ -138,9 +159,9 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 ## Immediate implementation order
 
 1. Treat P2 and P3 as functionally complete unless real books or real window use expose a narrowly scoped regression.
-2. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges.
-3. Skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
-4. Move next to P5 interoperability, beginning with EPUBCheck/reading-system validation around the already-independent final EPUB audit. Then continue packaging/release/update polish and explicit relaunch/checkpoint-resume UX.
+2. Keep the new internal validator + manual EPUBCheck baseline intact; new output/rendering paths should extend representative external fixtures when appropriate rather than weakening either gate.
+3. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
+4. Continue P5 with reading-system interoperability evidence and packaging/release/update polish, then explicit relaunch/checkpoint-resume UX. Do not turn EPUBCheck/Java into a shipped dependency.
 5. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
 
 ## Recovered invariants worth preserving
@@ -150,6 +171,7 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 - One audio interval must not be ambiguously owned twice.
 - Weak/ambiguous evidence remains Pending rather than being forced.
 - Final output is independently audited after review decisions are applied.
+- External EPUBCheck is an interoperability development gate, not a substitute for deterministic internal validation before publication.
 - Historical OCR/scoring thresholds are test vectors, not permanent product constants.
 - The recovered GPL/Sigil-derived helper is behavioral evidence unless licensing for direct reuse is deliberately resolved.
 
