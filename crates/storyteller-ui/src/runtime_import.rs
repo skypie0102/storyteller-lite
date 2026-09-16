@@ -1,5 +1,6 @@
+use crate::app_paths::persistent_app_root;
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
@@ -32,14 +33,11 @@ pub(crate) fn import_whisper_archive(archive: &Path) -> Result<PathBuf, String> 
         );
     }
 
-    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(|| {
+    let app_root = persistent_app_root().ok_or_else(|| {
         "Windows LOCALAPPDATA is unavailable, so the persistent runtime folder could not be determined."
             .to_string()
     })?;
-    let imports_root = PathBuf::from(local_app_data)
-        .join("Storyteller OneClick Lite")
-        .join("runtime")
-        .join("whisper");
+    let imports_root = app_root.join("runtime").join("whisper");
     fs::create_dir_all(&imports_root).map_err(|error| {
         format!(
             "Could not create persistent whisper.cpp runtime folder {}: {error}",

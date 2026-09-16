@@ -1,4 +1,5 @@
-use std::{env, path::PathBuf};
+use crate::app_paths::recovery_app_root;
+use std::path::PathBuf;
 use storyteller_core::{read_queue_recovery, write_queue_recovery, JobQueue, QueueRecovery};
 
 pub(crate) fn load_queue() -> Result<QueueRecovery, String> {
@@ -10,14 +11,7 @@ pub(crate) fn save_queue(queue: &JobQueue) -> Result<usize, String> {
 }
 
 fn recovery_path() -> PathBuf {
-    app_data_root().join("queue-recovery.json")
-}
-
-fn app_data_root() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Storyteller OneClick Lite")
+    recovery_app_root().join("queue-recovery.json")
 }
 
 #[cfg(test)]
