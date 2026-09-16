@@ -13,7 +13,9 @@ Read this file before making substantial changes.
 - Manual Graphic Readout allocation was integrated as `a27df630a8626d1c0ba846deca8f44acde125fe8` after final Windows validation run `34918789594` passed rustfmt, strict Clippy, full workspace tests, the native Slint build, and the aggregate gate.
 - P3 main Slint alignment is functionally complete for the supported 820×620 minimum window. The validated sequence includes mixed review presentation (`1a645685549a0796b960d18723bb0cd42799c79d`, run `34919543203`), real stage elapsed time (`c79c834328edabc4fef72d0d0cd5fb8343499411`, run `34926648718`), responsive creation (`c8a6461eaeb4d2535af26172876b729cf0d2abf5`, run `34927154367`), responsive active/review/queue controls (`17ef8d7948a04d74fd1f0ea3a60a0e8da140e8b8`, run `34927928639`), dedicated Review Audio presentation (`1602021a9c52eadb66fa7bc73937e56dacfd4c57`, run `34952813936`), locally scrollable queue/recent (`26d11580e328da36d7a6169be22ec91e2ef3a157`, run `34953863269`), locally scrollable Settings (`e98adae2dc0fff77923fd62d02768c9b01609e8f`, run `35058804437`), and final compact review/settings polish (`fe5b140b2319229b4083c6aa4d1c7d386a604bbd`, run `35059503255`).
 - The first P5 interoperability slice is integrated as `ef7900ceb5efd3541d8b33f056d3f3ff8d9920e8`. It adds standards-clean representative EPUB fixtures, a manual EPUBCheck 5.4.0 gate, required Media Overlay `epub:textref` output, and matching internal-validator enforcement. Final interoperability run `35065877026` passed rustfmt, strict core Clippy, core tests, fixture export, pinned EPUBCheck checksum verification, and EPUBCheck on text-overlay, supplemental Introduction/Credits, and Graphic Readout outputs.
-- Temporary validation PRs #3 through #13 were closed without merge and their temporary feature workflows were removed after validation.
+- Validated resume preflight is integrated as `19ecde9b5082393a9ccb056a3abe189bfa89393a`. Worker startup now revalidates both semantic checkpoint fingerprints and stage artifact manifests before reusing cached stages; the first invalid stage truncates downstream checkpoints. Core run `35067743420` passed rustfmt, strict core Clippy, and core tests.
+- Durable paused relaunch recovery is integrated as `8c0c3d35dff44e0d616077d627a3a4e1e5c478fe`. Recoverable jobs persist to a versioned queue snapshot, interrupted Running work restores as Waiting, restored work never auto-runs, terminal jobs are omitted, and a job that was waiting at Review Audio is rewound before Review Audio so unresolved human review cannot be bypassed across relaunch. Final Windows run `35068910791` passed rustfmt, strict workspace Clippy, all workspace tests, and the native Slint build.
+- Temporary validation PRs #3 through #15 were closed without merge and their temporary feature workflows/scaffolding were removed after validation.
 - Recovery CI remains manual/opt-in to avoid unnecessary hosted-runner use. GitHub runners may be used when they are the right validation tool; before rerunning after a failure, inspect the full logs and likely downstream failure surface, batch fixes, and make the next run a meaningful near-final checkpoint rather than using Actions as an edit/compile loop.
 
 Historical branch names and SHAs in recovered transcripts are clues only. Inspect the live branch before relying on them.
@@ -36,6 +38,8 @@ Installer archaeology is demand-driven. Do not recover unrelated legacy behavior
 ## Product decisions that remain authoritative
 
 Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, a simple Whisper worker count of 1–4 (default 1), Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
+
+Resume must reuse only a validated contiguous checkpoint prefix. Relaunch recovery must never silently continue work: recovered jobs come back in a paused queue and require the existing explicit Resume queue action.
 
 Do not restore manual CPU allocation, word-level synchronization, the old activity-console-first UI, Runtime Health, process-now flow, broad runtime path controls, EPUB standardization/CSS editor controls, a permanent OCR toggle, or the old general-purpose split/merge/trim/rules allocator.
 
@@ -125,6 +129,30 @@ Validation history for this slice:
 - run `35065707149` failed immediately in temporary patch-application scaffolding and did not exercise product code;
 - final run `35065877026` passed formatting, strict core Clippy, all core tests, fixture export/internal validation, official EPUBCheck checksum verification, EPUBCheck on all three fixtures, and the aggregate gate.
 
+### Validated resume and paused relaunch recovery
+
+Worker startup now applies the existing resume rules instead of trusting in-memory Completed stages. It first invalidates stale semantic fingerprints, obtains the contiguous fingerprint resume plan, validates that plan against each stage's artifact manifest in the job workspace, truncates downstream checkpoints to the validated reusable prefix, and marks only that verified prefix Cached. A retry/relaunch therefore cannot reuse a missing, modified, or semantically stale artifact simply because an old `Job` snapshot still says that stage completed.
+
+The durable relaunch layer persists only recoverable queue state: job identity, immutable source/output/settings fields, the previous recoverable status, and completed checkpoint fingerprints. It does **not** persist transient progress percentages, elapsed live metrics, terminal history, or a live worker object. The versioned snapshot is `queue-recovery.json` under the existing app-data root (`%LOCALAPPDATA%\Storyteller OneClick Lite` on Windows; existing temp-directory fallback elsewhere).
+
+Restore is intentionally conservative:
+
+- Running → Waiting;
+- Waiting → Waiting;
+- NeedsReview → Waiting with checkpoints at/after Review Audio removed;
+- Completed / Failed / Cancelled are not persisted;
+- any recovered work forces the queue to Paused;
+- the user must choose the existing `Resume queue` action before processing restarts.
+
+Rewinding NeedsReview is deliberate. `review-draft.json` already preserves durable manual decisions outside the disposable Review Audio stage, so rerunning Review Audio can recover those decisions without treating an unresolved human-review boundary as implicitly accepted after an application restart.
+
+Recovery parsing rejects unsupported snapshot versions, duplicate job IDs, invalid codec/bitrate/stage values, blank checkpoint fingerprints, non-strict stage ordering, and non-contiguous checkpoint prefixes. The UI bridge loads once and saves at a throttled one-second cadence rather than every 100 ms poll.
+
+Validation history:
+
+- resume preflight integration `19ecde9b5082393a9ccb056a3abe189bfa89393a`, core run `35067743420` green;
+- relaunch recovery integration `8c0c3d35dff44e0d616077d627a3a4e1e5c478fe`, final Windows run `35068910791` green across formatting, strict workspace Clippy, all workspace tests, and native Slint build.
+
 ## Extra Audio decision
 
 `AudioReviewClassification::ExtraAudio` exists, but Lite currently has **no distinct Extra Audio destination/rendering rule**. Recovered legacy evidence documents an optional standalone audio-player page as one historical fallback, but explicitly treats that as a product/interoperability choice rather than a required Lite behavior. Do not invent a separate Extra Audio renderer merely for historical taxonomy compatibility. Add one only if a concrete product requirement and validation strategy justify it.
@@ -159,10 +187,11 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 ## Immediate implementation order
 
 1. Treat P2 and P3 as functionally complete unless real books or real window use expose a narrowly scoped regression.
-2. Keep the new internal validator + manual EPUBCheck baseline intact; new output/rendering paths should extend representative external fixtures when appropriate rather than weakening either gate.
-3. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
-4. Continue P5 with reading-system interoperability evidence and packaging/release/update polish, then explicit relaunch/checkpoint-resume UX. Do not turn EPUBCheck/Java into a shipped dependency.
-5. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
+2. Keep the internal validator + manual EPUBCheck baseline intact; new output/rendering paths should extend representative external fixtures when appropriate rather than weakening either gate.
+3. Preserve the validated-resume and explicit paused-relaunch contracts; exercise them through installed/packaged builds before changing lifecycle behavior.
+4. Continue P5 with reading-system interoperability evidence plus packaging/release/update and owned-runtime polish. Do not turn EPUBCheck/Java into a shipped dependency.
+5. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
+6. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
 
 ## Recovered invariants worth preserving
 
@@ -170,6 +199,8 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 - Destinations are bounded and validated; the UI never supplies arbitrary EPUB paths as authority.
 - One audio interval must not be ambiguously owned twice.
 - Weak/ambiguous evidence remains Pending rather than being forced.
+- Resume trusts only the contiguous checkpoint prefix whose semantic fingerprints and stage artifacts still validate.
+- Relaunch never silently resumes processing; recovered work returns paused and requires explicit user action.
 - Final output is independently audited after review decisions are applied.
 - External EPUBCheck is an interoperability development gate, not a substitute for deterministic internal validation before publication.
 - Historical OCR/scoring thresholds are test vectors, not permanent product constants.
