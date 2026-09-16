@@ -163,42 +163,20 @@ pub(crate) fn install_missing_dependencies(
         }
 
         if status.whisper_cli.is_none() {
-            let mut installed_from_cache = false;
-            if let Some(archive) = find_legacy_cuda_archive() {
-                progress(format!(
-                    "Found cached CUDA whisper.cpp archive at {}; importing it…",
-                    archive.display()
-                ));
-                if install_whisper_from_archive(&archive, &tools_dir, &temp_dir).is_ok() {
-                    let installed = tools_dir.join(executable_file_name("whisper-cli"));
-                    if probe_executable(&installed, &["--help"]) {
-                        installed_from_cache = true;
-                    }
-                }
-                if !installed_from_cache {
-                    progress(
-                        "The cached CUDA archive could not be reused; downloading a verified build instead…"
-                            .into(),
-                    );
-                }
-            }
-
-            if !installed_from_cache {
-                let prefer_cuda = nvidia_gpu_available();
-                progress(if prefer_cuda {
-                    format!(
-                        "NVIDIA GPU detected; downloading and verifying pinned whisper.cpp CUDA build {WHISPER_BUILD_TAG}…"
-                    )
-                } else {
-                    format!(
-                        "Downloading and verifying pinned whisper.cpp CPU build {WHISPER_BUILD_TAG}…"
-                    )
-                });
-                install_whisper(&tools_dir, &temp_dir, prefer_cuda)?;
-                let installed = tools_dir.join(executable_file_name("whisper-cli"));
-                if !probe_executable(&installed, &["--help"]) {
-                    return Err("Downloaded whisper-cli could not be started.".into());
-                }
+            let prefer_cuda = nvidia_gpu_available();
+            progress(if prefer_cuda {
+                format!(
+                    "NVIDIA GPU detected; downloading and verifying pinned whisper.cpp CUDA build {WHISPER_BUILD_TAG}…"
+                )
+            } else {
+                format!(
+                    "Downloading and verifying pinned whisper.cpp CPU build {WHISPER_BUILD_TAG}…"
+                )
+            });
+            install_whisper(&tools_dir, &temp_dir, prefer_cuda)?;
+            let installed = tools_dir.join(executable_file_name("whisper-cli"));
+            if !probe_executable(&installed, &["--help"]) {
+                return Err("Downloaded whisper-cli could not be started.".into());
             }
         }
 
@@ -339,28 +317,14 @@ fn whisper_executable_names() -> Vec<String> {
 
 fn persistent_whisper_executables() -> Vec<PathBuf> {
     let mut executables = Vec::new();
-    let mut archives = Vec::new();
     let mut budget = LEGACY_SCAN_ENTRY_LIMIT;
     for root in legacy_search_roots() {
-        scan_legacy_tree(&root, 0, &mut budget, &mut executables, &mut archives);
+        scan_legacy_tree(&root, 0, &mut budget, &mut executables);
         if budget == 0 {
             break;
         }
     }
     executables
-}
-
-fn find_legacy_cuda_archive() -> Option<PathBuf> {
-    let mut executables = Vec::new();
-    let mut archives = Vec::new();
-    let mut budget = LEGACY_SCAN_ENTRY_LIMIT;
-    for root in legacy_search_roots() {
-        scan_legacy_tree(&root, 0, &mut budget, &mut executables, &mut archives);
-        if budget == 0 {
-            break;
-        }
-    }
-    archives.into_iter().next()
 }
 
 fn legacy_search_roots() -> Vec<PathBuf> {
@@ -428,20 +392,13 @@ fn directory_name_is_runtime_hint(name: &str) -> bool {
         || name.contains("shdwmnrch")
 }
 
-fn scan_legacy_tree(
-    root: &Path,
-    depth: usize,
-    budget: &mut usize,
-    executables: &mut Vec<PathBuf>,
-    archives: &mut Vec<PathBuf>,
-) {
+fn scan_legacy_tree(root: &Path, depth: usize, budget: &mut usize, executables: &mut Vec<PathBuf>) {
     if depth > LEGACY_SCAN_DEPTH || *budget == 0 {
         return;
     }
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
-
     for entry in entries.flatten() {
         if *budget == 0 {
             break;
@@ -455,8 +412,6 @@ fn scan_legacy_tree(
             let name = entry.file_name().to_string_lossy().to_lowercase();
             if name == "whisper-cli.exe" || name == "main.exe" {
                 executables.push(path);
-            } else if is_legacy_cuda_archive_name(&name) {
-                archives.push(path);
             }
             continue;
         }
@@ -467,13 +422,8 @@ fn scan_legacy_tree(
         if matches!(name.as_str(), ".git" | "node_modules" | "target") {
             continue;
         }
-        scan_legacy_tree(&path, depth + 1, budget, executables, archives);
+        scan_legacy_tree(&path, depth + 1, budget, executables);
     }
-}
-
-fn is_legacy_cuda_archive_name(name: &str) -> bool {
-    name.starts_with("whisper-cpp-windows-x64-cuda-")
-        && (name.ends_with(".tar.gz") || name.ends_with(".tgz") || name.ends_with(".zip"))
 }
 
 fn is_cuda_whisper_build(path: &Path) -> bool {
@@ -644,47 +594,6 @@ fn whisper_download_asset(prefer_cuda: bool) -> (&'static str, &'static str) {
     }
 }
 
-fn install_whisper_from_archive(
-    archive: &Path,
-    tools_dir: &Path,
-    temp_dir: &Path,
-) -> Result<(), String> {
-    let extract_dir = temp_dir.join("legacy-whisper");
-    let target = tools_dir.join(executable_file_name("whisper-cli"));
-    let archive_name = archive
-        .file_name()
-        .map(|value| value.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    let extraction = if archive_name.ends_with(".zip") {
-        format!(
-            "Expand-Archive -LiteralPath {} -DestinationPath {} -Force;",
-            ps_path(archive),
-            ps_path(&extract_dir)
-        )
-    } else {
-        format!(
-            "New-Item -ItemType Directory -Force {} | Out-Null; tar.exe -xf {} -C {}; if ($LASTEXITCODE -ne 0) {{ throw 'Could not extract the cached CUDA whisper.cpp archive.' }};",
-            ps_path(&extract_dir),
-            ps_path(archive),
-            ps_path(&extract_dir)
-        )
-    };
-    let script = format!(
-        r#"$ErrorActionPreference='Stop';
-{extraction}
-$cli=Get-ChildItem -LiteralPath {extract} -Filter whisper-cli.exe -Recurse | Select-Object -First 1;
-if (-not $cli) {{ $cli=Get-ChildItem -LiteralPath {extract} -Filter main.exe -Recurse | Select-Object -First 1; }}
-if (-not $cli) {{ throw 'The cached CUDA archive did not contain whisper-cli.exe or legacy main.exe.' }}
-Get-ChildItem -LiteralPath $cli.Directory.FullName | ForEach-Object {{ Copy-Item -LiteralPath $_.FullName -Destination {tools} -Recurse -Force }};
-if ($cli.Name -ieq 'main.exe') {{ Copy-Item -LiteralPath $cli.FullName -Destination {target} -Force; }}"#,
-        extraction = extraction,
-        extract = ps_path(&extract_dir),
-        tools = ps_path(tools_dir),
-        target = ps_path(&target),
-    );
-    run_powershell(&script)
-}
-
 fn install_model(models_dir: &Path, temp_dir: &Path) -> Result<(), String> {
     let partial = temp_dir.join(format!("{MODEL_FILE}.part"));
     let target = models_dir.join(MODEL_FILE);
@@ -850,14 +759,6 @@ mod tests {
             ps_string("C:\\O'Brien\\tool.exe"),
             "'C:\\O''Brien\\tool.exe'"
         );
-    }
-
-    #[test]
-    fn legacy_cuda_archive_name_matches_former_package() {
-        assert!(is_legacy_cuda_archive_name(
-            "whisper-cpp-windows-x64-cuda-13.1.0.tar.gz"
-        ));
-        assert!(!is_legacy_cuda_archive_name("whisper-bin-x64.zip"));
     }
 
     #[test]

@@ -34,16 +34,7 @@ The persistent search is intentionally bounded (depth and entry count) rather th
 
 When multiple working auto-discovered whisper.cpp executables exist, a CUDA-capable build is preferred. CUDA capability is recognized from CUDA/cuBLAS path names or neighboring runtime libraries such as `ggml-cuda`, `cublas64`, `cublasLt64`, and `cudart64`.
 
-The runtime also recognizes the historical package naming pattern used by the former StoryTeller app, including:
-
-```text
-whisper-cpp-windows-x64-cuda-13.1.0.tar.gz
-whisper-cpp-windows-x64-cuda-*.tar.gz
-whisper-cpp-windows-x64-cuda-*.tgz
-whisper-cpp-windows-x64-cuda-*.zip
-```
-
-If a compatible cached archive is found but no runnable CLI is available, **Download missing** tries to reuse/extract that archive into the managed per-user `tools/` folder before downloading a replacement. Both `whisper-cli.exe` and legacy `main.exe` archive layouts are supported, and sibling runtime DLLs/resources are copied with the executable.
+Previously extracted StoryTeller/whisper runtimes remain valid discovery inputs, including legacy `main.exe` layouts. Automatic **Download missing** does not scan for or silently import archived builds: when no runnable CLI is available it downloads only the pinned, hash-verified StoryTeller-owned whisper.cpp build described below. Existing archives remain supported through the explicit **Import whisper archive…** action.
 
 Immediately before a processing worker starts, StoryTeller Lite re-runs runtime discovery and binds the exact resolved ffmpeg, whisper.cpp, and model paths into the backend environment. Therefore the CUDA/CPU executable shown by Settings is the executable Analyze will launch, unless the user supplied an explicit override.
 
@@ -90,8 +81,8 @@ Portable adjacent `tools/` / `models/` resources remain valid discovery inputs f
 Current download behavior and integrity checks:
 
 - ffmpeg: Gyan Windows Essentials ZIP plus the provider's published `.sha256`; the archive hash must match before extraction.
-- whisper.cpp: official `ggml-org/whisper.cpp` GitHub Windows x64 release assets; the GitHub asset must publish a `sha256:` digest and the downloaded archive must match it.
-- If `nvidia-smi` confirms an NVIDIA GPU and whisper.cpp is missing, the downloader prefers an official CUDA/cuBLAS-enabled Windows x64 asset, falling back to the CPU x64 asset only if a compatible CUDA asset is unavailable.
+- whisper.cpp: pinned `ggml-org/whisper.cpp` binary build `b5130`, built from commit `927cfce34f31707e17f2bff35c349632fb9e2c3a` (the same target commit as stable `v1.9.4`). CPU uses `whisper-bin-x64.zip` with SHA-256 `f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c`; NVIDIA systems use `whisper-cublas-12.4.0-bin-x64.zip` with SHA-256 `af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7`. Lite does not query recent releases during automatic install.
+- `nvidia-smi` selects the pinned CUDA 12.4 archive; otherwise Lite selects the pinned CPU archive. A user who needs a different compatible whisper.cpp build can provide it through explicit runtime discovery/override or **Import whisper archive…**.
 - `large-v3-turbo`: the canonical whisper.cpp model download; the staged file must match the pinned SHA-256 before it is moved into `models/`.
 
 After installation, StoryTeller Lite probes ffmpeg and whisper.cpp again and re-runs dependency detection before displaying the final state. If one dependency succeeds and a later dependency fails, the successful per-user managed file is retained and the next attempt downloads only what is still missing.
