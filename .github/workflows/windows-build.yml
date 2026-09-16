@@ -61,8 +61,13 @@ jobs:
             runtime can load, selects it immediately, and reuses the persistent copy
             on later launches.
 
-          Automatic downloads remain user-initiated. This is a developer-test build,
-          not a public release.
+          Automatic downloads remain user-initiated. Verified dependencies are stored
+          per user under:
+            %LOCALAPPDATA%\Storyteller OneClick Lite\tools\
+            %LOCALAPPDATA%\Storyteller OneClick Lite\models\
+          so the package/executable directory does not need to be writable.
+
+          This is a developer-test build, not a public release.
           '@ | Set-Content -Encoding UTF8 dist\README.txt
           "commit=${env:GITHUB_SHA}" | Set-Content -Encoding ASCII dist\BUILD.txt
           (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash + "  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
