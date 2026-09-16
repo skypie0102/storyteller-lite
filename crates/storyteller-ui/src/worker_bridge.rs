@@ -1,5 +1,7 @@
 #[path = "pipeline_backend.rs"]
 mod pipeline_backend;
+#[path = "recovery_state.rs"]
+mod recovery_state;
 #[path = "runtime_setup.rs"]
 mod runtime_setup;
 
@@ -13,6 +15,7 @@ use std::{
     rc::Rc,
     sync::mpsc::{self, Receiver, TryRecvError},
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 use storyteller_core::{
     accept_unmatched_audio_exclusion_with_draft, read_audio_review_report, AudioReviewReport, Job,
@@ -34,6 +37,8 @@ pub(crate) struct WorkerBridge {
     worker: Option<PipelineWorkerHandle>,
     runtime_install: Option<RuntimeInstallState>,
     runtime_settings_was_open: bool,
+    recovery_loaded: bool,
+    last_recovery_save: Option<Instant>,
 }
 
 impl WorkerBridge {
@@ -53,6 +58,14 @@ impl WorkerBridge {
         stage_rows: &Rc<VecModel<StageRow>>,
         detail_stage_rows: &Rc<VecModel<StageDetailRow>>,
     ) {
+        self.load_recovery_once(
+            ui_weak,
+            queue,
+            queue_rows,
+            stage_rows,
+            detail_stage_rows,
+        );
+        self.persist_recovery_if_due(queue);
         self.poll_runtime_setup(ui_weak);
 
         if self.worker.is_none() {
@@ -150,6 +163,69 @@ impl WorkerBridge {
             detail_stage_rows,
             status_override,
         );
+    }
+
+    fn load_recovery_once(
+        &mut self,
+        ui_weak: &slint::Weak<AppWindow>,
+        queue: &Rc<RefCell<JobQueue>>,
+        queue_rows: &Rc<VecModel<QueueRow>>,
+        stage_rows: &Rc<VecModel<StageRow>>,
+        detail_stage_rows: &Rc<VecModel<StageDetailRow>>,
+    ) {
+        if self.recovery_loaded {
+            return;
+        }
+        self.recovery_loaded = true;
+        match recovery_state::load_queue() {
+            Ok(recovered) if recovered.recovered_jobs > 0 => {
+                let count = recovered.recovered_jobs;
+                *queue.borrow_mut() = recovered.queue;
+                self.last_recovery_save = Some(Instant::now());
+                refresh_if_open(
+                    ui_weak,
+                    queue,
+                    queue_rows,
+                    stage_rows,
+                    detail_stage_rows,
+                    Some(format!(
+                        "Recovered {count} interrupted or queued book{}. Queue is paused; choose Resume queue to continue.",
+                        if count == 1 { "" } else { "s" }
+                    )),
+                );
+            }
+            Ok(_) => {
+                self.last_recovery_save = Some(Instant::now());
+            }
+            Err(error) => {
+                eprintln!("Queue recovery could not be loaded: {error}");
+                refresh_if_open(
+                    ui_weak,
+                    queue,
+                    queue_rows,
+                    stage_rows,
+                    detail_stage_rows,
+                    Some(format!("Recovery state could not be loaded: {error}")),
+                );
+            }
+        }
+    }
+
+    fn persist_recovery_if_due(&mut self, queue: &Rc<RefCell<JobQueue>>) {
+        if !self.recovery_loaded {
+            return;
+        }
+        let due = self
+            .last_recovery_save
+            .map(|saved| saved.elapsed() >= Duration::from_secs(1))
+            .unwrap_or(true);
+        if !due {
+            return;
+        }
+        self.last_recovery_save = Some(Instant::now());
+        if let Err(error) = recovery_state::save_queue(&queue.borrow()) {
+            eprintln!("Queue recovery could not be saved: {error}");
+        }
     }
 
     fn poll_runtime_setup(&mut self, ui_weak: &slint::Weak<AppWindow>) {
