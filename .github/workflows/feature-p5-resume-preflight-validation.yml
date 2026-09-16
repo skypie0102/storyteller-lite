@@ -1,0 +1,43 @@
+name: P5 resume preflight validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p5-resume-preflight-base
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-p5-resume-preflight-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Core resume validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out feature head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Strict core Clippy
+        run: cargo clippy -p storyteller-core --all-targets -- -D warnings
+
+      - name: Core tests
+        run: cargo test -p storyteller-core
