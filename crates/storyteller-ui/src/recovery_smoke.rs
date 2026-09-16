@@ -1,7 +1,7 @@
 use crate::app_paths::recovery_app_root;
-use std::{fs, path::PathBuf};
+use std::fs;
 use storyteller_core::{
-    write_queue_recovery, read_queue_recovery, Job, JobInputs, JobQueue, JobSettings, JobStatus,
+    read_queue_recovery, write_queue_recovery, Job, JobInputs, JobQueue, JobSettings, JobStatus,
     PipelineStage, QueueState, ResumeContext,
 };
 
@@ -71,10 +71,7 @@ fn run_at(root: &std::path::Path) -> Result<(), String> {
         return Err("Recovered packaged smoke queue was not paused.".into());
     }
 
-    let running = recovered
-        .queue
-        .job(running_id)
-        .ok_or("Recovered packaged smoke queue lost the Running job.")?;
+    let running = recovered.queue.job(running_id)?;
     if running.status != JobStatus::Waiting {
         return Err("Interrupted Running job did not restore as Waiting.".into());
     }
@@ -82,10 +79,7 @@ fn run_at(root: &std::path::Path) -> Result<(), String> {
         return Err("Interrupted Running job did not preserve its validated Prepare checkpoint.".into());
     }
 
-    let review = recovered
-        .queue
-        .job(review_id)
-        .ok_or("Recovered packaged smoke queue lost the NeedsReview job.")?;
+    let review = recovered.queue.job(review_id)?;
     if review.status != JobStatus::Waiting {
         return Err("NeedsReview job did not restore as Waiting.".into());
     }
