@@ -11,6 +11,7 @@ mod epub_graphic;
 mod epub_overlay;
 mod epub_validate;
 mod job;
+mod job_recovery;
 mod progress;
 mod queue;
 mod resume;
@@ -59,6 +60,7 @@ pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,
     JobStatus, MAX_WHISPER_WORKERS, MIN_WHISPER_WORKERS,
 };
+pub use job_recovery::{read_queue_recovery, write_queue_recovery, QueueRecovery};
 pub use progress::{LiveMetrics, PipelineProgress, PipelineStage, StageProgress, StageStatus};
 pub use queue::{JobQueue, QueueMove, QueueState};
 pub use resume::{InvalidResumeStage, ResumeContext, ResumePlan, ValidatedResumePlan};
