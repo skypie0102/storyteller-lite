@@ -12,7 +12,8 @@ $appData = Join-Path $localAppData 'Storyteller OneClick Lite'
 $recoveryPath = Join-Path $appData 'queue-recovery.json'
 $stdoutPath = Join-Path $smokeRoot 'storyteller.stdout.log'
 $stderrPath = Join-Path $smokeRoot 'storyteller.stderr.log'
-$jobId = '11111111-1111-4111-8111-111111111111'
+$runningJobId = '11111111-1111-4111-8111-111111111111'
+$reviewJobId = '22222222-2222-4222-8222-222222222222'
 
 New-Item -ItemType Directory -Force $appData | Out-Null
 
@@ -20,11 +21,11 @@ $seed = [ordered]@{
     version = 1
     jobs = @(
         [ordered]@{
-            id = $jobId
-            title = 'Packaged recovery smoke'
-            epub_path = (Join-Path $smokeRoot 'missing-source.epub')
-            audiobook_path = (Join-Path $smokeRoot 'missing-source.m4b')
-            output_path = (Join-Path $smokeRoot 'smoke-output.epub')
+            id = $runningJobId
+            title = 'Packaged running recovery smoke'
+            epub_path = (Join-Path $smokeRoot 'missing-running.epub')
+            audiobook_path = (Join-Path $smokeRoot 'missing-running.m4b')
+            output_path = (Join-Path $smokeRoot 'running-output.epub')
             audio_codec = 'opus'
             audio_bitrate_kbps = 64
             language = $null
@@ -33,6 +34,26 @@ $seed = [ordered]@{
             whisper_workers = 1
             previous_status = 'running'
             checkpoints = @()
+        },
+        [ordered]@{
+            id = $reviewJobId
+            title = 'Packaged review recovery smoke'
+            epub_path = (Join-Path $smokeRoot 'missing-review.epub')
+            audiobook_path = (Join-Path $smokeRoot 'missing-review.m4b')
+            output_path = (Join-Path $smokeRoot 'review-output.epub')
+            audio_codec = 'opus'
+            audio_bitrate_kbps = 64
+            language = $null
+            whisper_model = 'large-v3-turbo'
+            audio_review_policy = 'smart'
+            whisper_workers = 1
+            previous_status = 'needs_review'
+            checkpoints = @(
+                [ordered]@{ stage = 'prepare'; fingerprint = 'prepare-smoke' },
+                [ordered]@{ stage = 'analyze'; fingerprint = 'analyze-smoke' },
+                [ordered]@{ stage = 'align'; fingerprint = 'align-smoke' },
+                [ordered]@{ stage = 'review_audio'; fingerprint = 'review-smoke' }
+            )
         }
     )
 }
@@ -70,14 +91,37 @@ try {
     if ($restored.version -ne 1) {
         throw "Unexpected queue recovery version after packaged launch: $($restored.version)."
     }
-    if ($jobs.Count -ne 1) {
-        throw "Expected exactly one recovered job after packaged launch; found $($jobs.Count)."
+    if ($jobs.Count -ne 2) {
+        throw "Expected exactly two recovered jobs after packaged launch; found $($jobs.Count)."
     }
-    if ($jobs[0].id -ne $jobId) {
-        throw "Recovered job identity changed during packaged launch: $($jobs[0].id)."
+
+    $running = @($jobs | Where-Object { $_.id -eq $runningJobId })
+    if ($running.Count -ne 1) {
+        throw "Expected exactly one restored Running smoke job; found $($running.Count)."
     }
-    if ($jobs[0].previous_status -ne 'waiting') {
-        throw "Interrupted packaged work did not restore as waiting; persisted status is $($jobs[0].previous_status)."
+    if ($running[0].previous_status -ne 'waiting') {
+        throw "Interrupted packaged work did not restore as waiting; persisted status is $($running[0].previous_status)."
+    }
+
+    $review = @($jobs | Where-Object { $_.id -eq $reviewJobId })
+    if ($review.Count -ne 1) {
+        throw "Expected exactly one restored NeedsReview smoke job; found $($review.Count)."
+    }
+    if ($review[0].previous_status -ne 'waiting') {
+        throw "Packaged NeedsReview work did not restore as waiting; persisted status is $($review[0].previous_status)."
+    }
+    $reviewStages = @($review[0].checkpoints | ForEach-Object { $_.stage })
+    $expectedReviewStages = @('prepare', 'analyze', 'align')
+    if ($reviewStages.Count -ne $expectedReviewStages.Count) {
+        throw "NeedsReview rewind kept an unexpected checkpoint count: $($reviewStages.Count)."
+    }
+    for ($index = 0; $index -lt $expectedReviewStages.Count; $index++) {
+        if ($reviewStages[$index] -ne $expectedReviewStages[$index]) {
+            throw "NeedsReview rewind checkpoint $index is '$($reviewStages[$index])'; expected '$($expectedReviewStages[$index])'."
+        }
+    }
+    if ($reviewStages -contains 'review_audio') {
+        throw 'NeedsReview rewind retained the Review Audio checkpoint instead of forcing review to rerun.'
     }
 
     $quarantined = @(Get-ChildItem -LiteralPath $appData -Filter 'queue-recovery.invalid-*' -File -ErrorAction SilentlyContinue)
@@ -85,7 +129,7 @@ try {
         throw 'A valid packaged recovery snapshot was unexpectedly quarantined.'
     }
 
-    Write-Host 'Packaged relaunch recovery smoke test passed: interrupted work restored as waiting and remained paused.'
+    Write-Host 'Packaged relaunch recovery smoke test passed: Running restored as waiting, NeedsReview rewound before Review Audio, and recovered work remained paused.'
 }
 finally {
     if ($null -ne $process) {
