@@ -1,0 +1,44 @@
+name: P5 packaged NeedsReview validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p5-packaged-needs-review-base
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Windows packaged NeedsReview recovery
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v7
+
+      - name: Check patch whitespace
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Recovery unit tests
+        run: cargo test -p storyteller-core job_recovery
+
+      - name: Build locked release executable
+        run: cargo build --locked --release -p storyteller-ui
+
+      - name: Stage packaged executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\storyteller-ui.exe dist\StoryTeller-Lite.exe
+
+      - name: Smoke-test Running and NeedsReview relaunch recovery
+        shell: pwsh
+        run: |
+          & .github\scripts\packaged-relaunch-smoke.ps1 -Executable dist\StoryTeller-Lite.exe
