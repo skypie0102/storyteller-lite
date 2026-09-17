@@ -1,0 +1,45 @@
+name: P5 Thorium docs validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p5-thorium-docs-base
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Apply and verify Thorium docs checkpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+
+      - name: Apply exact documentation checkpoint
+        run: python .github/apply_p5_thorium_docs.py
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Verify Thorium checkpoint markers
+        shell: bash
+        run: |
+          grep -F '35220207088' docs/HANDOFF.md docs/ROADMAP.md
+          grep -F '72ab951d4963500b68c91a6496c662f30698dc27422a1b1af720b1cfbdfd327e' docs/HANDOFF.md docs/ROADMAP.md
+          grep -F 'does not claim automated audible Media Overlay playback' docs/HANDOFF.md
+          grep -F 'does **not** claim automated audible Media Overlay playback' docs/ROADMAP.md
+
+      - name: Commit validated documentation
+        run: |
+          git add docs/HANDOFF.md docs/ROADMAP.md
+          if ! git diff --cached --quiet; then
+            git config user.name storyteller-validation
+            git config user.email actions@users.noreply.github.com
+            git commit -m 'docs: record Thorium interoperability baseline [skip ci]'
+            git push origin HEAD:${{ github.head_ref }}
+          fi
