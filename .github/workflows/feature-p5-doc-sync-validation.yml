@@ -1,0 +1,43 @@
+name: P5 documentation checkpoint validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p5-doc-sync-base
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Apply and verify P5 docs checkpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+
+      - name: Apply exact documentation checkpoint
+        run: python .github/apply_p5_current_docs.py
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Verify current checkpoint markers
+        run: |
+          grep -F 'fee9ada9dbf4b46ffe9d03796617eee6ac8ecebb' docs/HANDOFF.md docs/ROADMAP.md
+          grep -F 'b0ef2665afbedb53c5093d86acec5d6e15014cb7' docs/HANDOFF.md docs/ROADMAP.md
+          grep -F 'Temporary validation PRs #1 through #25' docs/HANDOFF.md docs/ROADMAP.md
+
+      - name: Commit validated documentation
+        run: |
+          git add docs/HANDOFF.md docs/ROADMAP.md
+          if ! git diff --cached --quiet; then
+            git config user.name storyteller-validation
+            git config user.email actions@users.noreply.github.com
+            git commit -m 'docs: sync current P5 checkpoint [skip ci]'
+            git push origin HEAD:${{ github.head_ref }}
+          fi
