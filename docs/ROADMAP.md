@@ -189,7 +189,7 @@ Six related P5 release-hardening slices are integrated:
 - `b0ef2665afbedb53c5093d86acec5d6e15014cb7` pins automatic FFmpeg acquisition to the Gyan/Codex FFmpeg `9.0.1` Essentials ZIP and SHA-256 `fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9`; Windows run `35098920875` passed the targeted UI/runtime checkpoint.
 - Packaged relaunch recovery is now exercised by the permanent developer-test smoke script: `2bd99a0f145f3c5669d8202719fdc5949d84aed6` proves interrupted Running work restores as Waiting and stays paused (run `35081323895`), while `fee9ada9dbf4b46ffe9d03796617eee6ac8ecebb` adds a NeedsReview seed with checkpoints through Review Audio and proves the packaged app rewinds it to Prepare/Analyze/Align before persisting Waiting state (run `35179721389`).
 
-Temporary validation PRs #1 through #25 are closed without merge; validated changes live on `recovery/rust-slint`, while validation-only workflows/helpers remain off the implementation branch.
+All temporary validation PRs through this checkpoint are closed without merge; validated changes live on `recovery/rust-slint`, while validation-only workflows/helpers remain off the implementation branch.
 
 ### P5 next work
 
