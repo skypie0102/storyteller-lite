@@ -1,0 +1,71 @@
+name: P5 interoperability artifact validation
+
+on:
+  pull_request:
+    branches:
+      - validation/p5-interoperability-artifact-base
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate fixture artifact publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
+
+      - name: Check patch whitespace
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Export StoryTeller interoperability fixtures
+        run: cargo run -p storyteller-core --example export_epubcheck_fixtures -- target/epubcheck-fixtures
+
+      - name: Verify exactly three EPUB fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t fixtures < <(find target/epubcheck-fixtures -maxdepth 1 -type f -name '*.epub' -print | sort)
+          test "${#fixtures[@]}" -eq 3
+          printf '%s\n' "${fixtures[@]}"
+
+      - name: Publish exact interoperability artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: StoryTeller-Lite-Interoperability-EPUBs
+          path: target/epubcheck-fixtures/*.epub
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Guard permanent Thorium workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/thorium-validation.yml').read_text(encoding='utf-8')
+          required = [
+              'workflow_dispatch:',
+              'actions/upload-artifact@v7',
+              'StoryTeller-Lite-Interoperability-EPUBs',
+              'target/epubcheck-fixtures/*.epub',
+              'retention-days: 7',
+              '72ab951d4963500b68c91a6496c662f30698dc27422a1b1af720b1cfbdfd327e',
+              'bash .github/scripts/thorium-reader-smoke.sh target/epubcheck-fixtures',
+          ]
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f'missing permanent-workflow marker: {marker}')
+          if 'pull_request:' in text:
+              raise SystemExit('Permanent Thorium workflow must remain manual-only.')
+          PY
