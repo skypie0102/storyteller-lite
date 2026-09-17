@@ -30,7 +30,7 @@ jobs:
         run: |
           grep -F 'fee9ada9dbf4b46ffe9d03796617eee6ac8ecebb' docs/HANDOFF.md docs/ROADMAP.md
           grep -F 'b0ef2665afbedb53c5093d86acec5d6e15014cb7' docs/HANDOFF.md docs/ROADMAP.md
-          grep -F 'Temporary validation PRs #1 through #25' docs/HANDOFF.md docs/ROADMAP.md
+          grep -Fi 'temporary validation PRs through this checkpoint are closed without merge' docs/HANDOFF.md docs/ROADMAP.md
 
       - name: Commit validated documentation
         run: |
