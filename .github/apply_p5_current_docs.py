@@ -26,7 +26,7 @@ replace_exact(
 
 for path in [handoff, roadmap]:
     text = Path(path).read_text(encoding="utf-8")
-    if "temporary validation PRs through this checkpoint are closed without merge" not in text.lower():
+    if "temporary validation prs through this checkpoint are closed without merge" not in text.lower():
         raise SystemExit(f"{path}: non-recursive validation checkpoint wording was not written")
 
 print("P5 documentation checkpoint wording updated")
