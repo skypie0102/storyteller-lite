@@ -12,9 +12,10 @@ const MODEL_FILE: &str = "ggml-large-v3-turbo.bin";
 const MODEL_SHA256: &str = "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69";
 const MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin?download=true";
-const FFMPEG_ZIP_URL: &str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-const FFMPEG_SHA_URL: &str =
-    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256";
+const FFMPEG_VERSION: &str = "9.0.1";
+const FFMPEG_ZIP_URL: &str =
+    "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip";
+const FFMPEG_SHA256: &str = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9";
 const WHISPER_BUILD_TAG: &str = "b5130";
 const WHISPER_DOWNLOAD_BASE: &str = "https://github.com/ggml-org/whisper.cpp/releases/download";
 const WHISPER_CPU_ASSET: &str = "whisper-bin-x64.zip";
@@ -154,7 +155,9 @@ pub(crate) fn install_missing_dependencies(
 
     let result = (|| {
         if status.ffmpeg.is_none() {
-            progress("Downloading and verifying ffmpeg…".into());
+            progress(format!(
+                "Downloading and verifying pinned ffmpeg {FFMPEG_VERSION}…"
+            ));
             install_ffmpeg(&tools_dir, &temp_dir)?;
             let installed = tools_dir.join(executable_file_name("ffmpeg"));
             if !probe_executable(&installed, &["-version"]) {
@@ -531,16 +534,13 @@ fn find_named_file_in_tree(
 
 fn install_ffmpeg(tools_dir: &Path, temp_dir: &Path) -> Result<(), String> {
     let zip_path = temp_dir.join("ffmpeg.zip");
-    let sha_path = temp_dir.join("ffmpeg.sha256");
     let extract_dir = temp_dir.join("ffmpeg");
     let target = tools_dir.join(executable_file_name("ffmpeg"));
     let script = format!(
         r#"$ErrorActionPreference='Stop';
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;
 Invoke-WebRequest -UseBasicParsing -Uri {url} -OutFile {zip};
-Invoke-WebRequest -UseBasicParsing -Uri {sha_url} -OutFile {sha};
-$expected=([regex]::Match((Get-Content -Raw {sha}),'[A-Fa-f0-9]{{64}}')).Value.ToUpperInvariant();
-if ($expected.Length -ne 64) {{ throw 'Could not read the published ffmpeg SHA-256.' }}
+$expected={expected}.ToUpperInvariant();
 $actual=(Get-FileHash {zip} -Algorithm SHA256).Hash.ToUpperInvariant();
 if ($actual -ne $expected) {{ throw 'ffmpeg SHA-256 verification failed.' }}
 Expand-Archive -LiteralPath {zip} -DestinationPath {extract} -Force;
@@ -548,9 +548,8 @@ $exe=Get-ChildItem -LiteralPath {extract} -Filter ffmpeg.exe -Recurse | Select-O
 if (-not $exe) {{ throw 'ffmpeg.exe was not present in the downloaded archive.' }}
 Copy-Item -LiteralPath $exe.FullName -Destination {target} -Force;"#,
         url = ps_string(FFMPEG_ZIP_URL),
-        sha_url = ps_string(FFMPEG_SHA_URL),
+        expected = ps_string(FFMPEG_SHA256),
         zip = ps_path(&zip_path),
-        sha = ps_path(&sha_path),
         extract = ps_path(&extract_dir),
         target = ps_path(&target),
     );
@@ -766,6 +765,17 @@ mod tests {
         assert!(is_cuda_whisper_build(Path::new(
             "C:\\cache\\whisper-cpp-windows-x64-cuda-13.1.0\\whisper-cli.exe"
         )));
+    }
+
+    #[test]
+    fn automatic_ffmpeg_download_is_pinned_by_version_and_digest() {
+        assert_eq!(FFMPEG_VERSION, "9.0.1");
+        assert!(FFMPEG_ZIP_URL.contains("/9.0.1/ffmpeg-9.0.1-essentials_build.zip"));
+        assert_eq!(FFMPEG_SHA256.len(), 64);
+        assert_eq!(
+            FFMPEG_SHA256,
+            "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9"
+        );
     }
 
     #[test]
