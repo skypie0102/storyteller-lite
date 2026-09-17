@@ -164,6 +164,12 @@ A manual-only `.github/workflows/epubcheck-validation.yml` gate runs rustfmt, st
 
 The first external run exposed a real conformance defect: Storyteller-generated SMIL `<seq>` elements lacked required `epub:textref`. All text, supplemental, and mixed Graphic Readout generation paths now emit the required reference, and the internal validator independently requires/resolves it so the same class of defect is caught before publication. The final run passed EPUBCheck 5.4.0 on all three fixtures.
 
+### Thorium reading-system import/open baseline — implemented
+
+A manual-only `.github/workflows/thorium-validation.yml` gate now exercises the same three exported fixtures in a real EPUB reading system. It downloads the official Thorium Reader 3.5.1 Linux amd64 Debian package and verifies SHA-256 `72ab951d4963500b68c91a6496c662f30698dc27422a1b1af720b1cfbdfd327e`, installs Thorium plus Xvfb, and runs `.github/scripts/thorium-reader-smoke.sh` with a fresh isolated profile per fixture.
+
+The smoke requires Thorium to remain alive through the observation window and to persist an imported publication for each text-overlay, supplemental-edge, and Graphic Readout fixture. Validation run `35220207088` passed all three cases. This is intentionally narrower than playback validation: it proves real-reader import/open compatibility, but it does **not** claim automated audible Media Overlay playback, timing, or synchronized-highlight verification. Those remain manual/reader-specific evidence unless a reliable automation surface is introduced later.
+
 ### Validated checkpoint resume and relaunch recovery — implemented
 
 Five related P5 hardening slices are now integrated:
@@ -195,7 +201,7 @@ All temporary validation PRs through this checkpoint are closed without merge; v
 
 Continue with reading-system and packaged-build interoperability rather than adding more P2/P3 feature scope:
 
-- exercise the exported text, supplemental, and Graphic Readout books in representative reading systems where automation or reproducible fixture evidence is practical, recording reader-specific limitations separately from EPUBCheck conformance;
+- keep the pinned Thorium 3.5.1 import/open smoke as reproducible real-reader regression coverage; add manual playback/highlighting evidence or a second independent reading system only when it can be recorded honestly and repeatably, and keep reader-specific limitations separate from EPUBCheck conformance;
 - keep the packaged relaunch smoke in the manual Windows developer-test build as regression coverage for Running → Waiting recovery and NeedsReview rewind; extend it only when a new recoverable status or persistence rule changes that contract;
 - keep the Windows developer-test package manual/short-lived and avoid inventing a public installer or auto-update channel until a concrete release/distribution requirement exists;
 - if a public release path is introduced later, preserve the per-user runtime root and package provenance/integrity contract rather than moving owned mutable data back beside the executable.
