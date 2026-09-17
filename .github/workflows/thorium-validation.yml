@@ -29,6 +29,14 @@ jobs:
       - name: Export StoryTeller interoperability fixtures
         run: cargo run -p storyteller-core --example export_epubcheck_fixtures -- target/epubcheck-fixtures
 
+      - name: Publish interoperability EPUB fixtures
+        uses: actions/upload-artifact@v7
+        with:
+          name: StoryTeller-Lite-Interoperability-EPUBs
+          path: target/epubcheck-fixtures/*.epub
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Download and verify Thorium 3.5.1
         shell: bash
         run: |
