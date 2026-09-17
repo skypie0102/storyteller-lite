@@ -166,10 +166,13 @@ The first external run exposed a real conformance defect: Storyteller-generated 
 
 ### Validated checkpoint resume and relaunch recovery — implemented
 
-Two related P5 hardening slices are now integrated:
+Five related P5 hardening slices are now integrated:
 
 - `19ecde9b5082393a9ccb056a3abe189bfa89393a` makes worker startup validate checkpoint fingerprints and each stage's artifact manifest before cached stages are reused. The first invalid point truncates downstream checkpoints and resets execution from that stage. Core validation run `35067743420` passed rustfmt, strict `storyteller-core` Clippy, and all core tests.
 - `8c0c3d35dff44e0d616077d627a3a4e1e5c478fe` adds a versioned durable recoverable-queue snapshot and Slint-shell lifecycle integration. Interrupted Running jobs restore as Waiting; recoverable work always restores with the queue paused; terminal jobs are omitted and remove the recovery file when no work remains; malformed versions, duplicate IDs, non-contiguous checkpoints, bad stage ordering, and blank fingerprints are rejected. A job that was waiting at Review Audio is rewound before Review Audio so unresolved human review cannot be bypassed after relaunch; the existing durable review draft remains the source for manual decisions when that stage reruns.
+- `893bfcfa7079883e135d974f46a16720c8354087` preserves an unreadable or unsupported recovery snapshot under an `.invalid-<timestamp>` quarantine name instead of allowing the next persistence cycle to delete it. If preservation itself fails, automatic recovery writes are disabled for that app session. Windows run `35078267500` passed rustfmt, strict UI Clippy, UI tests, and the native Slint build.
+- `b2717c08aa52477afb0e7a638bdab43a9947544d` makes queue-recovery publication crash-safe: new JSON is flushed to a temp file, the prior primary is rotated to `.bak`, failed publication restores that prior snapshot when possible, and reads fall back to `.bak` when the primary is absent. Core run `35086646029` passed strict core Clippy and core tests.
+- `5100c90ecb992b09f25751225caab55191fd5f9e` closes the backup/quarantine interaction: when the primary is absent and the fallback backup is unreadable, that backup is quarantined rather than later being removed by an empty-queue save.
 
 The UI bridge loads recovery once and checkpoints recoverable queue state at a throttled one-second cadence rather than every 100 ms UI poll. The recovery file is stored under the existing app data root as `queue-recovery.json` (`%LOCALAPPDATA%\Storyteller OneClick Lite` on Windows, with the existing temp-directory fallback where persistent app data is unavailable).
 
@@ -177,20 +180,23 @@ Final Windows validation run `35068910791` passed rustfmt, strict workspace Clip
 
 ### Windows runtime storage and developer-test packaging — hardened
 
-Three related P5 release-hardening slices are integrated:
+Six related P5 release-hardening slices are integrated:
 
 - `234064e2a70f4fafbab7ee34be5bc5ffbc7fbc05` moves StoryTeller-owned automatic FFmpeg, whisper.cpp, and Whisper-model installs out of the executable directory and into `%LOCALAPPDATA%\Storyteller OneClick Lite\tools` / `models`. Portable-adjacent runtimes, explicit environment overrides, PATH discovery, imported whisper builds, and bounded legacy discovery remain supported. The substantive Windows gates in run `35074193551` passed; its final bookkeeping push failed only because the Actions token could not update a workflow file. Bookkeeping-only persistence run `35075247777` then stored the exact validated Rust/docs without recompiling.
 - `503ada36a0f000abf9dfd581f4941d6242f7654d` strengthens the manual Windows developer-test package without creating a public installer/update channel. Packaging uses `cargo build --locked --release`, emits `BUILD.json` with product/package/version/commit/actual Rust host target/executable/SHA-256, independently checks `SHA256SUMS.txt`, rejects unexpected package files, and publishes the short-lived artifact as `StoryTeller-Lite-Windows-x64-Developer-Test`. `Cargo.lock` is explicitly part of the application build contract. This workflow/docs-only slice was statically reviewed and did not spend another hosted compile run.
 - `b236c503b73fc2829ad8830d4084cd93cb0d1a22` centralizes the per-user application-data root used by automatic runtime setup, local whisper archive import, and relaunch recovery. Missing or empty `LOCALAPPDATA` no longer produces an accidental relative runtime/recovery directory. Persistent runtime installation/import fails explicitly when the per-user root is unavailable; queue recovery deliberately retains its temp-directory fallback. Final Windows run `35076642104` passed exact patch application, whitespace/rustfmt, strict `storyteller-ui` Clippy, UI tests, and the native Slint build. The preceding run `35076520019` stopped in patch scaffolding before Rust because one textual replacement count included the helper definition; the full log was inspected before the single corrected retry.
+- The whisper.cpp automatic-download path is pinned to upstream binary build `b5130` with fixed CPU/CUDA asset names and compiled-in SHA-256 digests (`e34a1197c60024706e6ad862d4a508d42fecbcda`, Windows run `35087149145`). `e30068e07a2e170dda689e58503fd69399cc636f` then removes automatic reuse of unverified legacy whisper archives while preserving already-extracted runtimes plus explicit Import whisper archive/PATH discovery; Windows run `35097393779` passed strict UI validation.
+- `b0ef2665afbedb53c5093d86acec5d6e15014cb7` pins automatic FFmpeg acquisition to the Gyan/Codex FFmpeg `9.0.1` Essentials ZIP and SHA-256 `fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9`; Windows run `35098920875` passed the targeted UI/runtime checkpoint.
+- Packaged relaunch recovery is now exercised by the permanent developer-test smoke script: `2bd99a0f145f3c5669d8202719fdc5949d84aed6` proves interrupted Running work restores as Waiting and stays paused (run `35081323895`), while `fee9ada9dbf4b46ffe9d03796617eee6ac8ecebb` adds a NeedsReview seed with checkpoints through Review Audio and proves the packaged app rewinds it to Prepare/Analyze/Align before persisting Waiting state (run `35179721389`).
 
-Temporary validation PRs #16 and #17 were closed without merge and their temporary validation scaffolding was removed.
+Temporary validation PRs #1 through #25 are closed without merge; validated changes live on `recovery/rust-slint`, while validation-only workflows/helpers remain off the implementation branch.
 
 ### P5 next work
 
 Continue with reading-system and packaged-build interoperability rather than adding more P2/P3 feature scope:
 
 - exercise the exported text, supplemental, and Graphic Readout books in representative reading systems where automation or reproducible fixture evidence is practical, recording reader-specific limitations separately from EPUBCheck conformance;
-- exercise the paused relaunch-recovery contract through the developer-test package/installed-like launch conditions, including an interrupted Waiting/Running job and a NeedsReview rewind, while preserving explicit Resume queue behavior;
+- keep the packaged relaunch smoke in the manual Windows developer-test build as regression coverage for Running → Waiting recovery and NeedsReview rewind; extend it only when a new recoverable status or persistence rule changes that contract;
 - keep the Windows developer-test package manual/short-lived and avoid inventing a public installer or auto-update channel until a concrete release/distribution requirement exists;
 - if a public release path is introduced later, preserve the per-user runtime root and package provenance/integrity contract rather than moving owned mutable data back beside the executable.
 
