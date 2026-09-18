@@ -199,14 +199,18 @@ Six related P5 release-hardening slices are integrated:
 
 All temporary validation PRs through this checkpoint are closed without merge; validated changes live on `main`, while validation-only workflows/helpers remain off the implementation branch.
 
+### Public portable Windows release path — implemented
+
+A version-gated `.github/workflows/release.yml` path publishes a portable Windows x64 release from an explicit `release/vMAJOR.MINOR.PATCH` branch only. The workflow requires the branch/tag version to match both Cargo packages, reruns formatting, strict workspace Clippy, all workspace tests, a locked release build, package-provenance/hash checks, and the packaged relaunch-recovery smoke before publication. It produces a flat ZIP containing the executable, `BUILD.json`, README, and executable checksum plus a separate ZIP SHA-256 asset. The executable is currently unsigned; no installer or auto-update channel is part of this contract.
+
 ### P5 next work
 
 Continue with reading-system and packaged-build interoperability rather than adding more P2/P3 feature scope:
 
 - keep the existing Thorium 3.5.1 import/open smoke and the successful three-artifact manual acceptance check as sufficient interoperability evidence for now; do not add more reader-test infrastructure unless a concrete compatibility problem or release requirement appears;
 - keep the packaged relaunch smoke in the manual Windows developer-test build as regression coverage for Running → Waiting recovery and NeedsReview rewind; extend it only when a new recoverable status or persistence rule changes that contract;
-- keep the Windows developer-test package manual/short-lived and avoid inventing a public installer or auto-update channel until a concrete release/distribution requirement exists;
-- if a public release path is introduced later, preserve the per-user runtime root and package provenance/integrity contract rather than moving owned mutable data back beside the executable.
+- keep the Windows developer-test package manual/short-lived for ad hoc checks; the concrete public-release requirement is now satisfied by a separate version-gated portable Windows x64 release workflow, without adding an installer or auto-update channel;
+- the public portable release path must preserve the per-user runtime root and package provenance/integrity contract; owned mutable runtime/model data must not move back beside the executable.
 
 Later evidence work:
 

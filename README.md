@@ -40,3 +40,10 @@ Useful checkpoints include:
 - Thorium import/open interoperability smoke: Linux run `35220207088`.
 
 See `docs/CI_POLICY.md`, `docs/HANDOFF.md`, and `docs/RUNTIME.md` for the current validation and runtime contracts.
+
+
+## Release process
+
+The first public distribution path is a portable Windows x64 ZIP. A branch named `release/vMAJOR.MINOR.PATCH` triggers the release workflow, which requires the branch version to match both Cargo packages, reruns formatting/Clippy/tests, builds with `--locked --release`, verifies package provenance and hashes, runs the packaged relaunch-recovery smoke, and publishes a GitHub Release only after those checks pass.
+
+The current executable is unsigned and there is no installer or auto-update channel yet.

@@ -1,0 +1,236 @@
+name: Publish Windows release
+
+# A release branch such as release/v0.1.0 is an explicit publication request.
+# Publication happens only after the exact branch commit passes the full Windows gate.
+on:
+  push:
+    branches:
+      - "release/v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: storyteller-lite-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Validate, package, and publish Windows x64 release
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact release commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Validate release identity
+        shell: pwsh
+        run: |
+          $branch = "${{ github.ref_name }}"
+          if ($branch -notmatch '^release/(v[0-9]+\.[0-9]+\.[0-9]+)$') {
+            throw "Release branch must be named release/vMAJOR.MINOR.PATCH."
+          }
+          $tag = $Matches[1]
+          $version = $tag.Substring(1)
+
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
+          $core = $metadata.packages | Where-Object { $_.name -eq "storyteller-core" } | Select-Object -First 1
+          if ($null -eq $app -or $null -eq $core) {
+            throw "Required StoryTeller packages were not found in Cargo metadata."
+          }
+          if ($app.version -ne $version -or $core.version -ne $version) {
+            throw "Release tag version $version does not match Cargo package versions (ui=$($app.version), core=$($core.version))."
+          }
+
+          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not query existing tags."
+          }
+          if (-not [string]::IsNullOrWhiteSpace(($existingTag | Out-String))) {
+            throw "Tag $tag already exists; refusing to overwrite a release."
+          }
+
+          "STORYTELLER_RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "STORYTELLER_RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "STORYTELLER_RELEASE_ARCHIVE=StoryTeller-Lite-$tag-windows-x64.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "STORYTELLER_RELEASE_CHECKSUM=StoryTeller-Lite-$tag-windows-x64.zip.sha256" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build locked release executable
+        run: cargo build --locked --release -p storyteller-ui
+
+      - name: Assemble portable release package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\storyteller-ui.exe dist\StoryTeller-Lite.exe
+
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
+          if ($null -eq $app) {
+            throw "storyteller-ui package metadata was not found."
+          }
+          $hostLine = rustc -vV | Select-String '^host:' | Select-Object -First 1
+          if ($null -eq $hostLine) {
+            throw "Could not determine the Rust host target."
+          }
+          $rustcHost = ($hostLine.Line -replace '^host:\s*', '').Trim()
+          if ([string]::IsNullOrWhiteSpace($rustcHost)) {
+            throw "Rust reported an empty host target."
+          }
+
+          $exeHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{
+            product = "StoryTeller Lite"
+            package = "storyteller-ui"
+            version = $app.version
+            release = $env:STORYTELLER_RELEASE_TAG
+            commit = $env:GITHUB_SHA
+            target = $rustcHost
+            executable = "StoryTeller-Lite.exe"
+            sha256 = $exeHash
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 dist\BUILD.json
+
+          @"
+          StoryTeller Lite $env:STORYTELLER_RELEASE_TAG — Windows x64 portable release
+
+          Run StoryTeller-Lite.exe directly. This first public release is portable;
+          it does not install an auto-updater or write mutable runtimes beside the EXE.
+
+          User-initiated verified FFmpeg, whisper.cpp, and model downloads are stored
+          under %LOCALAPPDATA%\Storyteller OneClick Lite\tools and \models.
+
+          A local whisper.cpp archive can also be imported from Settings.
+
+          This executable is currently unsigned, so Windows may display a SmartScreen
+          warning. Verify the release ZIP checksum before running it.
+          "@ | Set-Content -Encoding UTF8 dist\README.txt
+
+          "$exeHash  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
+
+      - name: Verify portable release package
+        shell: pwsh
+        run: |
+          $manifest = Get-Content dist\BUILD.json -Raw | ConvertFrom-Json
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
+          $hostLine = rustc -vV | Select-String '^host:' | Select-Object -First 1
+          $rustcHost = ($hostLine.Line -replace '^host:\s*', '').Trim()
+
+          if ($manifest.product -ne "StoryTeller Lite") { throw "BUILD.json product is unexpected." }
+          if ($manifest.package -ne "storyteller-ui") { throw "BUILD.json package is unexpected." }
+          if ($manifest.version -ne $env:STORYTELLER_RELEASE_VERSION) { throw "BUILD.json version is unexpected." }
+          if ($manifest.release -ne $env:STORYTELLER_RELEASE_TAG) { throw "BUILD.json release tag is unexpected." }
+          if ($manifest.commit -ne $env:GITHUB_SHA) { throw "BUILD.json commit does not match the release commit." }
+          if ($manifest.target -ne $rustcHost) { throw "BUILD.json target does not match the Rust host." }
+          if ($manifest.executable -ne "StoryTeller-Lite.exe") { throw "BUILD.json executable is unexpected." }
+
+          $actualHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.sha256 -ne $actualHash) { throw "BUILD.json SHA-256 does not match the executable." }
+          $recordedHash = ((Get-Content dist\SHA256SUMS.txt -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if ($recordedHash -ne $actualHash) { throw "SHA256SUMS.txt does not match the executable." }
+
+          $expectedFiles = @("BUILD.json", "README.txt", "SHA256SUMS.txt", "StoryTeller-Lite.exe") | Sort-Object
+          $actualFiles = Get-ChildItem dist -File | ForEach-Object Name | Sort-Object
+          $difference = Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $actualFiles
+          if ($difference) {
+            throw "Release package contains an unexpected file set: $($difference | Out-String)"
+          }
+
+      - name: Smoke-test packaged relaunch recovery
+        shell: pwsh
+        run: |
+          & .github\scripts\packaged-relaunch-smoke.ps1 -Executable dist\StoryTeller-Lite.exe
+
+      - name: Create and verify release archive
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\* -DestinationPath $env:STORYTELLER_RELEASE_ARCHIVE -CompressionLevel Optimal
+          $archiveHash = (Get-FileHash $env:STORYTELLER_RELEASE_ARCHIVE -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$archiveHash  $env:STORYTELLER_RELEASE_ARCHIVE" | Set-Content -Encoding ASCII $env:STORYTELLER_RELEASE_CHECKSUM
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $env:STORYTELLER_RELEASE_ARCHIVE))
+          try {
+            $entries = @($zip.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) } | ForEach-Object Name | Sort-Object)
+          } finally {
+            $zip.Dispose()
+          }
+          $expected = @("BUILD.json", "README.txt", "SHA256SUMS.txt", "StoryTeller-Lite.exe") | Sort-Object
+          $difference = Compare-Object -ReferenceObject $expected -DifferenceObject $entries
+          if ($difference) {
+            throw "Release ZIP contains an unexpected file set: $($difference | Out-String)"
+          }
+
+      - name: Upload release candidate artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: StoryTeller-Lite-${{ env.STORYTELLER_RELEASE_TAG }}-Windows-x64
+          path: |
+            ${{ env.STORYTELLER_RELEASE_ARCHIVE }}
+            ${{ env.STORYTELLER_RELEASE_CHECKSUM }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          @"
+          ## StoryTeller Lite $env:STORYTELLER_RELEASE_TAG
+
+          First public portable Windows x64 release of the reconstructed Rust + Slint StoryTeller Lite application.
+
+          ### Included
+          - Queue-first seven-stage EPUB audiobook pipeline.
+          - Bounded 1–4 worker whisper.cpp transcription.
+          - Conservative alignment and durable Review Audio decisions.
+          - Introduction/Credits preservation and Graphic Readout Media Overlays.
+          - Independent EPUB validation plus externally validated representative EPUB fixtures.
+          - Paused relaunch recovery with validated checkpoint reuse.
+          - Per-user, verified FFmpeg/whisper.cpp/model acquisition.
+          - Provenance-bearing portable Windows package.
+
+          ### Before running
+          This build is currently unsigned. Windows may show a SmartScreen warning.
+          Verify the supplied SHA-256 file against the downloaded ZIP.
+
+          No installer or auto-update channel is included in v0.1.0.
+          "@ | Set-Content -Encoding UTF8 RELEASE_NOTES.md
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $args = @(
+            "release", "create", $env:STORYTELLER_RELEASE_TAG,
+            $env:STORYTELLER_RELEASE_ARCHIVE,
+            $env:STORYTELLER_RELEASE_CHECKSUM,
+            "--repo", $env:GITHUB_REPOSITORY,
+            "--target", $env:GITHUB_SHA,
+            "--title", "StoryTeller Lite $env:STORYTELLER_RELEASE_TAG",
+            "--notes-file", "RELEASE_NOTES.md"
+          )
+          & gh @args
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release publication failed."
+          }
