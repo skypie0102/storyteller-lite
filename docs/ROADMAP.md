@@ -203,6 +203,8 @@ All temporary validation PRs through this checkpoint are closed without merge; v
 
 A version-gated `.github/workflows/release.yml` path publishes a portable Windows x64 release from an explicit `release/vMAJOR.MINOR.PATCH` branch only. The workflow requires the branch/tag version to match both Cargo packages, reruns formatting, strict workspace Clippy, all workspace tests, a locked release build, package-provenance/hash checks, and the packaged relaunch-recovery smoke before publication. It produces a flat ZIP containing the executable, `BUILD.json`, README, and executable checksum plus a separate ZIP SHA-256 asset. The executable is currently unsigned; no installer or auto-update channel is part of this contract.
 
+`v0.1.0` is the first published release. It points to commit `f208abbd9ee27eb19cb3ed2f802a8ecda17c38c8`; Windows release run `35302413893` completed successfully through publication. The first attempt (`35302295069`) stopped at rustfmt before lint/build/package/publication; the only required source change was rustfmt's line wrapping in `recovery_state.rs`. The successful release therefore has a clean full-gate result, and no failed attempt created or moved a release tag.
+
 ### P5 next work
 
 Continue with reading-system and packaged-build interoperability rather than adding more P2/P3 feature scope:

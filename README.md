@@ -20,6 +20,8 @@ The Slint UI is functionally complete for the supported 820×620 minimum window.
 
 P5 release/interoperability hardening remains active. EPUBCheck 5.4.0 passes the three representative exported fixtures. The same three artifacts have also been manually tested and reported to work normally.
 
+**v0.1.0 is released.** The public portable Windows x64 release was built from commit `f208abbd9ee27eb19cb3ed2f802a8ecda17c38c8`; release run `35302413893` passed version identity, rustfmt, strict workspace Clippy, all workspace tests, the locked release build, package/hash verification, packaged relaunch recovery, archive verification, and GitHub Release publication. The executable is unsigned; there is no installer or auto-update channel.
+
 ## Build
 
 ```powershell
@@ -44,6 +46,6 @@ See `docs/CI_POLICY.md`, `docs/HANDOFF.md`, and `docs/RUNTIME.md` for the curren
 
 ## Release process
 
-The first public distribution path is a portable Windows x64 ZIP. A branch named `release/vMAJOR.MINOR.PATCH` triggers the release workflow, which requires the branch version to match both Cargo packages, reruns formatting/Clippy/tests, builds with `--locked --release`, verifies package provenance and hashes, runs the packaged relaunch-recovery smoke, and publishes a GitHub Release only after those checks pass.
+The public distribution path is a portable Windows x64 ZIP. The current published release is `v0.1.0`. A branch named `release/vMAJOR.MINOR.PATCH` triggers the release workflow, which requires the branch version to match both Cargo packages, reruns formatting/Clippy/tests, builds with `--locked --release`, verifies package provenance and hashes, runs the packaged relaunch-recovery smoke, and publishes a GitHub Release only after those checks pass.
 
 The current executable is unsigned and there is no installer or auto-update channel yet.

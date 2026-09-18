@@ -113,7 +113,7 @@ jobs:
           @"
           StoryTeller Lite $env:STORYTELLER_RELEASE_TAG — Windows x64 portable release
 
-          Run StoryTeller-Lite.exe directly. This first public release is portable;
+          Run StoryTeller-Lite.exe directly. This release is portable;
           it does not install an auto-updater or write mutable runtimes beside the EXE.
 
           User-initiated verified FFmpeg, whisper.cpp, and model downloads are stored
@@ -197,7 +197,7 @@ jobs:
           @"
           ## StoryTeller Lite $env:STORYTELLER_RELEASE_TAG
 
-          First public portable Windows x64 release of the reconstructed Rust + Slint StoryTeller Lite application.
+          Portable Windows x64 release of the reconstructed Rust + Slint StoryTeller Lite application.
 
           ### Included
           - Queue-first seven-stage EPUB audiobook pipeline.
@@ -213,7 +213,7 @@ jobs:
           This build is currently unsigned. Windows may show a SmartScreen warning.
           Verify the supplied SHA-256 file against the downloaded ZIP.
 
-          No installer or auto-update channel is included in v0.1.0.
+          No installer or auto-update channel is included in $env:STORYTELLER_RELEASE_TAG.
           "@ | Set-Content -Encoding UTF8 RELEASE_NOTES.md
 
       - name: Publish GitHub Release
