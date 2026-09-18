@@ -112,12 +112,10 @@ mod tests {
         assert!(!path.exists());
         assert!(!backup.exists());
         assert_eq!(fs::read(&preserved).unwrap(), b"{broken-backup");
-        assert!(
-            preserved
-                .file_name()
-                .and_then(|value| value.to_str())
-                .is_some_and(|name| name.contains(".bak.invalid-"))
-        );
+        assert!(preserved
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| name.contains(".bak.invalid-")));
 
         let _ = fs::remove_file(preserved);
     }
