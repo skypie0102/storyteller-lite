@@ -1,0 +1,64 @@
+name: Manual Thorium interoperability
+
+# Real reading-system evidence is development-only, intentionally manual, and heavier than EPUBCheck.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-thorium-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  thorium:
+    name: Thorium 3.5.1 import/open smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Export StoryTeller interoperability fixtures
+        run: cargo run -p storyteller-core --example export_epubcheck_fixtures -- target/epubcheck-fixtures
+
+      - name: Publish interoperability EPUB fixtures
+        uses: actions/upload-artifact@v7
+        with:
+          name: StoryTeller-Lite-Interoperability-EPUBs
+          path: target/epubcheck-fixtures/*.epub
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Download and verify Thorium 3.5.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="3.5.1"
+          expected_sha256="72ab951d4963500b68c91a6496c662f30698dc27422a1b1af720b1cfbdfd327e"
+          package="$RUNNER_TEMP/Thorium-${version}-amd64.deb"
+          curl --fail --location --silent --show-error \
+            "https://github.com/edrlab/thorium-reader/releases/download/v${version}/Thorium-${version}-amd64.deb" \
+            --output "$package"
+          echo "${expected_sha256}  ${package}" | sha256sum --check --strict
+          echo "THORIUM_DEB=$package" >> "$GITHUB_ENV"
+
+      - name: Install Thorium and headless display support
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth "$THORIUM_DEB"
+
+      - name: Exercise fixtures in Thorium
+        shell: bash
+        env:
+          THORIUM_EXPECTED_VERSION: "3.5.1"
+        run: bash .github/scripts/thorium-reader-smoke.sh target/epubcheck-fixtures

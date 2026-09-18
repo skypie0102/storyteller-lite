@@ -1,0 +1,36 @@
+/* Storyteller generated read-aloud page presentation */
+.-epub-media-overlay-active {
+  background-color: #ffb;
+}
+
+.chapter-number {
+  text-align: center;
+}
+
+.storyteller-audio-player {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 2em 1em;
+  text-indent: 0;
+}
+
+.storyteller-audio-player audio {
+  display: block;
+  width: 100%;
+  max-width: 22em;
+}
+
+body.storyteller h1 {
+  margin: 1.5em;
+  font-size: 1.5em;
+  font-family: sans;
+}
+
+body.storyteller p {
+  text-align: center;
+  font-size: .8em;
+  margin: 3em 1.5em 3em;
+  font-style: italic;
+  color: #808080;
+}

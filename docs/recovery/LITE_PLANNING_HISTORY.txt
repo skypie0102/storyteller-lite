@@ -1,0 +1,369 @@
+Alright that looks good too. Keep thos image in the repo a UI layout guide.
+What would we start on? Maybe removing all uneeded and legacy code in the repo? Especially the parts that would be cut down? Or start straight to the refactoring?
+
+
+
+
+
+
+
+
+
+
+
+Worked for 4m 58s
+
+I would start straight with the refactor, not a broad legacy-code deletion.
+The reason is practical: the old React/Tauri/Sigil-era implementation costs us essentially nothing in the final Lite runtime while it is excluded from the new Cargo workspace, but it is extremely valuable as a behavioral regression reference. Deleting it first would make migration harder without making the new app faster.
+The two mockups are now stored in the branch as UI guides:
+- docs/ui-guides/storyteller-lite-main-ui.webp
+- docs/ui-guides/storyteller-lite-manual-allocation.webp
+- docs/ui-guides/README.md
+I also explicitly documented that the mockups are wide-window visual targets, not fixed canvases. The Slint implementation should reflow, hide secondary metadata when necessary, and use localized scrolling rather than absolute coordinates, so resizing the window won't mangle the UI.
+For the actual code migration, I’d use this order:
+1. Core job model first. Build the new Lite-native concepts in storyteller-core: Job, JobStatus, PipelineStage, structured progress, encoding settings, unmatched-audio policy, stage results, cancellation state, and queue transitions. This becomes the single source of truth for both the UI and processing backend.
+2. Queue + scheduler next. Implement the auto-start queue and resource-aware scheduler independently of Slint. This is where we establish Waiting → Preparing → Processing → Needs Review → Processing → Complete/Failed, plus pause-after-current and cancellation.
+3. Resumable stage system early. Before migrating expensive processing, establish the checkpoint/fingerprint architecture:
+   Prepare → Analyze → Align → Review → Encode → Build → Validate.
+   That way everything we port afterward automatically fits resumable processing instead of requiring a later redesign.
+4. Structured progress events. Implement the exact data required by the UI mockup: one overall percentage, current activity text, current stage, chapter/track/audio position, elapsed time, ETA, speed, backend/model, match percentage, warnings, and cached/skipped stages. The UI should consume these events rather than parse console output.
+5. Native EPUB foundation. Then extract the existing Rust EPUB integrity code into storyteller-epub and start building the single coherent EPUB model. This begins the real Sigil removal.
+6. Audio/unmatched pipeline. Move silence detection and unmatched-audio inspection into Rust, add automatic edge trimming, Smart classification, lazy OCR, and then build the streamlined allocator around those APIs.
+7. Persistent Whisper + processing optimization. Once the interfaces are clean, integrate the persistent whisper.cpp service, resource scheduler, minimal-transcode audio graph, caching, and low-copy staging.
+8. Slint UI implementation. The UI can actually begin fairly early—after steps 1–4—because at that point it has a stable model to bind to. We can build the main mockup and allocator without wiring them directly to legacy subprocesses.
+Then we delete legacy code incrementally. For example, once Slint Settings exists and the new settings model works, delete the corresponding React settings UI. Once native EPUB finishing passes regression tests, retire the Sigil normal path. Once Slint reaches full workflow coverage, remove React/Vite/Tauri as a unit.
+The rule I'd use throughout the migration is:
+Replace → regression-test → delete. Never delete → hope we remembered everything.
+
+There are a few things we already know can be marked for eventual deletion without porting: word-level synchronization, Activity console UI, Runtime Health page, Process-now flow, worker/thread controls, engine/runtime path UI, standardize-EPUB toggle, CSS editor, old unmatched-audio mode selector, permanent OCR toggle, and the old full-complexity allocator presentation. But I would leave those source files intact until their surrounding legacy screens can be removed cleanly rather than surgically ripping individual pieces out now.
+So the very next coding task I recommend is the new storyteller-core job + pipeline-state model. It is the foundation that lets virtually everything else become cleaner.
+
+
+
+
+  
+
+
+
+
+
+Alright start coding
+
+
+
+
+
+
+
+
+
+
+
+Worked for 13m 41s
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Analysis paused
+
+Started. The first real Rust refactor slice is now on refactor/rust-slint and CI is green.
+Implemented:
+- settings.rs
+  - Copy / Opus / AAC
+  - 32K / 64K / 96K only
+  - Opus 64K default
+  - Smart / ReviewAll
+  - transcription quality presets
+  - optional language/model overrides
+- pipeline.rs
+  - fixed seven-stage Lite pipeline:
+    Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate
+  - stage states for pending/running/completed/cached/skipped/failed
+  - one overall job percentage
+  - current activity text
+  - contextual metrics for audio position, item counts, speed, ETA, match %, backend and model
+  - enforced stage ordering
+  - monotonic progress
+  - atomic state transitions
+  - retry reset support
+- job.rs
+  - Lite-native Job
+  - Waiting / Running / NeedsReview / Completed / Failed / Cancelled
+  - strict transition rules
+  - review/resume behavior
+  - retry behavior
+  - validation must succeed before a job can be marked complete
+  - source/output safety checks
+- queue.rs
+  - auto-start queue
+  - only one foreground active book
+  - NeedsReview remains the active job
+  - pause-after-current
+  - resume
+  - retry
+  - safe removal
+  - waiting-job reordering without mixing active/recent sections
+I also added unit tests around all of those behaviors.
+The first CI attempt found only rustfmt differences; I applied them and reran everything. The exact current head fa49e940 now passes:
+Rust formatting ✓
+Clippy with warnings denied ✓
+Rust tests ✓
+Native Slint build ✓
+The next slice should be the durable/resumable stage system: fingerprints, stage checkpoints, invalidation rules, and reuse of completed work. After that, the resource-aware scheduler can sit on top of a state model that already understands cached stages rather than us retrofitting resumability later.
+
+
+
+
+  
+
+
+
+
+
+continue
+
+
+
+
+
+
+
+
+
+
+
+Worked for 25m 49s
+
+Continued. The refactor has moved substantially beyond the initial job model.
+The branch now includes:
+- Resumable stage checkpoints
+  - Prepare → Analyze → Align → Review → Encode → Build EPUB → Validate.
+  - Stage-specific fingerprints determine exactly what can be reused.
+  - Changing codec/bitrate preserves transcription/alignment work and resumes at Encode.
+  - Changing Whisper model invalidates from Analyze onward.
+  - Changing the EPUB backend preserves expensive audio work and resumes at Build EPUB.
+- Durable checkpoint storage
+  - Atomic checkpoint.json writes.
+  - Last-good backup fallback if the primary checkpoint is damaged.
+- Single weighted progress model
+  - Still only one visible progress bar.
+  - Cached stages contribute to restored progress.
+  - The initial weighting is Prepare 3%, Analyze 7%, Align 55%, Review 5%, Encode 18%, Build 8%, Validate 4%.
+  - Real within-stage progress smoothly advances that same overall bar.
+- Resource-aware scheduler
+  - CPU, GPU-heavy, FFmpeg and I/O capacity are tracked independently.
+  - GPU-heavy work can remain exclusive while lightweight preparation overlaps it.
+  - The initial automatic profile for a 16-thread/32-GB/NVIDIA-class desktop derives 12 CPU units, 1 GPU-heavy slot, 6 FFmpeg slots and 2 I/O slots.
+- Structured event journal
+  - Stage changes, progress, metrics, warnings, cache reuse, review requests and failures.
+  - Bounded at 256 entries by default.
+  - This is the backend for the future Details view, not a return of the Activity console.
+- New cancellation model
+  - Shared cancellation token for an entire processing attempt.
+  - Multiple simultaneous external child processes can be registered.
+  - Fixes the old architecture's assumption that a job has only one active PID.
+- Runtime coordinator
+  - Centralizes resource leases, cancellation, child-process registration and job events.
+  - FFmpeg/Whisper/alignment adapters will use this rather than manipulating UI/queue state themselves.
+I also caught and fixed all of the rustfmt differences introduced during these additions. The latest validation run has already passed formatting and is currently in the Clippy stage; tests and the native Slint build have not completed yet, so I'm not claiming this newest head is fully green yet.
+The next coding target is the durable job workspace + stage-artifact validation. That's important because matching fingerprints alone aren't enough: before displaying a stage as Cached, Lite also needs to verify that the actual transcription/alignment/audio artifacts it intends to reuse still exist and are valid. After that foundation is established, we can begin connecting real processing adapters and then move into the native EPUB layer.
+
+
+
+
+  
+
+
+
+
+
+Friday 7:42 AM
+continue
+
+
+
+
+
+
+
+
+
+
+
+Worked for 25m 41s
+
+Continued. This pass moved the refactor forward substantially.
+The branch now has the durable workspace/resume system fully wired into job retry, plus the first major native EPUB engine pieces:
+- Strict EPUB ZIP inspection and safe EPUB writing.
+- Native OPF manifest/spine model.
+- Metadata-preserving OPF editing rather than regenerating publisher metadata.
+- Native SMIL parsing, timing/reference validation and generation.
+- Native final EPUB audit checking manifest/spine, SMIL audio references, XHTML targets and fragment IDs.
+- SMIL zero-length repair is now deliberately narrow: malformed backwards clips and missing audio sources are not silently “fixed.”
+- Regression tests were added for those malformed SMIL cases.
+- The stage execution coordinator now ties resource leases, artifact manifests, atomic checkpoints and structured progress together.
+The de-Sigil architecture is therefore beginning to become real rather than just documented:
+storyteller-core
+      │
+      ├── resumable workspace
+      ├── scheduler
+      ├── cancellation
+      └── execution lifecycle
+              │
+              ▼
+       storyteller-epub
+       ├── ZIP/container
+       ├── OPF package
+       ├── OPF editor
+       ├── SMIL reader
+       ├── SMIL writer
+       └── integrity audit
+I also worked through the previous rustfmt failures and corrected the known formatting differences in the core workspace and EPUB files.
+One thing is not yet complete: the latest Windows CI run still stopped at cargo fmt --check. It happened after the newest SMIL corrections, and I reached the end of this execution window just as that result arrived, so I haven't yet retrieved that final rustfmt diff or advanced it to Clippy/tests. I therefore cannot claim the newest head is green yet.
+The next continuation should start by pulling that exact formatting diff, fixing it, and getting the whole workspace through rustfmt → Clippy → tests → Slint build. Once green, I’d continue with native navigation/read-aloud page generation and then wire storyteller-epub into the real Build EPUB / Validate stages.
+
+
+
+
+  
+
+
+
+
+
+Friday 8:46 AM
+continue
+
+
+
+
+
+
+
+
+
+
+
+Worked for 26m 11s
+
+Continued implementation on refactor/rust-slint.
+The important milestone is that the previously accumulated core + native EPUB foundation is now fully green in Windows CI:
+- cargo fmt ✅
+- strict Clippy with -D warnings ✅
+- full workspace tests ✅
+- native Slint shell build ✅
+I also cleaned up the execution API instead of suppressing Clippy: durable stage completion now uses a StageCompletion value for artifacts/timing while retaining atomic artifact manifest → checkpoint → resource-release behavior.
+After getting that baseline green, I started the next de-Sigil slice. Two new native EPUB components are now committed:
+- Native EPUB3 navigation editor — surgically prepends/appends TOC entries, rejects external/escaping/duplicate targets, preserves unrelated navigation/landmarks, and calculates relative EPUB references.
+- Native read-aloud page model — generates Introduction/Credits XHTML with deterministic paragraph IDs, legacy transcription/OCR notes, XML escaping, and native SMIL generation tied directly to those paragraph IDs.
+- The read-aloud installer updates manifest + media-overlay relationship + spine + TOC transactionally. A failed placement should leave both OPF and navigation unchanged.
+- It deliberately preserves publisher OPF metadata instead of regenerating the package document.
+The resulting native path is becoming:
+alignment
+   ↓
+ReadAloudPage
+   ├── XHTML
+   └── SmilDocument
+          ↓
+PackageEditor
+   ├── manifest
+   ├── media-overlay
+   └── spine
+          ↓
+NavigationEditor
+   └── TOC
+          ↓
+native EPUB writer
+          ↓
+native EPUB audit
+The newest two files are committed, but I have not yet exported them through `storyteller-epub/src/lib.rs or run CI on this newest feature slice because the execution window ended immediately after their creation. So the previously established foundation is confirmed green, while the new navigation/read-aloud code still needs its first rustfmt/Clippy/test pass.
+That validation is the exact place to continue from next.
+
+
+
+
+  
+
+
+
+
+
+Friday 10:46 AM
+continue
+
+
+
+
+
+
+
+
+
+
+
+Worked for 26m 12s
+
+Continued the Lite native EPUB work.
+The read-aloud + navigation slice is now fully green on Windows CI: rustfmt, strict Clippy, all workspace tests, and the native Slint build passed. I kept <!DOCTYPE html> in generated Introduction/Credits XHTML for v1 parity and corrected the test rather than weakening the EPUB output.
+I then implemented the next optimization layer:
+- Added rewrite.rs with a raw-copy EPUB rewrite path.
+- Untouched ZIP members are copied in their existing compressed form rather than decompressed/recompressed.
+- OPF/nav/XHTML/SMIL can be replaced surgically.
+- New audio can be file-backed and streamed directly into the EPUB, avoiding a full audio payload in RAM.
+- Supports in-place EPUB rewriting on Windows using temp + atomic replacement.
+- Protects mimetype and META-INF/container.xml from accidental replacement.
+- Rejects ambiguous duplicate changes and additions that would overwrite existing members.
+- Added tests checking that untouched compressed audio retains its compression metadata/CRC/size across rewriting.
+- Exported rewrite_epub and EpubStagedMember from storyteller-epub.
+Current head is 9e2cca8…. Its CI has already passed rustfmt and is currently in the strict Clippy stage. I did not layer EpubTransaction on top while that validation was unresolved.
+The next implementation step is therefore well defined:
+Existing aligned EPUB
+        │
+        ▼
+ EpubTransaction
+        │
+        ├─ load OPF + NAV only
+        ├─ native package edits
+        ├─ native TOC edits
+        ├─ generate Intro/Credits XHTML
+        ├─ generate SMIL
+        ├─ stream new audio
+        │
+        ▼
+ raw-copy rewrite
+        │
+        ▼
+ candidate EPUB
+        │
+        ▼
+ native audit
+        │
+        ▼
+ atomic final publish
+That will be the first genuinely single-pass, native Storyteller finishing path: large existing audio/images stay compressed and untouched, Storyteller-owned structural changes happen in Rust, and the candidate is audited before final publication. The remaining incomplete item from this turn is simply the ongoing CI validation of the raw-copy writer; EpubTransaction has not been committed yet.
+
+
+
+
+  Sources

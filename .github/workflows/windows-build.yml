@@ -1,0 +1,164 @@
+name: Windows test build
+
+# Windows packaging is intentionally manual-only to conserve hosted runner usage.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: storyteller-lite-windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Validate and package Windows x64 build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Build release executable
+        run: cargo build --locked --release -p storyteller-ui
+
+      - name: Assemble developer-test package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\storyteller-ui.exe dist\StoryTeller-Lite.exe
+
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
+          if ($null -eq $app) {
+            throw "storyteller-ui package metadata was not found."
+          }
+          $hostLine = rustc -vV | Select-String '^host:' | Select-Object -First 1
+          if ($null -eq $hostLine) {
+            throw "Could not determine the Rust host target."
+          }
+          $rustcHost = ($hostLine.Line -replace '^host:\s*', '').Trim()
+          if ([string]::IsNullOrWhiteSpace($rustcHost)) {
+            throw "Rust reported an empty host target."
+          }
+
+          $exeHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [ordered]@{
+            product = "StoryTeller Lite"
+            package = "storyteller-ui"
+            version = $app.version
+            commit = $env:GITHUB_SHA
+            target = $rustcHost
+            executable = "StoryTeller-Lite.exe"
+            sha256 = $exeHash
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 dist\BUILD.json
+
+          @'
+          StoryTeller Lite — Windows developer-test build
+
+          Local whisper.cpp archive import:
+            Open Settings and choose Import whisper archive…
+            Select a .zip, .tgz, or .tar.gz such as:
+              whisper-cpp-windows-x64-cuda-13.1.0.tar.gz
+
+            Lite extracts the selected local archive into:
+              %LOCALAPPDATA%\Storyteller OneClick Lite\runtime\whisper\
+
+            The archive is not uploaded. Lite locates whisper-cli.exe or legacy
+            main.exe inside the extracted build, starts it with --help to verify the
+            runtime can load, selects it immediately, and reuses the persistent copy
+            on later launches.
+
+          Automatic downloads remain user-initiated. Verified dependencies are stored
+          per user under:
+            %LOCALAPPDATA%\Storyteller OneClick Lite\tools\
+            %LOCALAPPDATA%\Storyteller OneClick Lite\models\
+          so the package/executable directory does not need to be writable.
+
+          This is a developer-test build, not a public release.
+          '@ | Set-Content -Encoding UTF8 dist\README.txt
+          "$exeHash  StoryTeller-Lite.exe" | Set-Content -Encoding ASCII dist\SHA256SUMS.txt
+
+      - name: Verify developer-test package
+        shell: pwsh
+        run: |
+          $manifest = Get-Content dist\BUILD.json -Raw | ConvertFrom-Json
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
+          if ($null -eq $app) {
+            throw "storyteller-ui package metadata was not found during verification."
+          }
+          $hostLine = rustc -vV | Select-String '^host:' | Select-Object -First 1
+          if ($null -eq $hostLine) {
+            throw "Could not determine the Rust host target during verification."
+          }
+          $rustcHost = ($hostLine.Line -replace '^host:\s*', '').Trim()
+          if ([string]::IsNullOrWhiteSpace($rustcHost)) {
+            throw "Rust reported an empty host target during verification."
+          }
+
+          if ($manifest.product -ne "StoryTeller Lite") {
+            throw "BUILD.json product is unexpected."
+          }
+          if ($manifest.package -ne "storyteller-ui") {
+            throw "BUILD.json package is unexpected."
+          }
+          if ($manifest.version -ne $app.version) {
+            throw "BUILD.json version does not match Cargo metadata."
+          }
+          if ($manifest.commit -ne $env:GITHUB_SHA) {
+            throw "BUILD.json commit does not match the checked-out commit."
+          }
+          if ($manifest.target -ne $rustcHost) {
+            throw "BUILD.json target does not match the Rust host used for the build."
+          }
+          if ($manifest.executable -ne "StoryTeller-Lite.exe") {
+            throw "BUILD.json executable name is unexpected."
+          }
+
+          $actualHash = (Get-FileHash dist\StoryTeller-Lite.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.sha256 -ne $actualHash) {
+            throw "BUILD.json SHA-256 does not match StoryTeller-Lite.exe."
+          }
+          $recordedHash = ((Get-Content dist\SHA256SUMS.txt -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if ($recordedHash -ne $actualHash) {
+            throw "SHA256SUMS.txt does not match StoryTeller-Lite.exe."
+          }
+
+          $expectedFiles = @("BUILD.json", "README.txt", "SHA256SUMS.txt", "StoryTeller-Lite.exe") | Sort-Object
+          $actualFiles = Get-ChildItem dist -File | ForEach-Object Name | Sort-Object
+          $difference = Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $actualFiles
+          if ($difference) {
+            throw "Developer-test package contains an unexpected file set: $($difference | Out-String)"
+          }
+
+      - name: Smoke-test packaged relaunch recovery
+        shell: pwsh
+        run: |
+          & .github\scripts\packaged-relaunch-smoke.ps1 -Executable dist\StoryTeller-Lite.exe
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: StoryTeller-Lite-Windows-x64-Developer-Test
+          path: dist/
+          if-no-files-found: error
+          retention-days: 3

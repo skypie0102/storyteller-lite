@@ -1,0 +1,969 @@
+import { Button, ComboBox, HorizontalBox, ListView, Palette, ProgressIndicator, ScrollView, VerticalBox } from "std-widgets.slint";
+
+export struct QueueRow {
+    id: string,
+    position: string,
+    title: string,
+    status: string,
+    detail: string,
+    waiting: bool,
+    retryable: bool,
+    can-move-up: bool,
+    can-move-down: bool,
+}
+
+export struct StageRow {
+    label: string,
+    state: string,
+}
+
+export struct StageDetailRow {
+    label: string,
+    state: string,
+    elapsed: string,
+    activity: string,
+}
+
+export struct ReviewCandidateRow {
+    href: string,
+    line-index: int,
+    text: string,
+    score: string,
+}
+
+component SourcePickerCard inherits Rectangle {
+    in property <string> label-text;
+    in property <string> source-name;
+    in property <string> empty-hint;
+    in property <string> change-hint;
+    in property <length> card-height: 165px;
+    callback activated();
+
+    min-height: root.card-height;
+    border-width: 1px;
+    border-color: Palette.border;
+    border-radius: 10px;
+
+    VerticalBox {
+        padding: 20px;
+        spacing: 10px;
+
+        Text { text: root.label-text; font-size: 18px; font-weight: 700; }
+        Text {
+            text: root.source-name == "" ? root.empty-hint : root.source-name;
+            font-size: 16px;
+            horizontal-alignment: center;
+            vertical-stretch: 1;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: root.source-name == "" ? "or click to browse" : root.change-hint;
+            horizontal-alignment: center;
+            opacity: 0.62;
+        }
+    }
+
+    TouchArea { clicked => { root.activated(); } }
+}
+
+export component AppWindow inherits Window {
+    title: "Storyteller OneClick Lite";
+    preferred-width: 1040px;
+    preferred-height: 760px;
+    min-width: 820px;
+    min-height: 620px;
+
+    private property <bool> compact-layout: root.width < 900px;
+    private property <bool> short-layout: root.height < 700px;
+
+    in-out property <string> status-text: "Ready";
+    in-out property <string> epub-source-name: "";
+    in-out property <string> audio-source-name: "";
+    in-out property <string> codec-text: "Opus";
+    in-out property <string> bitrate-text: "64K";
+    in-out property <string> whisper-workers-text: "1";
+    in-out property <string> unmatched-audio-policy-text: "Smart";
+    in-out property <bool> settings-open: false;
+    in-out property <bool> runtime-refresh-requested: false;
+    in-out property <bool> runtime-install-requested: false;
+    in-out property <bool> runtime-busy: false;
+    in-out property <bool> runtime-ready: false;
+    in-out property <string> runtime-summary-text: "Open Settings to scan dependencies.";
+    in-out property <string> runtime-ffmpeg-text: "Not scanned";
+    in-out property <string> runtime-whisper-text: "Not scanned";
+    in-out property <string> runtime-model-text: "Not scanned";
+    in-out property <string> runtime-install-status-text: "";
+    in property <[QueueRow]> queue-rows;
+    in property <bool> queue-paused: false;
+
+    in property <bool> has-active-job: false;
+    in property <string> active-title: "";
+    in property <float> active-overall-progress: 0;
+    in property <string> active-progress-text: "0%";
+    in property <string> active-activity-text: "";
+    in property <string> active-context-text: "";
+    in property <string> active-timing-text: "";
+    in property <string> active-metrics-text: "";
+    in property <string> pause-action-text: "Pause after book";
+    in property <[StageRow]> active-stages;
+    in property <[StageDetailRow]> active-stage-details;
+    in property <bool> needs-review: false;
+    in property <string> review-summary-text: "";
+    in property <string> review-preview-text: "";
+    in property <[ReviewCandidateRow]> review-candidates;
+    in property <string> review-item-position-text: "";
+    in property <string> review-item-time-text: "";
+    in property <string> review-item-transcript-text: "";
+    in property <string> review-item-decision-text: "";
+    in property <string> review-seek-text: "";
+    in property <string> review-allocator-status-text: "";
+    in-out property <string> review-preview-status-text: "";
+    in property <bool> review-can-previous: false;
+    in property <bool> review-can-next: false;
+    in property <bool> review-can-preserve-edge: false;
+    in property <string> review-preserve-edge-text: "";
+    in property <bool> review-complete: false;
+
+    callback browse-epub();
+    callback browse-audio();
+    callback import-whisper-archive();
+    callback queue-book();
+    callback open-settings();
+    callback pause-after-book();
+    callback cancel-current();
+    callback continue-after-review();
+    callback review-previous();
+    callback review-next();
+    callback review-seek-relative(int);
+    callback review-play();
+    callback review-stop();
+    callback review-assign(string, int);
+    callback review-preserve-edge();
+    callback review-exclude();
+    callback finish-review();
+    callback resume-queue();
+    callback move-waiting(string, bool);
+    callback remove-job(string);
+    callback retry-from-start(string);
+
+    if !root.settings-open : VerticalBox {
+        padding: 24px;
+        spacing: 18px;
+
+        HorizontalBox {
+            spacing: 12px;
+
+            Text {
+                text: "Storyteller OneClick Lite";
+                font-size: 26px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: root.status-text;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                max-width: root.compact-layout ? 240px : 420px;
+                overflow: elide;
+                opacity: 0.72;
+            }
+
+            Button {
+                text: "Settings";
+                clicked => {
+                    root.settings-open = true;
+                    root.runtime-refresh-requested = true;
+                }
+            }
+        }
+
+        Rectangle {
+            min-height: 1px;
+            max-height: 1px;
+            background: Palette.border;
+            opacity: 0.5;
+        }
+
+        if !root.has-active-job : VerticalBox {
+            spacing: 16px;
+
+            Text {
+                text: "CREATE READ-ALOUD EPUB";
+                font-size: 14px;
+                font-weight: 700;
+                opacity: 0.72;
+            }
+
+            if !root.compact-layout : HorizontalBox {
+                spacing: 16px;
+
+                SourcePickerCard {
+                    horizontal-stretch: 1;
+                    label-text: "EPUB";
+                    source-name: root.epub-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose a different EPUB";
+                    activated => { root.browse-epub(); }
+                }
+
+                SourcePickerCard {
+                    horizontal-stretch: 1;
+                    label-text: "AUDIOBOOK";
+                    source-name: root.audio-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose different audio";
+                    activated => { root.browse-audio(); }
+                }
+            }
+
+            if root.compact-layout : VerticalBox {
+                spacing: 10px;
+
+                SourcePickerCard {
+                    card-height: 110px;
+                    label-text: "EPUB";
+                    source-name: root.epub-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose a different EPUB";
+                    activated => { root.browse-epub(); }
+                }
+
+                SourcePickerCard {
+                    card-height: 110px;
+                    label-text: "AUDIOBOOK";
+                    source-name: root.audio-source-name;
+                    empty-hint: "Drop file here";
+                    change-hint: "Click to choose different audio";
+                    activated => { root.browse-audio(); }
+                }
+            }
+
+            if !root.compact-layout : HorizontalBox {
+                spacing: 10px;
+                Text { text: "Encoding"; vertical-alignment: center; font-weight: 600; }
+                ComboBox {
+                    model: ["Copy", "Opus", "AAC"];
+                    current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                    selected(value) => { root.codec-text = value; }
+                }
+                ComboBox {
+                    model: ["32K", "64K", "96K"];
+                    current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                    enabled: root.codec-text != "Copy";
+                    selected(value) => { root.bitrate-text = value; }
+                }
+                Text { text: "Output: Next to source"; vertical-alignment: center; opacity: 0.72; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: "Unmatched audio"; vertical-alignment: center; opacity: 0.72; }
+                ComboBox {
+                    model: ["Smart", "Review all"];
+                    current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                    selected(value) => { root.unmatched-audio-policy-text = value; }
+                }
+                Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
+            }
+
+            if root.compact-layout : VerticalBox {
+                spacing: 8px;
+                HorizontalBox {
+                    spacing: 10px;
+                    Text { text: "Encoding"; vertical-alignment: center; font-weight: 600; }
+                    ComboBox {
+                        model: ["Copy", "Opus", "AAC"];
+                        current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                        selected(value) => { root.codec-text = value; }
+                    }
+                    ComboBox {
+                        model: ["32K", "64K", "96K"];
+                        current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                        enabled: root.codec-text != "Copy";
+                        selected(value) => { root.bitrate-text = value; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: "Output next to source"; vertical-alignment: center; opacity: 0.72; }
+                }
+                HorizontalBox {
+                    spacing: 10px;
+                    Text { text: "Unmatched audio"; vertical-alignment: center; opacity: 0.72; }
+                    ComboBox {
+                        model: ["Smart", "Review all"];
+                        current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                        selected(value) => { root.unmatched-audio-policy-text = value; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
+                }
+            }
+        }
+
+        if root.has-active-job && !root.compact-layout && !root.needs-review : Rectangle {
+            min-height: 64px;
+            max-height: 64px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            HorizontalBox {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                Text { text: "QUEUE ANOTHER BOOK"; font-size: 12px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
+                Button {
+                    text: root.epub-source-name == "" ? "Choose EPUB" : root.epub-source-name;
+                    clicked => { root.browse-epub(); }
+                }
+                Button {
+                    text: root.audio-source-name == "" ? "Choose audio" : root.audio-source-name;
+                    clicked => { root.browse-audio(); }
+                }
+                ComboBox {
+                    model: ["Copy", "Opus", "AAC"];
+                    current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                    selected(value) => { root.codec-text = value; }
+                }
+                ComboBox {
+                    model: ["32K", "64K", "96K"];
+                    current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                    enabled: root.codec-text != "Copy";
+                    selected(value) => { root.bitrate-text = value; }
+                }
+                ComboBox {
+                    model: ["Smart", "Review all"];
+                    current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                    selected(value) => { root.unmatched-audio-policy-text = value; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+            }
+        }
+
+        if root.has-active-job && root.compact-layout && !root.needs-review : Rectangle {
+            min-height: 84px;
+            max-height: 84px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            VerticalBox {
+                padding-left: 10px;
+                padding-right: 10px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 4px;
+
+                HorizontalBox {
+                    spacing: 7px;
+                    Text { text: "QUEUE ANOTHER BOOK"; font-size: 11px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
+                    Button {
+                        horizontal-stretch: 1;
+                        text: root.epub-source-name == "" ? "Choose EPUB" : root.epub-source-name;
+                        clicked => { root.browse-epub(); }
+                    }
+                    Button {
+                        horizontal-stretch: 1;
+                        text: root.audio-source-name == "" ? "Choose audio" : root.audio-source-name;
+                        clicked => { root.browse-audio(); }
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 7px;
+                    ComboBox {
+                        model: ["Copy", "Opus", "AAC"];
+                        current-index: root.codec-text == "Copy" ? 0 : root.codec-text == "AAC" ? 2 : 1;
+                        selected(value) => { root.codec-text = value; }
+                    }
+                    ComboBox {
+                        model: ["32K", "64K", "96K"];
+                        current-index: root.bitrate-text == "32K" ? 0 : root.bitrate-text == "96K" ? 2 : 1;
+                        enabled: root.codec-text != "Copy";
+                        selected(value) => { root.bitrate-text = value; }
+                    }
+                    ComboBox {
+                        model: ["Smart", "Review all"];
+                        current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
+                        selected(value) => { root.unmatched-audio-policy-text = value; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+                }
+            }
+        }
+
+        if root.has-active-job : VerticalBox {
+            spacing: 12px;
+            vertical-stretch: root.needs-review ? 1 : 0;
+            Text { text: root.needs-review ? "REVIEW AUDIO" : "ACTIVE JOB"; font-size: 14px; font-weight: 700; opacity: 0.72; }
+
+            Rectangle {
+                vertical-stretch: root.needs-review ? 1 : 0;
+                min-height: root.needs-review ? (root.short-layout ? 410px : 520px) : 250px;
+                border-width: 1px;
+                border-color: Palette.border;
+                border-radius: 10px;
+
+                VerticalBox {
+                    padding: 18px;
+                    spacing: 10px;
+
+                    HorizontalBox {
+                        spacing: 12px;
+                        Text {
+                            text: root.active-title;
+                            font-size: 20px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.active-progress-text;
+                            font-size: 20px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    ProgressIndicator { progress: root.active-overall-progress; }
+                    if !root.needs-review : Text { text: root.active-activity-text; font-size: 17px; font-weight: 600; wrap: word-wrap; }
+                    if !root.needs-review && root.active-context-text != "" : Text { text: root.active-context-text; opacity: 0.72; wrap: word-wrap; }
+
+                    HorizontalBox {
+                        spacing: 6px;
+                        for stage in root.active-stage-details : Rectangle {
+                            horizontal-stretch: 1;
+                            min-height: 48px;
+                            border-width: 1px;
+                            border-color: stage.state == "Active" ? Palette.accent-background : Palette.border;
+                            border-radius: 7px;
+                            background: stage.state == "Active" ? Palette.accent-background : Palette.alternate-background;
+                            VerticalBox {
+                                padding-left: 7px;
+                                padding-right: 7px;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: 1px;
+                                Text {
+                                    text: stage.label;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    color: stage.state == "Active" ? Palette.accent-foreground : Palette.alternate-foreground;
+                                }
+                                Text {
+                                    text: stage.elapsed == "" ? stage.state : stage.state + " • " + stage.elapsed;
+                                    font-size: 10px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    opacity: 0.72;
+                                    color: stage.state == "Active" ? Palette.accent-foreground : Palette.alternate-foreground;
+                                }
+                            }
+                        }
+                    }
+
+                    if !root.needs-review && root.active-timing-text != "" : Text { text: root.active-timing-text; opacity: 0.78; wrap: word-wrap; }
+
+                    if root.needs-review : Rectangle {
+                        vertical-stretch: 1;
+                        min-height: root.short-layout ? 180px : 335px;
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        border-radius: 7px;
+                        VerticalBox {
+                            padding: 10px;
+                            spacing: 7px;
+
+                            if !root.compact-layout : HorizontalBox {
+                                spacing: 8px;
+                                Text { text: "UNRESOLVED AUDIO"; font-size: 12px; font-weight: 700; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
+                                Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
+                                Button { text: "Next"; enabled: root.review-can-next; clicked => { root.review-next(); } }
+                            }
+
+                            if root.compact-layout : HorizontalBox {
+                                spacing: 7px;
+                                Text { text: "UNRESOLVED AUDIO"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                Text { text: root.review-item-position-text; opacity: 0.72; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Button { text: "Previous"; enabled: root.review-can-previous; clicked => { root.review-previous(); } }
+                                Button { text: "Next"; enabled: root.review-can-next; clicked => { root.review-next(); } }
+                            }
+
+                            ScrollView {
+                                vertical-stretch: 1;
+                                horizontal-scrollbar-policy: always-off;
+
+                                VerticalBox {
+                                    spacing: 7px;
+
+                                    Text { text: root.review-summary-text; wrap: word-wrap; opacity: 0.82; }
+                                    HorizontalBox {
+                                        spacing: 7px;
+                                        Text { text: root.review-item-time-text; font-weight: 600; vertical-alignment: center; }
+                                        Text { text: root.review-seek-text; opacity: 0.72; vertical-alignment: center; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        Button { text: "-5s"; clicked => { root.review-seek-relative(-1); } }
+                                        Button { text: "Play"; clicked => { root.review-play(); } }
+                                        Button { text: "+5s"; clicked => { root.review-seek-relative(1); } }
+                                        Button { text: "Stop"; clicked => { root.review-stop(); } }
+                                    }
+                                    if root.review-preview-status-text != "" : Text { text: root.review-preview-status-text; font-size: 11px; opacity: 0.72; overflow: elide; }
+                                    Text { text: root.review-item-transcript-text; wrap: word-wrap; max-height: 54px; }
+                                    Text { text: root.review-item-decision-text; font-size: 11px; opacity: 0.75; wrap: word-wrap; }
+                                    Text {
+                                        text: "Choose a bounded EPUB text block or nearby image. Assigning or excluding advances to the next pending segment.";
+                                        font-size: 10px;
+                                        opacity: 0.68;
+                                        wrap: word-wrap;
+                                    }
+
+                                    if !root.compact-layout : HorizontalBox {
+                                        spacing: 8px;
+                                        Text { text: "EPUB DESTINATION CANDIDATES"; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if root.review-can-preserve-edge : Button {
+                                            text: root.review-preserve-edge-text;
+                                            primary: true;
+                                            clicked => { root.review-preserve-edge(); }
+                                        }
+                                        Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
+                                    }
+
+                                    if root.compact-layout : HorizontalBox {
+                                        spacing: 7px;
+                                        Text { text: "EPUB DESTINATIONS"; font-size: 10px; font-weight: 700; vertical-alignment: center; }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if root.review-can-preserve-edge : Button {
+                                            text: root.review-preserve-edge-text;
+                                            primary: true;
+                                            clicked => { root.review-preserve-edge(); }
+                                        }
+                                        Button { text: "Exclude & Next"; clicked => { root.review-exclude(); } }
+                                    }
+
+                                    for candidate in root.review-candidates : Rectangle {
+                                        min-height: 42px;
+                                        max-height: 42px;
+                                        border-width: 1px;
+                                        border-color: Palette.border;
+                                        border-radius: 5px;
+                                        HorizontalBox {
+                                            padding-left: 7px;
+                                            padding-right: 7px;
+                                            spacing: 7px;
+                                            VerticalBox {
+                                                horizontal-stretch: 1;
+                                                spacing: 1px;
+                                                Text { text: candidate.text; overflow: elide; font-size: 11px; }
+                                                HorizontalBox {
+                                                    spacing: 6px;
+                                                    Text { text: candidate.href; overflow: elide; font-size: 9px; opacity: 0.58; horizontal-stretch: 1; }
+                                                    Text { text: candidate.line-index < 0 ? "Graphic Readout" : candidate.score; font-size: 9px; opacity: 0.58; }
+                                                }
+                                            }
+                                            Button {
+                                                text: candidate.line-index < 0 ? "Assign image & Next" : "Assign text & Next";
+                                                clicked => { root.review-assign(candidate.href, candidate.line-index); }
+                                            }
+                                        }
+                                    }
+                                    Text { text: root.review-allocator-status-text; font-size: 11px; opacity: 0.78; wrap: word-wrap; }
+                                }
+                            }
+                        }
+                    }
+
+                    if !root.compact-layout : HorizontalBox {
+                        spacing: 10px;
+                        if !root.needs-review && root.active-metrics-text != "" : Text {
+                            text: root.active-metrics-text;
+                            opacity: 0.78;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            wrap: word-wrap;
+                        }
+                        if root.needs-review || root.active-metrics-text == "" : Rectangle { horizontal-stretch: 1; }
+                        Button { text: root.needs-review ? "Cancel book" : "Cancel"; clicked => { root.cancel-current(); } }
+                        if root.needs-review : Button {
+                            text: "Exclude all pending & continue";
+                            clicked => { root.continue-after-review(); }
+                        }
+                        if root.needs-review : Button {
+                            text: "Continue";
+                            primary: true;
+                            enabled: root.review-complete;
+                            clicked => { root.finish-review(); }
+                        }
+                        if !root.needs-review : Button {
+                            text: root.pause-action-text;
+                            enabled: root.pause-action-text != "Pause requested";
+                            clicked => { root.pause-after-book(); }
+                        }
+                    }
+
+                    if root.compact-layout : VerticalBox {
+                        spacing: 5px;
+                        if !root.needs-review && root.active-metrics-text != "" : Text {
+                            text: root.active-metrics-text;
+                            opacity: 0.78;
+                            wrap: word-wrap;
+                        }
+                        HorizontalBox {
+                            spacing: 7px;
+                            Rectangle { horizontal-stretch: 1; }
+                            Button { text: root.needs-review ? "Cancel book" : "Cancel"; clicked => { root.cancel-current(); } }
+                            if root.needs-review : Button {
+                                text: "Exclude pending";
+                                clicked => { root.continue-after-review(); }
+                            }
+                            if root.needs-review : Button {
+                                text: "Continue";
+                                primary: true;
+                                enabled: root.review-complete;
+                                clicked => { root.finish-review(); }
+                            }
+                            if !root.needs-review : Button {
+                                text: root.pause-action-text;
+                                enabled: root.pause-action-text != "Pause requested";
+                                clicked => { root.pause-after-book(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !root.needs-review : Rectangle { min-height: 1px; max-height: 1px; background: Palette.border; opacity: 0.5; }
+
+        if !root.needs-review : HorizontalBox {
+            spacing: 10px;
+            Text { text: "QUEUE & RECENT"; font-size: 14px; font-weight: 700; opacity: 0.72; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+            if root.queue-paused : Text { text: "Paused"; opacity: 0.72; vertical-alignment: center; }
+            if root.queue-paused : Button { text: "Resume queue"; clicked => { root.resume-queue(); } }
+        }
+
+        if !root.needs-review : Rectangle {
+            vertical-stretch: 1;
+            min-height: root.compact-layout ? 125px : 150px;
+            border-width: 1px;
+            border-color: Palette.border;
+            border-radius: 10px;
+
+            VerticalBox {
+                padding: 12px;
+
+                if root.queue-rows.length == 0 : Text {
+                    text: "No queued or recent books.";
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    vertical-stretch: 1;
+                    opacity: 0.62;
+                }
+
+                if root.queue-rows.length > 0 : ListView {
+                    vertical-stretch: 1;
+
+                    for row in root.queue-rows : Rectangle {
+                        width: parent.width;
+                        height: root.compact-layout ? 78px : 60px;
+
+                        Rectangle {
+                            width: parent.width;
+                            height: root.compact-layout ? 72px : 54px;
+                            border-width: 1px;
+                            border-color: Palette.border;
+                            border-radius: 7px;
+
+                            if !root.compact-layout : HorizontalBox {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 8px;
+                                Text { text: row.position; min-width: 24px; max-width: 24px; vertical-alignment: center; opacity: 0.58; }
+                                VerticalBox {
+                                    horizontal-stretch: 1;
+                                    spacing: 1px;
+                                    Text { text: row.title; overflow: elide; font-weight: 600; }
+                                    if row.detail != "" : Text { text: row.detail; overflow: elide; font-size: 11px; opacity: 0.62; }
+                                }
+                                Text { text: row.status; vertical-alignment: center; opacity: 0.68; }
+                                if row.waiting : Button { text: "↑"; enabled: row.can-move-up; clicked => { root.move-waiting(row.id, true); } }
+                                if row.waiting : Button { text: "↓"; enabled: row.can-move-down; clicked => { root.move-waiting(row.id, false); } }
+                                if row.retryable : Button { text: "Retry from start"; clicked => { root.retry-from-start(row.id); } }
+                                Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
+                            }
+
+                            if root.compact-layout : VerticalBox {
+                                padding-left: 9px;
+                                padding-right: 9px;
+                                padding-top: 5px;
+                                padding-bottom: 5px;
+                                spacing: 3px;
+                                HorizontalBox {
+                                    spacing: 7px;
+                                    Text { text: row.position; min-width: 20px; max-width: 20px; vertical-alignment: center; opacity: 0.58; }
+                                    Text { text: row.title; overflow: elide; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
+                                    Text { text: row.status; vertical-alignment: center; opacity: 0.68; }
+                                }
+                                HorizontalBox {
+                                    spacing: 6px;
+                                    if row.detail != "" : Text { text: row.detail; overflow: elide; font-size: 10px; opacity: 0.62; horizontal-stretch: 1; vertical-alignment: center; }
+                                    if row.detail == "" : Rectangle { horizontal-stretch: 1; }
+                                    if row.waiting : Button { text: "↑"; enabled: row.can-move-up; clicked => { root.move-waiting(row.id, true); } }
+                                    if row.waiting : Button { text: "↓"; enabled: row.can-move-down; clicked => { root.move-waiting(row.id, false); } }
+                                    if row.retryable : Button { text: "Retry"; clicked => { root.retry-from-start(row.id); } }
+                                    Button { text: "Remove"; clicked => { root.remove-job(row.id); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.settings-open : VerticalBox {
+        padding: 24px;
+        spacing: 16px;
+
+        HorizontalBox {
+            spacing: 12px;
+            Text {
+                text: "Settings";
+                font-size: 26px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Back";
+                enabled: !root.runtime-busy;
+                clicked => { root.settings-open = false; }
+            }
+        }
+
+        Rectangle {
+            min-height: 1px;
+            max-height: 1px;
+            background: Palette.border;
+            opacity: 0.5;
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-scrollbar-policy: always-off;
+
+            VerticalBox {
+                spacing: 16px;
+
+                Text {
+                    text: "PROCESSING";
+                    font-size: 14px;
+                    font-weight: 700;
+                    opacity: 0.72;
+                }
+
+                Rectangle {
+                    min-height: root.compact-layout ? 112px : 84px;
+                    max-height: root.compact-layout ? 112px : 84px;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 10px;
+
+                    if !root.compact-layout : HorizontalBox {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 12px;
+                        Text {
+                            text: "Whisper workers";
+                            font-size: 16px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                        ComboBox {
+                            model: ["1", "2", "3", "4"];
+                            current-index: root.whisper-workers-text == "2" ? 1
+                                : root.whisper-workers-text == "3" ? 2
+                                : root.whisper-workers-text == "4" ? 3
+                                : 0;
+                            selected(value) => { root.whisper-workers-text = value; }
+                        }
+                        Text {
+                            text: "Maximum simultaneous transcription chunks. CPU thread allocation stays automatic.";
+                            vertical-alignment: center;
+                            opacity: 0.72;
+                            wrap: word-wrap;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    if root.compact-layout : VerticalBox {
+                        padding: 12px;
+                        spacing: 6px;
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text { text: "Whisper workers"; font-size: 16px; font-weight: 700; vertical-alignment: center; }
+                            Rectangle { horizontal-stretch: 1; }
+                            ComboBox {
+                                model: ["1", "2", "3", "4"];
+                                current-index: root.whisper-workers-text == "2" ? 1
+                                    : root.whisper-workers-text == "3" ? 2
+                                    : root.whisper-workers-text == "4" ? 3
+                                    : 0;
+                                selected(value) => { root.whisper-workers-text = value; }
+                            }
+                        }
+                        Text {
+                            text: "Maximum simultaneous transcription chunks. CPU thread allocation stays automatic.";
+                            opacity: 0.72;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                if !root.compact-layout : HorizontalBox {
+                    spacing: 10px;
+                    Text {
+                        text: "RUNTIME DEPENDENCIES";
+                        font-size: 14px;
+                        font-weight: 700;
+                        opacity: 0.72;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.runtime-summary-text;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                if root.compact-layout : VerticalBox {
+                    spacing: 4px;
+                    Text { text: "RUNTIME DEPENDENCIES"; font-size: 14px; font-weight: 700; opacity: 0.72; }
+                    Text { text: root.runtime-summary-text; font-weight: 600; wrap: word-wrap; opacity: 0.82; }
+                }
+
+                Rectangle {
+                    min-height: 305px;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    border-radius: 10px;
+
+                    VerticalBox {
+                        padding: 18px;
+                        spacing: 14px;
+
+                        Text {
+                            text: "StoryTeller Lite scans existing runtime locations automatically. If you already have a whisper.cpp archive, you can import that file directly instead of relying on discovery or downloading another build.";
+                            wrap: word-wrap;
+                            opacity: 0.78;
+                        }
+
+                        Text { text: "ffmpeg"; font-size: 16px; font-weight: 700; }
+                        Text { text: root.runtime-ffmpeg-text; wrap: word-wrap; opacity: 0.76; }
+
+                        Text { text: "whisper.cpp CLI"; font-size: 16px; font-weight: 700; }
+                        Text { text: root.runtime-whisper-text; wrap: word-wrap; opacity: 0.76; }
+
+                        Text { text: "Whisper model — large-v3-turbo"; font-size: 16px; font-weight: 700; }
+                        Text { text: root.runtime-model-text; wrap: word-wrap; opacity: 0.76; }
+
+                        Rectangle {
+                            min-height: 1px;
+                            max-height: 1px;
+                            background: Palette.border;
+                            opacity: 0.5;
+                        }
+
+                        Text {
+                            text: "Import whisper archive accepts .zip, .tgz, and .tar.gz files such as whisper-cpp-windows-x64-cuda-13.1.0.tar.gz. The selected local file is extracted into Lite's persistent runtime folder and is never uploaded. Automatic downloads remain opt-in and verified separately.";
+                            wrap: word-wrap;
+                            opacity: 0.72;
+                        }
+
+                        if root.runtime-install-status-text != "" : Text {
+                            text: root.runtime-install-status-text;
+                            font-weight: root.runtime-busy ? 700 : 500;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                Text {
+                    text: "Imported whisper.cpp builds are stored under %LOCALAPPDATA%\\Storyteller OneClick Lite\\runtime\\whisper\\ so they remain available even if the portable EXE is moved. New downloads are still placed beside the portable app.";
+                    wrap: word-wrap;
+                    opacity: 0.68;
+                }
+            }
+        }
+
+        if !root.compact-layout : HorizontalBox {
+            spacing: 10px;
+            Button {
+                text: "Re-scan";
+                enabled: !root.runtime-busy;
+                clicked => { root.runtime-refresh-requested = true; }
+            }
+            Button {
+                text: "Import whisper archive…";
+                enabled: !root.runtime-busy;
+                clicked => { root.import-whisper-archive(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: root.runtime-busy ? "Working…" : root.runtime-ready ? "Dependencies ready" : "Download missing";
+                primary: !root.runtime-ready;
+                enabled: !root.runtime-busy && !root.runtime-ready;
+                clicked => { root.runtime-install-requested = true; }
+            }
+            Button {
+                text: "Done";
+                enabled: !root.runtime-busy;
+                clicked => { root.settings-open = false; }
+            }
+        }
+
+        if root.compact-layout : VerticalBox {
+            spacing: 6px;
+            HorizontalBox {
+                spacing: 8px;
+                Button {
+                    text: "Re-scan";
+                    enabled: !root.runtime-busy;
+                    clicked => { root.runtime-refresh-requested = true; }
+                }
+                Button {
+                    text: "Import whisper archive…";
+                    enabled: !root.runtime-busy;
+                    clicked => { root.import-whisper-archive(); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            HorizontalBox {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    text: root.runtime-busy ? "Working…" : root.runtime-ready ? "Dependencies ready" : "Download missing";
+                    primary: !root.runtime-ready;
+                    enabled: !root.runtime-busy && !root.runtime-ready;
+                    clicked => { root.runtime-install-requested = true; }
+                }
+                Button {
+                    text: "Done";
+                    enabled: !root.runtime-busy;
+                    clicked => { root.settings-open = false; }
+                }
+            }
+        }
+    }
+}
