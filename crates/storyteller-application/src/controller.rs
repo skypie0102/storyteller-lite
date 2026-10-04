@@ -164,7 +164,7 @@ impl ApplicationController {
             ApplicationCommand::InstallMissingRuntime => return self.start_runtime_task(true),
             ApplicationCommand::Enqueue { inputs, settings } => {
                 self.queue.enqueue(Job::new(inputs, settings)?);
-                self.queue.start_next()?;
+                self.start_next_if_idle()?;
                 None
             }
             ApplicationCommand::PauseAfterCurrent => {
@@ -180,7 +180,7 @@ impl ApplicationController {
             }
             ApplicationCommand::ResumeQueue => {
                 self.queue.resume();
-                self.queue.start_next()?;
+                self.start_next_if_idle()?;
                 None
             }
             ApplicationCommand::CancelActive => {
@@ -193,14 +193,14 @@ impl ApplicationController {
                     let id = job.id;
                     let seconds = elapsed_seconds(job);
                     self.queue.finish(id, JobOutcome::Cancelled, seconds)?;
-                    self.queue.start_next()?;
+                    self.start_next_if_idle()?;
                     Some("Cancelled".into())
                 }
             }
             ApplicationCommand::RetryFromScratch(id) => {
                 self.ensure_worker_released(id)?;
                 self.queue.retry_from_scratch(id)?;
-                self.queue.start_next()?;
+                self.start_next_if_idle()?;
                 None
             }
             ApplicationCommand::Remove(id) => {
@@ -324,6 +324,15 @@ impl ApplicationController {
         } else {
             Ok(())
         }
+    }
+
+    fn start_next_if_idle(&mut self) -> Result<(), String> {
+        // A final snapshot may arrive before the thread releases its resources.
+        // Keep new jobs Waiting until the owned worker has actually been joined.
+        if self.worker.is_none() {
+            self.queue.start_next()?;
+        }
+        Ok(())
     }
 
     fn poll_worker(&mut self) {
@@ -876,6 +885,18 @@ mod tests {
 
     struct TestBackend {
         wait_for_cancel: bool,
+        require_review: bool,
+        exit_gate: Option<PathBuf>,
+    }
+    impl Drop for TestBackend {
+        fn drop(&mut self) {
+            if let Some(gate) = &self.exit_gate {
+                let limit = Instant::now() + Duration::from_secs(5);
+                while !gate.exists() && Instant::now() < limit {
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
     }
     impl PipelineBackend for TestBackend {
         fn plan_stage(&mut self, _job: &Job, stage: PipelineStage) -> Result<StagePlan, String> {
@@ -898,14 +919,22 @@ mod tests {
             let dir = context.workspace().stage_dir(context.stage());
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("artifact.txt"), context.stage().label()).unwrap();
-            Ok(StageRunOutput::new(
-                vec![PathBuf::from("artifact.txt")],
-                1,
-                1,
-            ))
+            let output = StageRunOutput::new(vec![PathBuf::from("artifact.txt")], 1, 1);
+            Ok(
+                if self.require_review && context.stage() == PipelineStage::ReviewAudio {
+                    output.requiring_review()
+                } else {
+                    output
+                },
+            )
         }
     }
-    fn test_worker(job: Job, wait_for_cancel: bool) -> Result<PipelineWorkerHandle, String> {
+    fn test_worker(
+        job: Job,
+        wait_for_cancel: bool,
+        require_review: bool,
+        hold_exit: bool,
+    ) -> Result<PipelineWorkerHandle, String> {
         let context = ResumeContext {
             epub_source: "epub:test".into(),
             audiobook_source: "audio:test".into(),
@@ -928,19 +957,39 @@ mod tests {
         runtime.register_job(job.id)?;
         let workspace =
             JobWorkspace::new(std::env::temp_dir().join(format!("controller-worker-{}", job.id)));
+        let exit_gate = hold_exit.then(|| workspace.root().join("release-worker"));
         spawn_pipeline_worker(
             job,
             workspace,
             runtime,
             context,
-            TestBackend { wait_for_cancel },
+            TestBackend {
+                wait_for_cancel,
+                require_review,
+                exit_gate,
+            },
         )
     }
     fn fast_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
-        test_worker(job, false)
+        test_worker(job, false, false, false)
     }
     fn cancellable_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
-        test_worker(job, true)
+        test_worker(job, true, false, false)
+    }
+    fn held_completed_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
+        test_worker(job, false, false, true)
+    }
+    fn held_review_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
+        test_worker(job, false, true, true)
+    }
+    fn release_worker(id: JobId) {
+        fs::write(
+            std::env::temp_dir()
+                .join(format!("controller-worker-{id}"))
+                .join("release-worker"),
+            b"release",
+        )
+        .unwrap();
     }
     fn clean_worker_workspace(id: JobId) {
         let _ = fs::remove_dir_all(std::env::temp_dir().join(format!("controller-worker-{id}")));
@@ -980,6 +1029,59 @@ mod tests {
         assert!(!root.0.join("queue.json").exists());
         clean_worker_workspace(first);
         clean_worker_workspace(second);
+    }
+
+    #[test]
+    fn commands_do_not_start_a_book_before_the_previous_worker_is_joined() {
+        let root = TestRoot::new();
+        let mut app = root.app();
+        app.worker_launcher = held_completed_worker;
+        let first = enqueue(&mut app, "first");
+        poll_until(&mut app, |queue| {
+            queue.job(first).unwrap().status == JobStatus::Completed
+        });
+        assert!(app
+            .worker
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished()));
+        let second = enqueue(&mut app, "second");
+        app.dispatch(ApplicationCommand::ResumeQueue).unwrap();
+        assert_eq!(app.queue.job(second).unwrap().status, JobStatus::Waiting);
+        assert!(app.queue.active_job().is_none());
+        app.worker_launcher = fast_worker;
+        release_worker(first);
+        poll_until(&mut app, |queue| {
+            queue.job(second).unwrap().status == JobStatus::Completed
+        });
+        app.shutdown();
+        clean_worker_workspace(first);
+        clean_worker_workspace(second);
+    }
+
+    #[test]
+    fn cancellation_survives_a_worker_yielding_review_before_thread_exit() {
+        let root = TestRoot::new();
+        let mut app = root.app();
+        app.worker_launcher = held_review_worker;
+        let first = enqueue(&mut app, "first");
+        let second = enqueue(&mut app, "second");
+        poll_until(&mut app, |queue| {
+            queue.job(first).unwrap().status == JobStatus::NeedsReview
+        });
+        assert!(app
+            .worker
+            .as_ref()
+            .is_some_and(|worker| !worker.is_finished()));
+        app.dispatch(ApplicationCommand::PauseAfterCurrent).unwrap();
+        app.dispatch(ApplicationCommand::CancelActive).unwrap();
+        release_worker(first);
+        poll_until(&mut app, |queue| {
+            queue.job(first).unwrap().status == JobStatus::Cancelled
+        });
+        assert_eq!(app.queue.state(), QueueState::Paused);
+        assert_eq!(app.queue.job(second).unwrap().status, JobStatus::Waiting);
+        app.shutdown();
+        clean_worker_workspace(first);
     }
 
     #[test]

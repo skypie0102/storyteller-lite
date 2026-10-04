@@ -14,7 +14,7 @@ The application controller now owns queue transitions, processing workers and re
 
 ## Application controller scaffold
 
-`ApplicationController` provides one command interface for enqueue, pause after the current book, resume, cancel, reorder, remove, retry from scratch, finish review, explicit pending-audio exclusion, individual review decisions and dependency setup. It owns the processing worker and applies final results before permitting conflicting commands for that book.
+`ApplicationController` provides one command interface for enqueue, pause after the current book, resume, cancel, reorder, remove, retry from scratch, finish review, explicit pending-audio exclusion, individual review decisions and dependency setup. It owns the processing worker and applies final results before permitting conflicting commands for that book. A newly queued book remains Waiting until the previous processing thread has been joined, even if a terminal snapshot has already arrived. Cancellation also survives a worker yielding review before its thread exits.
 
 - Startup recovery loads before any new enqueue command. Recovered books remain paused.
 - Explicit commands and worker completion save recovery immediately; progress saves are dirty-only and throttled to one second. Idle polling performs no recovery writes.
@@ -24,7 +24,7 @@ The application controller now owns queue transitions, processing workers and re
 - Dependency scans and downloads run on an application-owned background thread, keeping model hashing and probing for Settings off the UI thread.
 - Borrowed snapshots have separate queue and runtime revisions. Unchanged polls do not rebuild the main view or re-read review reports. Queue/stage models update changed rows; progress no longer resets the whole queue model. Queue buttons require both source selections.
 
-Twelve controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. Native Windows validation is pending for this scaffold; the earlier Whistle checkpoint below predates it.
+Fourteen controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. Native Windows validation is pending for this scaffold; the earlier Whistle checkpoint below predates it.
 
 ## Whistle contract
 
