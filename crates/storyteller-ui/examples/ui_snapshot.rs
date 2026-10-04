@@ -125,7 +125,9 @@ fn snapshot(ui: &AppWindow, path: &Path, width: u32, height: u32) -> Result<(), 
     writeln!(file, "P6\n{width} {height}\n255")?;
     let rgb = pixels
         .as_bytes()
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|rgba| rgba[..3].iter().copied())
         .collect::<Vec<_>>();
     file.write_all(&rgb)?;
@@ -157,14 +159,26 @@ fn interaction_smoke(width: u32, height: u32) -> Result<(), Box<dyn Error>> {
     let calls = Rc::clone(&submitted);
     ui.on_queue_book(move || calls.set(calls.get() + 1));
     let _ = ui.window().take_snapshot()?;
-    // Real pointer entry and keyboard activation of the source picker.
-    click(&ui, 120.0, 264.0);
-    assert_eq!(picked.get(), 1, "EPUB picker is reachable");
+    // Navigate through New book, Queue and Settings to the EPUB picker.
+    // Fluent buttons deliberately do not take keyboard focus on pointer clicks.
+    for _ in 0..4 {
+        let text = slint::platform::Key::Tab.into();
+        ui.window().dispatch_event(WindowEvent::KeyPressed { text });
+        ui.window().dispatch_event(WindowEvent::KeyReleased {
+            text: slint::platform::Key::Tab.into(),
+        });
+    }
     ui.window()
         .dispatch_event(WindowEvent::KeyPressed { text: " ".into() });
     ui.window()
         .dispatch_event(WindowEvent::KeyReleased { text: " ".into() });
-    assert_eq!(picked.get(), 2, "EPUB picker accepts keyboard activation");
+    assert_eq!(
+        picked.get(),
+        1,
+        "EPUB picker accepts Tab and Space activation"
+    );
+    click(&ui, 120.0, 264.0);
+    assert_eq!(picked.get(), 2, "EPUB picker is reachable by pointer");
     click(&ui, width as f32 - 95.0, height as f32 - 100.0);
     assert_eq!(submitted.get(), 0, "Incomplete sources cannot start");
     ui.set_runtime_ready(true);
