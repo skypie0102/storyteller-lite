@@ -1,16 +1,15 @@
 {
-  "description": "Lossless PNG conversions of actual compiled Slint scene fixtures captured on Windows, with sample book and hardware data. GPU setup fixtures are state renders, not real-GPU or full-book acceptance evidence.",
-  "product_source_commit": "8fb11d4e0172541e7818c5c46fde5731f129aa5d",
-  "workflow_run": 37211560379,
-  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379",
-  "workflow_conclusion": "failure",
-  "validation_note": "Strict locked workspace Clippy, all 183 tests, native build, all 48 scenes and interaction checks, Whistle smoke, Turbo English JSON/no-GPU rejection, and recovery passed. Only formatting failed; the subsequent change is formatting-only in one test. See docs/REBUILD.md for the separate formatting pass.",
-  "format_source_commit": "9190f50c215d0ed29579a4a244abb6fda428dbea",
-  "format_workflow_run": 37215449790,
-  "artifact_id": 11307435512,
-  "artifact_zip_sha256": "e69181719cd4678a4c49d202f9c36997032960ceebc0a2c9f1a07f69b8ab869e",
+  "description": "Lossless PNG conversions of actual compiled Windows Slint fixtures in both Dark and Light, with sample book and hardware data. GPU fixtures are setup renders, not real-GPU or full-book acceptance evidence.",
+  "product_source_commit": "855a086fbbb9ee88901d884fa294e2cf2133b412",
+  "workflow_run": 37216454960,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37216454960",
+  "workflow_conclusion": "success",
+  "artifact_id": 11308907396,
+  "artifact_zip_sha256": "2e2eb31d3d9adf820096f0ab7ef72d3d7e64a5d8b0e2834c24185e98e659bf54",
   "slint_version": "1.17.1",
-  "windows_workspace_tests": 183,
+  "windows_ui_tests": 6,
+  "rendered_scene_count": 96,
+  "default_theme": "dark",
   "pointer_keyboard_sizes": [
     [
       820,
@@ -21,10 +20,29 @@
       760
     ]
   ],
+  "appearance_checks": [
+    "Dark default",
+    "Keyboard selection of Light and Dark",
+    "Immediate rendered canvas changes",
+    "Saved Light reloaded in a fresh window",
+    "Saved Dark replaces Light",
+    "Unreadable preference falls back to Dark"
+  ],
   "retained_images": [
     {
       "path": "new-book.png",
-      "fixture_ppm": "sources-ready-820x620-1x.ppm",
+      "fixture_ppm": "sources-ready-820x620-1x-dark.ppm",
+      "theme": "dark",
+      "dimensions": [
+        820,
+        620
+      ],
+      "sha256": "37c10494fcb28ea21ee1c19065d446ed811ad4d26788fad37263c41bb579d48a"
+    },
+    {
+      "path": "new-book-light.png",
+      "fixture_ppm": "sources-ready-820x620-1x-light.ppm",
+      "theme": "light",
       "dimensions": [
         820,
         620
@@ -33,62 +51,86 @@
     },
     {
       "path": "processing.png",
-      "fixture_ppm": "processing-820x620-1x.ppm",
+      "fixture_ppm": "processing-820x620-1x-dark.ppm",
+      "theme": "dark",
       "dimensions": [
         820,
         620
       ],
-      "sha256": "f3704cc06dd58cb927a746f88a88d2b6a6f71c4e6551233974e58673d086bc3b"
+      "sha256": "439fc696c158396942e935301b40694c3ce59b952e82b243a8a38005dc77914c"
     },
     {
       "path": "audio-review.png",
-      "fixture_ppm": "audio-review-820x620-1x.ppm",
+      "fixture_ppm": "audio-review-820x620-1x-dark.ppm",
+      "theme": "dark",
       "dimensions": [
         820,
         620
       ],
-      "sha256": "1007924e310ef3729ce16883e2b1865115387e95b6ed172298e6ff4c1a9ccd52"
-    },
-    {
-      "path": "settings.png",
-      "fixture_ppm": "settings-ready-1040x760-1x.ppm",
-      "dimensions": [
-        1040,
-        760
-      ],
-      "sha256": "0f72ea5c4bf1183f323adc4be5f57575708b58d07b4f754210ad0ae6a9bf28aa"
+      "sha256": "601e0210636c0e4381f87dd5ce1c3e373bcb6b663bfd7d8314cee94af2511880"
     },
     {
       "path": "audio-review-200-percent.png",
-      "fixture_ppm": "audio-review-820x620-2x.ppm",
+      "fixture_ppm": "audio-review-820x620-2x-dark.ppm",
+      "theme": "dark",
       "dimensions": [
         1640,
         1240
       ],
-      "sha256": "b06c2396b8820bd4ab4808486e8d6c189a0c0b467d8910deae3039b19f665547"
+      "sha256": "6ea9f7fd458dce842e4a411bc76dde504dcd6a7c181e40896f929df761eb262e"
     },
     {
-      "path": "whisper-setup.png",
-      "fixture_ppm": "whisper-setup-1040x760-1x.ppm",
+      "path": "settings.png",
+      "fixture_ppm": "settings-ready-1040x760-1x-dark.ppm",
+      "theme": "dark",
       "dimensions": [
         1040,
         760
       ],
-      "sha256": "a6808ecf77577d6f3ca023e89e758a72c064731c4f8efa3a68179d006d644f5f"
+      "sha256": "cea6ed604cf83bdb3b9d7d81a574306f2b8a942c25a8682150d2ed8b217bd11d"
+    },
+    {
+      "path": "settings-light.png",
+      "fixture_ppm": "settings-ready-1040x760-1x-light.ppm",
+      "theme": "light",
+      "dimensions": [
+        1040,
+        760
+      ],
+      "sha256": "f6082a6293f5fa9ef5151104f01e430239778e3c92d8be45976b93956ac32718"
+    },
+    {
+      "path": "whisper-setup.png",
+      "fixture_ppm": "whisper-setup-1040x760-1x-dark.ppm",
+      "theme": "dark",
+      "dimensions": [
+        1040,
+        760
+      ],
+      "sha256": "2247f073450cb355ab35ab0aff5ca2fa1e6e86da9a7f61638e89041b25c39e17"
     },
     {
       "path": "whisper-no-gpu.png",
-      "fixture_ppm": "whisper-no-gpu-820x620-1x.ppm",
+      "fixture_ppm": "whisper-no-gpu-820x620-1x-dark.ppm",
+      "theme": "dark",
       "dimensions": [
         820,
         620
       ],
-      "sha256": "943baee8d01efe7729f187b746e2ff3760840ea1cd2c2af74087ceff042f500f"
+      "sha256": "89668d92615fbee0942f94c13630137967e1b9661a6df3040ef0778bf1a09e19"
     }
   ],
   "rendered_scenes": [
     {
-      "path": "audio-review-1040x760-1x.ppm",
+      "path": "audio-review-1040x760-1x-dark.ppm",
+      "sha256": "17af4a10ef09a57ef977930908d615743c7440a968aee31eba80f3d8a0cf8c11",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "audio-review-1040x760-1x-light.ppm",
       "sha256": "b3f3c64027b3989134451c8e2e30b72738d7b1c48000c63cf9338c93299bcbaa",
       "dimensions": [
         1040,
@@ -96,7 +138,15 @@
       ]
     },
     {
-      "path": "audio-review-820x620-1x.ppm",
+      "path": "audio-review-820x620-1x-dark.ppm",
+      "sha256": "a45bd7a0269452f0ae117b2271f18068015e8b5198b6d96f7d1e78039b6ee8e0",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "audio-review-820x620-1x-light.ppm",
       "sha256": "4a5e37a54da61521bea72ca86cb55dc10740802d60b7c493994fb2612d8a2ef6",
       "dimensions": [
         820,
@@ -104,7 +154,15 @@
       ]
     },
     {
-      "path": "audio-review-820x620-2x.ppm",
+      "path": "audio-review-820x620-2x-dark.ppm",
+      "sha256": "0972459d7a0902293ca1afa9c39c0b65b1ba792a36bac3d945a6b576141b7012",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "audio-review-820x620-2x-light.ppm",
       "sha256": "4e1d44808844f433c85cba39ce0a0765c1cd4e99256231d0c52aa20dd2f0e09f",
       "dimensions": [
         1640,
@@ -112,7 +170,15 @@
       ]
     },
     {
-      "path": "cancel-book-1040x760-1x.ppm",
+      "path": "cancel-book-1040x760-1x-dark.ppm",
+      "sha256": "c0da9ea63352a70c4ed59a5daa1bbc471c7c62bfd921628d1ca0d748b059566e",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "cancel-book-1040x760-1x-light.ppm",
       "sha256": "da683814dd2173edc686619f842734702d1f2063f9096b3a738d110ed361a4ae",
       "dimensions": [
         1040,
@@ -120,7 +186,15 @@
       ]
     },
     {
-      "path": "cancel-book-820x620-1x.ppm",
+      "path": "cancel-book-820x620-1x-dark.ppm",
+      "sha256": "725153df251d4414b05e5c65e85a17d57b072c6e125c1bedf619a898a3fe049c",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "cancel-book-820x620-1x-light.ppm",
       "sha256": "5c7b20725593a0f86fdf1640ccfe7088fcb3cc53d99415683e8d960eb40b8d35",
       "dimensions": [
         820,
@@ -128,7 +202,15 @@
       ]
     },
     {
-      "path": "cancel-book-820x620-2x.ppm",
+      "path": "cancel-book-820x620-2x-dark.ppm",
+      "sha256": "c70f2e5df412bfa07a292dc5510ac8f0fa2885f317ca08f67f148deba42a566c",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "cancel-book-820x620-2x-light.ppm",
       "sha256": "cc8ce471d902c704f3e0b7f9acd1db8252ae2a72520161cd736a991a305eed3e",
       "dimensions": [
         1640,
@@ -136,7 +218,15 @@
       ]
     },
     {
-      "path": "exclude-confirmation-1040x760-1x.ppm",
+      "path": "exclude-confirmation-1040x760-1x-dark.ppm",
+      "sha256": "fcae36c590561728c8799f2b26a0aa3d71bc1e46fcf6e0eb1f3d1645baae2acc",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "exclude-confirmation-1040x760-1x-light.ppm",
       "sha256": "8d73f7792be52496f85f8fb1f566a105c5ae23da664c08ea4da577c6da80606f",
       "dimensions": [
         1040,
@@ -144,7 +234,15 @@
       ]
     },
     {
-      "path": "exclude-confirmation-820x620-1x.ppm",
+      "path": "exclude-confirmation-820x620-1x-dark.ppm",
+      "sha256": "471969ea2149d53981929547612093593102802e240c9ffd6bb85b4b02b4ea59",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "exclude-confirmation-820x620-1x-light.ppm",
       "sha256": "2995b4c1d182bc48b7a7e38fa14711da6d2fa8df873b413fd3af10081cc0164f",
       "dimensions": [
         820,
@@ -152,7 +250,15 @@
       ]
     },
     {
-      "path": "exclude-confirmation-820x620-2x.ppm",
+      "path": "exclude-confirmation-820x620-2x-dark.ppm",
+      "sha256": "de96a51c6d8fa8ac072de90c7af6c0492a8b992462550f55bf8cdc04d428d504",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "exclude-confirmation-820x620-2x-light.ppm",
       "sha256": "0a435758964aaf601ef262b439782e1b8e206a68eafef9514ac0a16dcd232956",
       "dimensions": [
         1640,
@@ -160,7 +266,15 @@
       ]
     },
     {
-      "path": "first-setup-1040x760-1x.ppm",
+      "path": "first-setup-1040x760-1x-dark.ppm",
+      "sha256": "e235b0d4726f6d110991780203d1ff127473e5bb5d18461d4d9e26f45afe3d27",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "first-setup-1040x760-1x-light.ppm",
       "sha256": "77550ea609363ebb7df11abe9d33dac819991ff2f3e943bd73d2f7ba2cd7f922",
       "dimensions": [
         1040,
@@ -168,7 +282,15 @@
       ]
     },
     {
-      "path": "first-setup-820x620-1x.ppm",
+      "path": "first-setup-820x620-1x-dark.ppm",
+      "sha256": "b8cfcbc0492b40c65f88420653e4b9837be8585398c7be29ef7502a63f32b64d",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "first-setup-820x620-1x-light.ppm",
       "sha256": "d503171ef44527e0ea29e76450aac72a1ccb125e9df7fb01fff9c1a49ed65960",
       "dimensions": [
         820,
@@ -176,7 +298,15 @@
       ]
     },
     {
-      "path": "first-setup-820x620-2x.ppm",
+      "path": "first-setup-820x620-2x-dark.ppm",
+      "sha256": "4f6d09c4dcfc1ee5a1995eb46ccb1dbbc42812a06f6f9a7854a50c1b5fe6a4cb",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "first-setup-820x620-2x-light.ppm",
       "sha256": "41cc5fed1f4254d74325bc08393f0f29ed12ae1af1f555f56ce631110530d2ac",
       "dimensions": [
         1640,
@@ -184,7 +314,15 @@
       ]
     },
     {
-      "path": "new-book-1040x760-1x.ppm",
+      "path": "new-book-1040x760-1x-dark.ppm",
+      "sha256": "dcd2f8acdd8e73128dbe3a24599235cedd07c3ca58ca33d80d5cd2319d896587",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "new-book-1040x760-1x-light.ppm",
       "sha256": "50658a700efd262e2bb80d4d5ed6a656453600d3c0346b4512581694f9b458ec",
       "dimensions": [
         1040,
@@ -192,7 +330,15 @@
       ]
     },
     {
-      "path": "new-book-820x620-1x.ppm",
+      "path": "new-book-820x620-1x-dark.ppm",
+      "sha256": "3be79baec6f350a36f42e189ca7630afe55a21a53bfe7ca1e6b2afc94219214d",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "new-book-820x620-1x-light.ppm",
       "sha256": "b06251434e13ba5c78043f1e8f02e8338651d30ee58398e0c408176d72d64f5c",
       "dimensions": [
         820,
@@ -200,7 +346,15 @@
       ]
     },
     {
-      "path": "new-book-820x620-2x.ppm",
+      "path": "new-book-820x620-2x-dark.ppm",
+      "sha256": "c27298727d22dda89d13b86659c133734bdbfcb6d8c031c910d55bbd088aa41b",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "new-book-820x620-2x-light.ppm",
       "sha256": "3afe4a20405446ec69ffbdf771ece1a7f9eb7722263e05dfcd53adc7619651e1",
       "dimensions": [
         1640,
@@ -208,7 +362,15 @@
       ]
     },
     {
-      "path": "paused-queue-1040x760-1x.ppm",
+      "path": "paused-queue-1040x760-1x-dark.ppm",
+      "sha256": "e14ed10e190e1ac3925c985945a77e0901783c82c7d8be9cd16e639eb59dc57c",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "paused-queue-1040x760-1x-light.ppm",
       "sha256": "e5dbc2eee2fa55fc76db8bd9ae28b5d22e2bba0302a59794496230e765deb097",
       "dimensions": [
         1040,
@@ -216,7 +378,15 @@
       ]
     },
     {
-      "path": "paused-queue-820x620-1x.ppm",
+      "path": "paused-queue-820x620-1x-dark.ppm",
+      "sha256": "eeb1129bce2567330ae8b9bde4c35ee199b17f8b338ac755eaf1cc3c663baecc",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "paused-queue-820x620-1x-light.ppm",
       "sha256": "e82f8b6dc8865a0a1fea1b5a16611e87fdeb1b33f98f00e6634fd0cde461e8a7",
       "dimensions": [
         820,
@@ -224,7 +394,15 @@
       ]
     },
     {
-      "path": "paused-queue-820x620-2x.ppm",
+      "path": "paused-queue-820x620-2x-dark.ppm",
+      "sha256": "5775d7b9ca3b96bd0a52845b7da690febd15afbd92eb11cedadcae566cbfc1aa",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "paused-queue-820x620-2x-light.ppm",
       "sha256": "d5c9ac7f5d2503deb79785d64e7addc124ff628df6a4b0f81b77a4bf9d03c48f",
       "dimensions": [
         1640,
@@ -232,7 +410,15 @@
       ]
     },
     {
-      "path": "processing-1040x760-1x.ppm",
+      "path": "processing-1040x760-1x-dark.ppm",
+      "sha256": "8c67a021b43d59a0b3ed4f4aed0c8acb63eab965efca7e3d3b0ec35a1ec6b97d",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "processing-1040x760-1x-light.ppm",
       "sha256": "32914fd323f9e32e07d606c55f7650945a86d52ec1fe0c3391e23ce09ab98949",
       "dimensions": [
         1040,
@@ -240,7 +426,15 @@
       ]
     },
     {
-      "path": "processing-820x620-1x.ppm",
+      "path": "processing-820x620-1x-dark.ppm",
+      "sha256": "bce6d751f29b1a7de666af7fde7f97d4962e3052e5430587d73ac104a2217710",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "processing-820x620-1x-light.ppm",
       "sha256": "f669a9e8b6a382de863eee3a722b4967c2c0960c753bbcdc47ab04dd9591e8f0",
       "dimensions": [
         820,
@@ -248,7 +442,15 @@
       ]
     },
     {
-      "path": "processing-820x620-2x.ppm",
+      "path": "processing-820x620-2x-dark.ppm",
+      "sha256": "8fe408a63738e479c3d701ed518455cfc99e1431537e9d37fe9a0d10604d88a3",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "processing-820x620-2x-light.ppm",
       "sha256": "6cf23c2b94a063376bb6121ecd329581cb343caf2da4831744073d5bbdef5970",
       "dimensions": [
         1640,
@@ -256,7 +458,15 @@
       ]
     },
     {
-      "path": "queue-error-1040x760-1x.ppm",
+      "path": "queue-error-1040x760-1x-dark.ppm",
+      "sha256": "b8ada7c0d3ff489d18ab6a2920d783aff69169771ed1181e9acd0c906d3efec9",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "queue-error-1040x760-1x-light.ppm",
       "sha256": "afb1d7b9d57bc80afdcd4593e4bf2f0d45de2f034843688fd8da258eceaaaeec",
       "dimensions": [
         1040,
@@ -264,7 +474,15 @@
       ]
     },
     {
-      "path": "queue-error-820x620-1x.ppm",
+      "path": "queue-error-820x620-1x-dark.ppm",
+      "sha256": "7a8dc0bc62e21287327c0f9a47bf5a153de90c207e72cb653fa04524bf129fda",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "queue-error-820x620-1x-light.ppm",
       "sha256": "9e3458cf12c3fc589c0ad80379c9524d458b78ebe20f51d922fdf3062e675a78",
       "dimensions": [
         820,
@@ -272,7 +490,15 @@
       ]
     },
     {
-      "path": "queue-error-820x620-2x.ppm",
+      "path": "queue-error-820x620-2x-dark.ppm",
+      "sha256": "de74829a35c01b47985b3d180dd4e8c4ac2827ec2f9ac134955c8d672cd8acc7",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "queue-error-820x620-2x-light.ppm",
       "sha256": "e05a3ea8266dab42c568b4fd4ad15322a67f7935090b87f8de3f4c51061c1ef0",
       "dimensions": [
         1640,
@@ -280,7 +506,15 @@
       ]
     },
     {
-      "path": "review-complete-1040x760-1x.ppm",
+      "path": "review-complete-1040x760-1x-dark.ppm",
+      "sha256": "d004b1224481c45d7a93980bd36d7e6bcf395539b71be900b6a10c65b1ee6091",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "review-complete-1040x760-1x-light.ppm",
       "sha256": "2c59d932bf1aa21ade16b08f13b0c31ded779c620fd4a512f57f7f4e4e1cfd0c",
       "dimensions": [
         1040,
@@ -288,7 +522,15 @@
       ]
     },
     {
-      "path": "review-complete-820x620-1x.ppm",
+      "path": "review-complete-820x620-1x-dark.ppm",
+      "sha256": "aad59379ebb0593256eab2fedc01f18055443f3a394c1f1ee1b04342d5101188",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "review-complete-820x620-1x-light.ppm",
       "sha256": "5ce316395430e53d2c4b2bb0e5b65a785980ea859b7074824f7c7d994c59d553",
       "dimensions": [
         820,
@@ -296,7 +538,15 @@
       ]
     },
     {
-      "path": "review-complete-820x620-2x.ppm",
+      "path": "review-complete-820x620-2x-dark.ppm",
+      "sha256": "39f9c01518b3d332d049a5d7e8d3c6d5f245a82205acaea7f0c39ba72f919bb3",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "review-complete-820x620-2x-light.ppm",
       "sha256": "8d93eac85a168ea8ba3d974bb1e5365a0e09b6fa278f93434ecac833a92b2f4b",
       "dimensions": [
         1640,
@@ -304,7 +554,15 @@
       ]
     },
     {
-      "path": "review-loading-1040x760-1x.ppm",
+      "path": "review-loading-1040x760-1x-dark.ppm",
+      "sha256": "dc0e54f169b3dc1668f374872a653a454f1094f00ee9d396c6dffd87102eb858",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "review-loading-1040x760-1x-light.ppm",
       "sha256": "3d036ff30bb5f976f12f33748b0e2da48c338cd06209d92466b1843a172c6966",
       "dimensions": [
         1040,
@@ -312,7 +570,15 @@
       ]
     },
     {
-      "path": "review-loading-820x620-1x.ppm",
+      "path": "review-loading-820x620-1x-dark.ppm",
+      "sha256": "035b9bb1ac34c05106ddcbd282b829d5caa7a3d863010a31f1cee35c95a75b22",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "review-loading-820x620-1x-light.ppm",
       "sha256": "b8257480b914e1c95e1c58d7f20d7c1348b70040ce2438bfed9e34ac30959d9c",
       "dimensions": [
         820,
@@ -320,7 +586,15 @@
       ]
     },
     {
-      "path": "review-loading-820x620-2x.ppm",
+      "path": "review-loading-820x620-2x-dark.ppm",
+      "sha256": "3a08b1c454a38de5412dd93c0561730e4d8205fe6bdc78eb32616ce0b07b94fc",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "review-loading-820x620-2x-light.ppm",
       "sha256": "dcb9654f3297416ee80a2261f80faaaef890c3c66a884acb311e6d3304daf98a",
       "dimensions": [
         1640,
@@ -328,55 +602,111 @@
       ]
     },
     {
-      "path": "settings-1040x760-1x.ppm",
-      "sha256": "e8e5cf08df85d8e275d3a9ec78a1db878610b763df292ea2c424945143b9ab00",
+      "path": "settings-1040x760-1x-dark.ppm",
+      "sha256": "63f76c778fc8b163b5c2baaa72b74e78460d9aa0441831e49bbcb3be6820f0c2",
       "dimensions": [
         1040,
         760
       ]
     },
     {
-      "path": "settings-820x620-1x.ppm",
-      "sha256": "324f8f9219638dfccc4346035480b6ab75e7735bc8dc6f13288c3f57bdb07468",
-      "dimensions": [
-        820,
-        620
-      ]
-    },
-    {
-      "path": "settings-820x620-2x.ppm",
-      "sha256": "fae630cf4effc4213224969d6a1bbb30b5e2e8ca86e20bc72be15e3adba08707",
-      "dimensions": [
-        1640,
-        1240
-      ]
-    },
-    {
-      "path": "settings-ready-1040x760-1x.ppm",
-      "sha256": "9b38f9395f5bf51b92ff963be1758ec74b20079a704e308a30decf2e74a0ab1c",
+      "path": "settings-1040x760-1x-light.ppm",
+      "sha256": "43e8c59b0c8e0d5919ed825243c35cc984eca576ad33654e96068571f5eb449c",
       "dimensions": [
         1040,
         760
       ]
     },
     {
-      "path": "settings-ready-820x620-1x.ppm",
-      "sha256": "107b673b05b39b96d3b5c25e778b9ce1c33fe785f10954ec1f5ed3ff27a6cb64",
+      "path": "settings-820x620-1x-dark.ppm",
+      "sha256": "345724123db17b5327650a11f1f13b7f7f067d5bcf4d1cd53782ac472d99c9e0",
       "dimensions": [
         820,
         620
       ]
     },
     {
-      "path": "settings-ready-820x620-2x.ppm",
-      "sha256": "12dd269cbe13acf52457b61cb86c9e3a1b87013af268a9ff3e901c909c8f46ed",
+      "path": "settings-820x620-1x-light.ppm",
+      "sha256": "2cfd4287160c9b4f593b63b2270c49e5f3db31b8feb0a67b2873935bbe47624b",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "settings-820x620-2x-dark.ppm",
+      "sha256": "3f366c9008606765a63fcf9e8262a62118016dbb1344c581bd53d93d7d818f30",
       "dimensions": [
         1640,
         1240
       ]
     },
     {
-      "path": "sources-ready-1040x760-1x.ppm",
+      "path": "settings-820x620-2x-light.ppm",
+      "sha256": "5ee8cb9b5730f54c01aca507aee36b2e63d36d7f1f82dad9d6f4ca6d6c7b3eaf",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "settings-ready-1040x760-1x-dark.ppm",
+      "sha256": "cc960328094f448df28d302ec59b95e9c180399829d32a5e189565a37069e7a0",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "settings-ready-1040x760-1x-light.ppm",
+      "sha256": "8d2055ea0f9782e4e5325f01f82b6b7c237c62b8ca10e37ae78e950b30a96584",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "settings-ready-820x620-1x-dark.ppm",
+      "sha256": "6ff3f2b3fd58340be75d78817add8729d86811983f58a4c04c79485e5532f6d9",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "settings-ready-820x620-1x-light.ppm",
+      "sha256": "16dfa6ff7a1325312b078c5820b088cb64aedea8c0a78b8f73e07ed654177f93",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "settings-ready-820x620-2x-dark.ppm",
+      "sha256": "b846403348bf6572e074a72e8081af10cfe6f42803d97cbbb2d3de78ec1a7fb6",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "settings-ready-820x620-2x-light.ppm",
+      "sha256": "ee20b12fc915b2824e115c07df2630b419e5b71a47a96d94676fa28e4fb28861",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "sources-ready-1040x760-1x-dark.ppm",
+      "sha256": "d4865609be24f8d1455bb2b1b0a0eb6d5a30a546a509678875c94fbf474a872e",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "sources-ready-1040x760-1x-light.ppm",
       "sha256": "b283d806efad07590eb00743301d82b1cb020331764821acf3367d68bd014e01",
       "dimensions": [
         1040,
@@ -384,7 +714,15 @@
       ]
     },
     {
-      "path": "sources-ready-820x620-1x.ppm",
+      "path": "sources-ready-820x620-1x-dark.ppm",
+      "sha256": "9671f2e33cd07b6b197f4e795e2338e6fb123b06bf70209a2ae7732cb37b0048",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "sources-ready-820x620-1x-light.ppm",
       "sha256": "dcb47bcfd3e32c4d0052f1731f77d7be179f710fd9cf4d773b1bdeffef2b6dca",
       "dimensions": [
         820,
@@ -392,7 +730,15 @@
       ]
     },
     {
-      "path": "sources-ready-820x620-2x.ppm",
+      "path": "sources-ready-820x620-2x-dark.ppm",
+      "sha256": "1e6c1b1acb4ddf989092d0f6f08140fbac664c233cf7ac741ce34a8ccf9890db",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "sources-ready-820x620-2x-light.ppm",
       "sha256": "c0d17e88775e0ea7c8543d707e351a656da673acbb634f8e77acc1ee28626e41",
       "dimensions": [
         1640,
@@ -400,83 +746,155 @@
       ]
     },
     {
-      "path": "whisper-no-gpu-1040x760-1x.ppm",
-      "sha256": "aee5048d72f3d85ad44992710d5a275b67c1ff818d99f10ab729f2f077de0bed",
+      "path": "whisper-no-gpu-1040x760-1x-dark.ppm",
+      "sha256": "b1d0af9222f9c68d4792a3f0ae3bb674f9d42f877c62cb7974c8fa38c66d5f7f",
       "dimensions": [
         1040,
         760
       ]
     },
     {
-      "path": "whisper-no-gpu-820x620-1x.ppm",
-      "sha256": "aead8cf7483a4d549cb6117548a7a4c2432cee35db8cf8f6ada8ed98d8518810",
+      "path": "whisper-no-gpu-1040x760-1x-light.ppm",
+      "sha256": "9f1c5ece0551b7565f8a921a435310464006ae398dfdc40af5e63f239d59c0f5",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-no-gpu-820x620-1x-dark.ppm",
+      "sha256": "722288a9f7d6261147b58155f6bbe4aedea97277ed5b9163ee8ebcf5f957cd74",
       "dimensions": [
         820,
         620
       ]
     },
     {
-      "path": "whisper-no-gpu-820x620-2x.ppm",
-      "sha256": "e073be79398589fa9e6988dfccffeeff0d1eead8dcec687c34acc03072c0585c",
+      "path": "whisper-no-gpu-820x620-1x-light.ppm",
+      "sha256": "557e49cd3418048a0a1692c97660e9a89fd9902ff965403ff7557adfd36efc79",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-no-gpu-820x620-2x-dark.ppm",
+      "sha256": "aa286037b1863dbe4f3db7a19d8d18cba5a0a946d1ff8bae675405685972101e",
       "dimensions": [
         1640,
         1240
       ]
     },
     {
-      "path": "whisper-ready-1040x760-1x.ppm",
-      "sha256": "45b2f598bb64087500bc4c79c423f75945fee36aa82dbb9e77f901f86f357df2",
-      "dimensions": [
-        1040,
-        760
-      ]
-    },
-    {
-      "path": "whisper-ready-820x620-1x.ppm",
-      "sha256": "1ddc910a61dfe2e96339f0edd1c39b854f325cf4a0814026bca9849f1478db04",
-      "dimensions": [
-        820,
-        620
-      ]
-    },
-    {
-      "path": "whisper-ready-820x620-2x.ppm",
-      "sha256": "446efc82061a65a6a075f48c0946d4726ca0f317cce0a0c6496163c4de9f9bbc",
+      "path": "whisper-no-gpu-820x620-2x-light.ppm",
+      "sha256": "e63baaad619d89782e519802751f6cd75d313f688f634ef355349a609a03486d",
       "dimensions": [
         1640,
         1240
       ]
     },
     {
-      "path": "whisper-setup-1040x760-1x.ppm",
-      "sha256": "1d2ddc050e42e3252e30d81b5a2904da86afa62b5c7dd91ab4c78347fad6dfd9",
+      "path": "whisper-ready-1040x760-1x-dark.ppm",
+      "sha256": "420f4379e4c843f97b2e9b746eb539e222c984a32d582c10ffc5af6efda8005d",
       "dimensions": [
         1040,
         760
       ]
     },
     {
-      "path": "whisper-setup-820x620-1x.ppm",
-      "sha256": "1ddc910a61dfe2e96339f0edd1c39b854f325cf4a0814026bca9849f1478db04",
+      "path": "whisper-ready-1040x760-1x-light.ppm",
+      "sha256": "24ff61a049e7ea7dfecf0c77933fd3ed3fe16d3490a7f4d3a1a6f4af86e64135",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-ready-820x620-1x-dark.ppm",
+      "sha256": "722288a9f7d6261147b58155f6bbe4aedea97277ed5b9163ee8ebcf5f957cd74",
       "dimensions": [
         820,
         620
       ]
     },
     {
-      "path": "whisper-setup-820x620-2x.ppm",
-      "sha256": "446efc82061a65a6a075f48c0946d4726ca0f317cce0a0c6496163c4de9f9bbc",
+      "path": "whisper-ready-820x620-1x-light.ppm",
+      "sha256": "557e49cd3418048a0a1692c97660e9a89fd9902ff965403ff7557adfd36efc79",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-ready-820x620-2x-dark.ppm",
+      "sha256": "aa286037b1863dbe4f3db7a19d8d18cba5a0a946d1ff8bae675405685972101e",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "whisper-ready-820x620-2x-light.ppm",
+      "sha256": "e63baaad619d89782e519802751f6cd75d313f688f634ef355349a609a03486d",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "whisper-setup-1040x760-1x-dark.ppm",
+      "sha256": "420f4379e4c843f97b2e9b746eb539e222c984a32d582c10ffc5af6efda8005d",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-setup-1040x760-1x-light.ppm",
+      "sha256": "24ff61a049e7ea7dfecf0c77933fd3ed3fe16d3490a7f4d3a1a6f4af86e64135",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-setup-820x620-1x-dark.ppm",
+      "sha256": "722288a9f7d6261147b58155f6bbe4aedea97277ed5b9163ee8ebcf5f957cd74",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-setup-820x620-1x-light.ppm",
+      "sha256": "557e49cd3418048a0a1692c97660e9a89fd9902ff965403ff7557adfd36efc79",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-setup-820x620-2x-dark.ppm",
+      "sha256": "aa286037b1863dbe4f3db7a19d8d18cba5a0a946d1ff8bae675405685972101e",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "whisper-setup-820x620-2x-light.ppm",
+      "sha256": "e63baaad619d89782e519802751f6cd75d313f688f634ef355349a609a03486d",
       "dimensions": [
         1640,
         1240
       ]
     }
   ],
-  "comparison_to_prior_checkpoint": {
-    "source_commit": "3a38bc3dc54af8010f23c81354cdb0eff38f9f9f",
-    "workflow_run": 37207706876,
-    "byte_identical_scenes": 48,
-    "all_prior_scenes_visually_inspected": true
-  },
-  "format_workflow_conclusion": "success"
+  "previous_whisper_checkpoint": {
+    "product_source_commit": "8fb11d4e0172541e7818c5c46fde5731f129aa5d",
+    "workflow_run": 37211560379,
+    "windows_workspace_tests": 183,
+    "formatting_source_commit": "9190f50c215d0ed29579a4a244abb6fda428dbea",
+    "formatting_workflow_run": 37215449790
+  }
 }

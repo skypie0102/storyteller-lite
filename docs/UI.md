@@ -44,13 +44,15 @@ cargo run --locked -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.
 
 The harness uses Slint 1.17.1's software renderer to capture 96 PPM images: sixteen scenes in both Dark and Light at 820×620 and 1040×760, plus compact scenes at 200% scale. It dispatches real pointer and keyboard events in both themes to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Additional native checks select Light/Dark by keyboard, verify immediate canvas changes and reload the saved choices in fresh windows. Scene fixtures have no processing/download/file-dialog callbacks.
 
-Windows checkpoint [37211560379](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379) on source commit `8fb11d4e0172541e7818c5c46fde5731f129aa5d` passed strict locked workspace Clippy, all 183 workspace tests, the native Slint build, all 48 scene renders, pointer/keyboard checks at both normal sizes, native Whistle/Turbo adapter checks and packaged relaunch recovery. Its only failure was formatting in one controller test. A formatting-only correction passed [formatting run 37215449790](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790); UI source is unchanged between these runs. [REBUILD.md](REBUILD.md) records the complete evidence and hardware limits.
+The dark/light checkpoint [37216454960](https://github.com/skypie0102/storyteller-lite/actions/runs/37216454960) passed on source `855a086fbbb9ee88901d884fa294e2cf2133b412`: formatting, strict locked UI Clippy with all targets, all six UI tests, the native build, all 96 scene captures and pointer/keyboard checks in both themes. Keyboard selection verified Dark → Light → Dark, immediate rendered canvas changes, saved choices reloaded in fresh windows and Dark fallback for unreadable preferences at both normal sizes. The theme change adds no dependency or lockfile changes.
+
+The preceding Whisper checkpoint [37211560379](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379), source `8fb11d4e0172541e7818c5c46fde5731f129aa5d`, passed strict workspace Clippy, all 183 workspace tests, 48 scenes/input checks, native Whistle/Turbo adapter checks and packaged recovery. Its only failure was formatting in one controller test; the formatting-only correction passed [run 37215449790](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790). Processing source is unchanged by this appearance follow-up. [REBUILD.md](REBUILD.md) records the complete evidence and hardware limits.
 
 The merged Whistle [worker checkpoint](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed 171 tests and 39 scenes. Worker recommendation tests cover missing probes and low RAM; recovery preserves older 1–4 choices and new 8/16 choices. The latest native smoke again verified Automatic and a 135-second Whistle run with six workers across six chunks. This is integration evidence, not a throughput benchmark.
 
 The earlier UI checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) established the rebuilt layout and review lifecycle. Tab followed by Space activates the source picker; native Fluent buttons deliberately do not take keyboard focus from a pointer click.
 
-All 48 scenes were visually inspected at compact, standard and 200% scale in the prior native capture; every latest scene is byte-identical to that capture. The screenshots below are lossless conversions of actual Windows fixture renders, with sample book and hardware data. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and all 48 scene hashes; [the 200% review render](ui-snapshots/audio-review-200-percent.png) is also retained. The temporary workflow was removed after the final formatting pass. No runtime dependencies or lockfile changes were needed.
+All 96 scenes were visually inspected at compact, standard and 200% scale in both themes. The screenshots below are lossless conversions of actual Windows fixture renders, with sample book and hardware data; Dark is the default. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and all 96 scene hashes. Nine representative PNGs are retained, including [Light New book](ui-snapshots/new-book-light.png) and [the 200% Dark review render](ui-snapshots/audio-review-200-percent.png). The temporary workflow was removed after the pass, with compiled source unchanged.
 
 ### New book — compact window
 
@@ -67,6 +69,10 @@ All 48 scenes were visually inspected at compact, standard and 200% scale in the
 ### Settings — standard window
 
 ![Processing preferences and local setup at 1040×760](ui-snapshots/settings.png)
+
+### Optional Light theme — standard window
+
+![Settings with the Light theme selected at 1040×760](ui-snapshots/settings-light.png)
 
 ### Optional Whisper setup — standard window
 
