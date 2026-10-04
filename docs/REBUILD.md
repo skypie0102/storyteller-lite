@@ -43,7 +43,7 @@ The failure-boundary regressions inject interruptions before/after intent and af
 - Model: `whistle.cact`, 16.9 MB, native CPU inference through the Needle 3.1.0 runtime.
 - Audio: FFmpeg converts each window into 16 kHz mono PCM WAV. Plan targets 25 seconds, prefers nearby chapters and silence, and enforces the engine’s 30-second hard limit, including the final remainder.
 - Language: English only. Every invocation explicitly requests `--audio-language en`; the adapter exposes no language selector or automatic detection. New explicit non-English requests fail before inference.
-- Concurrency: 1–4 independently owned native processes, default 1. Process isolation respects the engine’s global, non-thread-safe model state.
+- Concurrency: Automatic uses a background CPU/available-RAM scan to recommend a concrete count for newly queued books; manual selection supports 1–16 independently owned native processes. Saved counts remain stable across recovery. Process isolation respects the engine’s global, non-thread-safe model state. The recommendation is a starting heuristic, not a throughput benchmark; [RUNTIME.md](RUNTIME.md) defines the policy.
 - Timing: native word times are checked for text coverage, finite ordered ranges and valid confidence. Adjacent words become nonoverlapping phrases for the existing conservative alignment engine. Overlapping attention intervals remain together. The product remains phrase-level synchronization.
 - Silence: empty native results are valid within a book. An entirely empty book does not yield a fabricated transcript or a successful analysis.
 - Progress: completed audio duration determines Analyze progress; no simulated percentages or inferred decoder progress.

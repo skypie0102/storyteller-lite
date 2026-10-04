@@ -59,7 +59,10 @@ pub fn transcribe_audiobook_in_chunks(
     observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
 ) -> Result<ChunkedTranscriptionSummary, String> {
     if !(1..=storyteller_core::MAX_TRANSCRIPTION_WORKERS).contains(&config.workers) {
-        return Err("Transcription worker count must be between 1 and 4.".into());
+        return Err(format!(
+            "Transcription worker count must be between 1 and {}.",
+            storyteller_core::MAX_TRANSCRIPTION_WORKERS
+        ));
     }
     if cancellation.is_requested() {
         return Err("Transcription was cancelled.".into());
@@ -290,6 +293,7 @@ fn transcribe_one_chunk(
         .arg("-y")
         .arg("-ss")
         .arg(format!("{start_seconds:.3}"))
+        .args(["-threads", "1"])
         .arg("-i")
         .arg(source)
         .arg("-t")
@@ -303,6 +307,7 @@ fn transcribe_one_chunk(
         .arg("1")
         .arg("-c:a")
         .arg("pcm_s16le")
+        .args(["-threads", "1"])
         .arg(&wav_path);
     match run_cancellable_command(&mut ffmpeg, cancellation, |_, _| {}) {
         Ok(output) if output.success => {}

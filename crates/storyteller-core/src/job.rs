@@ -8,7 +8,8 @@ use uuid::Uuid;
 pub type JobId = Uuid;
 
 pub const MIN_TRANSCRIPTION_WORKERS: usize = 1;
-pub const MAX_TRANSCRIPTION_WORKERS: usize = 4;
+// Application safety ceiling for manual parallelism, not a Whistle model limit.
+pub const MAX_TRANSCRIPTION_WORKERS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioCodec {
@@ -390,6 +391,11 @@ mod tests {
             ..JobSettings::default()
         };
         assert!(Job::new(inputs(), invalid).is_err());
+        let automatic_sentinel = JobSettings {
+            transcription_workers: 0,
+            ..JobSettings::default()
+        };
+        assert!(Job::new(inputs(), automatic_sentinel).is_err());
     }
 
     #[test]

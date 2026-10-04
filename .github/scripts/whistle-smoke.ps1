@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Needle,
     [Parameter(Mandatory = $true)][string]$Model,
     [string]$WorkDirectory = (Join-Path $env:RUNNER_TEMP 'storyteller-whistle-smoke'),
-    [switch]$NativeOnly
+    [switch]$NativeOnly,
+    [switch]$ExpandedWorkers
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,15 +51,28 @@ if ($LASTEXITCODE -ne 0) { throw 'Application Whistle adapter failed on short sp
 $shortTranscript = Get-Content -LiteralPath (Join-Path $shortOutput 'transcript.json') -Raw | ConvertFrom-Json
 if (@($shortTranscript.segments).Count -eq 0) { throw 'Short speech produced no normalized phrases.' }
 if ($shortTranscript.language -ne 'en') { throw 'Short speech did not preserve the English-only contract.' }
+if ($ExpandedWorkers) {
+    $automaticOutput = Join-Path $WorkDirectory 'automatic-output'
+    & cargo run --locked -p storyteller-application --example transcribe_whistle -- $short $automaticOutput $FFmpeg $Needle $Model auto
+    if ($LASTEXITCODE -ne 0) { throw 'Automatic system-based Whistle worker selection failed.' }
+}
 
 $long = Join-Path $WorkDirectory 'long.wav'
-& $FFmpeg -hide_banner -loglevel error -y -stream_loop -1 -i $short -t 55 -ar 16000 -ac 1 -c:a pcm_s16le $long
+$longDuration = if ($ExpandedWorkers) { 135 } else { 55 }
+$workerCount = if ($ExpandedWorkers) { 8 } else { 2 }
+& $FFmpeg -hide_banner -loglevel error -y -stream_loop -1 -i $short -t $longDuration -ar 16000 -ac 1 -c:a pcm_s16le $long
 if ($LASTEXITCODE -ne 0) { throw 'Could not generate multi-window speech.' }
 $longOutput = Join-Path $WorkDirectory 'long-output'
-& cargo run --locked -p storyteller-application --example transcribe_whistle -- $long $longOutput $FFmpeg $Needle $Model 2
+$applicationOutput = (& cargo run --locked -p storyteller-application --example transcribe_whistle -- $long $longOutput $FFmpeg $Needle $Model $workerCount) -join "`n"
 if ($LASTEXITCODE -ne 0) { throw 'Application Whistle adapter failed on multi-window speech.' }
 $plan = Get-Content -LiteralPath (Join-Path $longOutput 'transcription-plan.json') -Raw | ConvertFrom-Json
-if (@($plan.chunks).Count -lt 2 -or $plan.duration_ms -lt 54000) { throw 'The application did not split long audio.' }
+if (@($plan.chunks).Count -lt 2 -or $plan.duration_ms -lt ($longDuration * 1000 - 1000)) { throw 'The application did not split long audio.' }
+if ($ExpandedWorkers) {
+    $effective = [Math]::Min($workerCount, @($plan.chunks).Count)
+    if ($effective -le 4 -or $applicationOutput -notmatch "with $effective workers") { throw 'Expanded worker smoke did not exercise more than four native workers.' }
+    Write-Host "Expanded worker smoke: $effective native workers across $(@($plan.chunks).Count) chunks."
+}
+Write-Host $applicationOutput
 $cursor = 0
 foreach ($chunk in $plan.chunks) {
     if ($chunk.start_ms -ne $cursor -or $chunk.end_ms -le $cursor -or $chunk.end_ms - $chunk.start_ms -gt 30000) {

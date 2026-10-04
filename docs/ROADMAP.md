@@ -26,7 +26,7 @@ Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The lega
 
 ## Scope kept in Lite
 
-Keep queue-first processing, native Rust + Slint, automatic CPU-thread selection, one simple transcription worker count (1–4, default 1), Smart/ReviewAll unmatched-audio policy, conservative edge handling, bounded/lazy OCR, reduced manual allocation, and only the destination/classification types that materially change output behavior.
+Keep queue-first processing, native Rust + Slint, automatic CPU-thread selection, Automatic CPU/RAM recommendations with manual 1–16 worker selection, Smart/ReviewAll unmatched-audio policy, conservative edge handling, bounded/lazy OCR, reduced manual allocation, and only the destination/classification types that materially change output behavior.
 
 Do not restore manual CPU allocation, word-level synchronization, the old activity-console-first UX, Runtime Health, process-now, broad runtime-path controls, EPUB standardization/CSS editor toggles, permanent OCR controls, or the legacy general-purpose split/merge/trim/rules allocator.
 
@@ -218,7 +218,7 @@ Continue with reading-system and packaged-build interoperability rather than add
 
 Later evidence work:
 
-- benchmark 1–4 Whisper workers across representative CPU/CUDA systems before changing defaults or adding VRAM/hardware-aware clamping.
+- benchmark Automatic recommendations and manual 1–16 Whistle workers across representative CPUs; GPU transcription requires a separately supported runtime.
 
 ## Engineering migration rule
 

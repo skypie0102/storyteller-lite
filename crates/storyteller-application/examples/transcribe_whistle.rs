@@ -8,21 +8,16 @@ use storyteller_core::CancellationToken;
 fn main() -> Result<(), String> {
     let args = env::args_os().skip(1).collect::<Vec<_>>();
     if !(5..=6).contains(&args.len()) {
-        return Err("Usage: transcribe_whistle AUDIO OUTPUT_DIRECTORY FFMPEG NEEDLE WHISTLE_MODEL [WORKERS]".into());
+        return Err("Usage: transcribe_whistle AUDIO OUTPUT_DIRECTORY FFMPEG NEEDLE WHISTLE_MODEL [WORKERS|auto]".into());
     }
     let source = PathBuf::from(&args[0]);
     let output = PathBuf::from(&args[1]);
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-    let config = ChunkedTranscriptionConfig {
+    let mut config = ChunkedTranscriptionConfig {
         ffmpeg: PathBuf::from(&args[2]),
         whistle_cli: PathBuf::from(&args[3]),
         whistle_model: PathBuf::from(&args[4]),
-        workers: args
-            .get(5)
-            .map(|value| value.to_string_lossy().parse::<usize>())
-            .transpose()
-            .map_err(|error| error.to_string())?
-            .unwrap_or(1),
+        workers: 1,
     };
     env::set_var("STORYTELLER_FFMPEG", &config.ffmpeg);
     env::set_var("STORYTELLER_WHISTLE", &config.whistle_cli);
@@ -34,6 +29,12 @@ fn main() -> Result<(), String> {
             runtime.summary()
         ));
     }
+    eprintln!("{}", runtime.workers.description());
+    config.workers = match args.get(5).map(|value| value.to_string_lossy()) {
+        None => runtime.workers.recommended_workers,
+        Some(value) if value.eq_ignore_ascii_case("auto") => runtime.workers.recommended_workers,
+        Some(value) => value.parse::<usize>().map_err(|error| error.to_string())?,
+    };
     let summary = transcribe_audiobook_in_chunks(
         &source,
         &output,

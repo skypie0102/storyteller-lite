@@ -202,7 +202,7 @@ jobs:
 
           ### Included
           - Queue-first seven-stage EPUB audiobook pipeline.
-          - English-only native Whistle transcription with 1–4 bounded workers.
+          - English-only native Whistle transcription with automatic CPU/RAM recommendations and 1–16 bounded workers.
           - Conservative alignment and durable Review Audio decisions.
           - Introduction/Credits preservation and Graphic Readout Media Overlays.
           - Independent EPUB validation plus externally validated representative EPUB fixtures.

@@ -519,7 +519,8 @@
       "runtime-transcription-text": "Needle 3.1.0 · native CPU engine available.",
       "runtime-model-text": "Missing · Whistle model download is 16.9 MB.",
       "runtime-summary-text": "Two tools need installation.",
-      "status-text": "Local setup needed"
+      "status-text": "Local setup needed",
+      "worker-recommendation-text": "16 logical CPU threads available · 8.0 GiB RAM available. Starting recommendation: 8 workers."
     }
   },
   {
@@ -531,7 +532,8 @@
       "runtime-transcription-text": "Verified · Needle 3.1.0 · native CPU",
       "runtime-model-text": "Verified · Whistle · 16.9 MB · English",
       "runtime-summary-text": "All local tools are ready.",
-      "status-text": "Ready"
+      "status-text": "Ready",
+      "worker-recommendation-text": "16 logical CPU threads available · 8.0 GiB RAM available. Starting recommendation: 8 workers."
     }
   }
 ]

@@ -43,7 +43,30 @@ The adapter creates 16 kHz mono PCM WAVs and invokes the native engine with its 
 
 The published model stores shared multilingual weights in one 16.9 MB file. English-only integration removes application language selection and routing, but does not shrink that pinned file or establish a runtime memory/speed improvement. Model and engine checksums remain unchanged.
 
+### CPU workers and automatic recommendation
+
+Whistle's pinned Needle runtime performs transcription on CPU. It has no supported GPU backend in this app; a GPU does not raise the transcription worker count. Slint may use graphics acceleration to draw the window, which is separate from transcription.
+
+The desktop defaults to **Automatic**. The application scans logical CPU threads available to the process and currently available physical RAM in the background during startup and Check setup. Windows uses `GlobalMemoryStatusEx`; Linux reads `MemAvailable`. Other platforms or failed probes fall back to a one-worker recommendation. No hardware-probing dependency was added.
+
+The starting recommendation is the smaller of about half the available logical CPU threads and a memory allowance, bounded to 1–16. Reserve one quarter of available RAM, clamped to 512–2048 MiB, then allow 512 MiB per worker from the remainder. This is a conservative planning allowance for engine/conversion working memory, not measured per-worker consumption or a fastest-worker benchmark. A low-memory system still needs enough resources to run one worker.
+
+| Available logical CPU threads | Available RAM | Automatic recommendation |
+|---|---|---|
+| 2 | 4 GiB | 1 |
+| 8 | 8 GiB | 4 |
+| 16 | 8 GiB | 8 |
+| 32 | 16 GiB | 16 |
+| 16 | 1.5 GiB | 2 |
+| CPU or RAM unknown | — | 1 |
+
+Manual selection supports 1–16. Sixteen is an application safety ceiling, not a Whistle restriction. Manual settings override the recommendation; more workers may be slower or consume more memory. Automatic is resolved when enqueueing, and recovery schema 2 stores the resulting integer. Older 1–4 records remain valid; changing the scan or preference does not retarget queued or restored books. The adapter reduces the running count when fewer chunks exist, and limits each chunk's FFmpeg decoding/PCM encoding to one thread to reduce nested CPU contention.
+
+The adapter example accepts an explicit worker count or `auto`, with Automatic as the omitted-argument default. Each chunk still launches a fresh native CLI process; persistent loaded models and hardware throughput benchmarks remain future optimization work.
+
 Default chunk target is 25 seconds. Chapter and silence adjustments must keep every chunk at or below 30 seconds. Every source interval appears exactly once in the validated contiguous plan. Workers use separate processes; cancellation stops owned subprocesses and cleanup removes temporary WAVs. Full-book transcript timestamps are restored using chunk offsets.
+
+The current inputs do not overlap. If no suitable silence exists, a planned cut can split speech. Context overlap and boundary-word reconciliation remain full-book hardening work; continuous source coverage alone does not establish recognition accuracy at cuts. The final audio is encoded from the full source, not concatenated transcription chunks.
 
 The normalized transcript contains phrase-level millisecond intervals. Native attention words may overlap and are grouped rather than discarded. Speech without complete usable timestamps is an error; silence is an empty chunk. An entirely silent input fails Analyze.
 

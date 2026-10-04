@@ -82,7 +82,8 @@ export component AppWindow inherits Window {
     in-out property <string> output-directory: "Saved beside your source EPUB";
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
-    in-out property <string> transcription-workers-text: "1";
+    in-out property <int> transcription-worker-selection: 0;
+    in property <string> worker-recommendation-text: "Checking available CPU threads and RAM…";
     in-out property <string> unmatched-audio-policy-text: "Smart";
     in-out property <bool> settings-open: false;
     in-out property <bool> runtime-refresh-requested: false;
@@ -471,7 +472,7 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     spacing: 18px;
                     Card {
-                        min-height: 234px;
+                        min-height: 290px;
                         VerticalLayout {
                             padding: 18px; spacing: 14px;
                             Label { text: "Processing preferences"; font-size: 18px; font-weight: 600; }
@@ -495,11 +496,13 @@ export component AppWindow inherits Window {
                                 VerticalLayout {
                                     spacing: 7px;
                                     Label { text: "CPU workers"; }
-                                    ComboBox { model: ["1", "2", "3", "4"]; current-index: root.transcription-workers-text == "2" ? 1 : root.transcription-workers-text == "3" ? 2 : root.transcription-workers-text == "4" ? 3 : 0; selected(value) => { root.transcription-workers-text = value; } }
+                                    ComboBox { model: ["Automatic", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"]; current-index: root.transcription-worker-selection; selected(value) => { root.transcription-worker-selection = self.current-index; } }
                                 }
                             }
                             Hint { text: "Opus at 64K keeps spoken audio compact. AAC offers broader reader compatibility. Copy keeps the source encoding."; }
-                            Hint { text: "Smart review handles clear silence and edge narration automatically. Review all asks you about every unmatched segment. One CPU worker uses fewer resources; more workers process chunks in parallel."; }
+                            Hint { text: "Smart review handles clear silence and edge narration automatically. Review all asks you about every unmatched segment."; }
+                            Hint { text: root.worker-recommendation-text; }
+                            Hint { text: "Automatic applies when you add a book. More workers may not be faster. Whistle uses CPU; GPU acceleration is unavailable in this runtime."; }
                         }
                     }
                     Card {

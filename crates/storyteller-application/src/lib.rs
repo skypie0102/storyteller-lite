@@ -12,6 +12,7 @@ mod review_preview;
 mod review_service;
 mod review_session;
 mod runtime_setup;
+mod worker_recommendation;
 
 pub use app_paths::{persistent_app_root, recovery_app_root};
 pub use chunked_transcription::{
@@ -25,3 +26,4 @@ pub use review_session::{ReviewAction, ReviewCandidate, ReviewView};
 pub use runtime_setup::{
     configure_runtime_environment, detect_runtime, install_missing_dependencies, RuntimeStatus,
 };
+pub use worker_recommendation::WorkerRecommendation;

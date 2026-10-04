@@ -8,7 +8,9 @@ Choose an EPUB and its matching audiobook with keyboard-accessible native button
 
 The app scans local tools in the background on startup. Start book requires both sources and ready tools. Local setup takes you to Settings for user-initiated verified downloads. While another book is active, the same action adds a waiting book. Successful submission opens Queue and clears the source selection.
 
-Processing preferences are in Settings rather than repeated beside every book. Defaults remain Opus/64K, Smart review, English and one Whistle CPU worker. Preferences apply to newly queued books.
+Processing preferences are in Settings rather than repeated beside every book. Defaults are Opus/64K, Smart review, English and Automatic CPU workers. Startup and Check setup scan available logical CPU threads and RAM on the computer running the app, alongside runtime discovery. Settings displays the detected resources and a starting worker recommendation. Manual counts of 1–16 override it. Automatic resolves to a concrete count when a book is queued; saved and recovered books keep that count. Preferences apply to newly queued books.
+
+Whistle transcription uses the pinned CPU engine; no GPU transcription backend is available. The recommendation leaves CPU/RAM headroom and is a heuristic, not a measured fastest setting. If CPU or RAM information is unavailable, Automatic falls back to one worker. [RUNTIME.md](RUNTIME.md) records the policy and its limits.
 
 ## Processing and queue
 

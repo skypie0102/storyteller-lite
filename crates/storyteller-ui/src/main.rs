@@ -138,9 +138,9 @@ fn main() -> Result<(), slint::PlatformError> {
                         ui.get_codec_text().as_str(),
                         ui.get_bitrate_text().as_str(),
                     )?,
-                    transcription_workers: parse_transcription_workers(
-                        ui.get_transcription_workers_text().as_str(),
-                    )?,
+                    transcription_workers: app.borrow().snapshot().runtime.status.as_ref()
+                        .ok_or("Wait for the local setup and system scan to finish.")?
+                        .workers.resolve_selection(ui.get_transcription_worker_selection())?,
                     audio_review_policy: parse_audio_review_policy(
                         ui.get_unmatched_audio_policy_text().as_str(),
                     )?,
@@ -411,17 +411,6 @@ fn parse_audio_review_policy(value: &str) -> Result<AudioReviewPolicy, String> {
         "Review all" => Ok(AudioReviewPolicy::ReviewAll),
         value => Err(format!("Unsupported unmatched-audio policy: {value}")),
     }
-}
-
-fn parse_transcription_workers(value: &str) -> Result<usize, String> {
-    let workers = value
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| format!("Invalid Transcription worker count: {value}"))?;
-    if !(1..=4).contains(&workers) {
-        return Err("Transcription workers must be between 1 and 4.".into());
-    }
-    Ok(workers)
 }
 
 pub(crate) fn refresh_main_view(
@@ -759,14 +748,6 @@ mod tests {
             AudioEncoding::new(AudioCodec::Opus, Some(AudioBitrate::Kbps64)).unwrap()
         );
         assert!(audio_encoding("MP3", "64K").is_err());
-    }
-
-    #[test]
-    fn transcription_worker_values_are_bounded() {
-        assert_eq!(parse_transcription_workers("1").unwrap(), 1);
-        assert_eq!(parse_transcription_workers("4").unwrap(), 4);
-        assert!(parse_transcription_workers("0").is_err());
-        assert!(parse_transcription_workers("5").is_err());
     }
 
     #[test]

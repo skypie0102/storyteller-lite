@@ -19,6 +19,7 @@ const FFMPEG_SHA256: &str = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5
 
 #[derive(Debug, Clone, Default)]
 pub struct RuntimeStatus {
+    pub workers: crate::WorkerRecommendation,
     pub ffmpeg: Option<PathBuf>,
     pub whistle_cli: Option<PathBuf>,
     pub whistle_model: Option<PathBuf>,
@@ -81,6 +82,7 @@ pub fn detect_runtime() -> RuntimeStatus {
         models.push(root.join("models/whistle.cact"));
     }
     RuntimeStatus {
+        workers: crate::worker_recommendation::detect_worker_recommendation(),
         ffmpeg,
         whistle_cli,
         whistle_model: models

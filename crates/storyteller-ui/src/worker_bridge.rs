@@ -82,6 +82,7 @@ impl ViewBridge {
             ui.set_runtime_busy(snapshot.runtime.busy);
             ui.set_runtime_install_status_text(snapshot.runtime.message.clone().into());
             if let Some(status) = &snapshot.runtime.status {
+                ui.set_worker_recommendation_text(status.workers.description().into());
                 ui.set_runtime_summary_text(status.summary().into());
                 ui.set_runtime_ffmpeg_text(status.ffmpeg_text().into());
                 ui.set_runtime_transcription_text(status.transcription_text().into());

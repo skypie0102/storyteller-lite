@@ -64,7 +64,7 @@ Installer archaeology is demand-driven. Do not recover unrelated legacy behavior
 
 ## Product decisions that remain authoritative
 
-Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, a simple transcription worker count of 1–4 (default 1), Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
+Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, Automatic CPU/RAM recommendations with manual 1–16 workers for newly queued books, Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
 
 Resume must reuse only a validated contiguous checkpoint prefix. Relaunch recovery must never silently continue work: recovered jobs come back in a paused queue and require the existing explicit Resume queue action.
 
@@ -74,7 +74,7 @@ Do not restore manual CPU allocation, word-level synchronization, the old activi
 
 ### Prepare / Analyze / Align
 
-Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–4 independent Whistle processes, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
+Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–16 independent Whistle processes, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
 
 P1 Windows validation run: `34732299289`.
 
@@ -229,7 +229,7 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 4. Exercise validated resume plus explicit paused relaunch through developer-test/installed-like launch conditions, including Running/Waiting recovery and NeedsReview rewind. Do not weaken the explicit Resume queue contract.
 5. Preserve the per-user runtime root and the verified `BUILD.json`/SHA-256 developer-test package contract. Do not invent a public installer or auto-update channel without a concrete distribution requirement.
 6. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
-7. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
+7. Benchmark the Automatic recommendation and manual 1–16 Whistle workers on representative CPUs. The recommendation is a conservative starting heuristic; the pinned Whistle engine has no GPU backend.
 
 ## Recovered invariants worth preserving
 

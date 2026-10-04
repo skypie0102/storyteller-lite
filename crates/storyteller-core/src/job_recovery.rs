@@ -629,6 +629,34 @@ mod tests {
     }
 
     #[test]
+    fn concrete_worker_counts_above_four_and_older_choices_survive_paused_recovery() {
+        let path = recovery_path();
+        let mut queue = JobQueue::default();
+        for count in [1, 4, 8, 16] {
+            let settings = JobSettings {
+                transcription_workers: count,
+                ..JobSettings::default()
+            };
+            queue.enqueue(Job::new(inputs(&format!("workers-{count}")), settings).unwrap());
+        }
+        write_queue_recovery(&path, &queue).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["version"], 2);
+        let recovered = read_queue_recovery(&path).unwrap();
+        assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
+        assert_eq!(
+            recovered
+                .queue
+                .jobs()
+                .iter()
+                .map(|job| job.settings.transcription_workers)
+                .collect::<Vec<_>>(),
+            [1, 4, 8, 16]
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn terminal_jobs_remove_recovery_file() {
         let path = recovery_path();
         let mut queue = JobQueue::default();

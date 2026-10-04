@@ -45,6 +45,7 @@ fn apply(ui: &AppWindow, properties: &Value) {
             "review-preserve-edge-text" => set_review_preserve_edge_text, "runtime-ffmpeg-text" => set_runtime_ffmpeg_text,
             "runtime-transcription-text" => set_runtime_transcription_text, "runtime-model-text" => set_runtime_model_text,
             "runtime-summary-text" => set_runtime_summary_text,
+            "worker-recommendation-text" => set_worker_recommendation_text,
         }
         booleans! {
             "runtime-ready" => set_runtime_ready, "runtime-busy" => set_runtime_busy,
@@ -58,6 +59,9 @@ fn apply(ui: &AppWindow, properties: &Value) {
         }
         match name.as_str() {
             "workspace-page" => ui.set_workspace_page(value.as_i64().unwrap() as i32),
+            "transcription-worker-selection" => {
+                ui.set_transcription_worker_selection(value.as_i64().unwrap() as i32)
+            }
             "active-overall-progress" => {
                 ui.set_active_overall_progress(value.as_f64().unwrap() as f32)
             }
