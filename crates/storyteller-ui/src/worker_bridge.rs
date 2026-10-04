@@ -2,13 +2,13 @@
 use crate::{refresh_main_view, AppWindow, QueueRow, SharedApplication, StageDetailRow, StageRow};
 use slint::VecModel;
 use storyteller_application::ApplicationCommand;
-pub(crate) use storyteller_application::{job_workspace, load_audio_review_report};
 
 #[derive(Default)]
 pub(crate) struct ViewBridge {
     queue_revision: Option<u64>,
     runtime_revision: Option<u64>,
     settings_was_open: bool,
+    review_was_visible: bool,
 }
 
 impl ViewBridge {
@@ -24,6 +24,14 @@ impl ViewBridge {
             return false;
         };
         let opened = ui.get_settings_open() && !self.settings_was_open;
+        let review_visible =
+            ui.get_needs_review() && !ui.get_settings_open() && ui.get_workspace_page() == 1;
+        if self.review_was_visible && !review_visible {
+            let _ = app.borrow_mut().dispatch(ApplicationCommand::Review(
+                storyteller_application::ReviewAction::Stop,
+            ));
+        }
+        self.review_was_visible = review_visible;
         self.settings_was_open = ui.get_settings_open();
         let install = ui.get_runtime_install_requested();
         let scan = ui.get_runtime_refresh_requested() || opened;

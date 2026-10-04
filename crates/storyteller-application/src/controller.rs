@@ -1,5 +1,8 @@
 //! Owns desktop-independent commands, workers, recovery, and read-only snapshots.
-use crate::{recovery_state, review_service, RuntimeStatus};
+use crate::{
+    recovery_state, review_service, review_session::ReviewSession, ReviewAction, ReviewView,
+    RuntimeStatus,
+};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver, TryRecvError},
@@ -13,6 +16,7 @@ use storyteller_core::{
 };
 
 pub enum ApplicationCommand {
+    Review(ReviewAction),
     Enqueue {
         inputs: JobInputs,
         settings: JobSettings,
@@ -20,6 +24,7 @@ pub enum ApplicationCommand {
     PauseAfterCurrent,
     ResumeQueue,
     CancelActive,
+    CancelJob(JobId),
     RetryFromScratch(JobId),
     Remove(JobId),
     MoveWaiting {
@@ -56,6 +61,7 @@ pub struct RuntimeView {
 
 /// Borrowed views avoid cloning the entire queue for each desktop refresh.
 pub struct ApplicationSnapshot<'a> {
+    pub review: &'a ReviewView,
     pub queue: &'a JobQueue,
     pub queue_revision: u64,
     pub runtime: &'a RuntimeView,
@@ -76,6 +82,7 @@ struct RuntimeTask {
 }
 
 pub struct ApplicationController {
+    review: ReviewSession,
     queue: JobQueue,
     queue_revision: u64,
     notice: Option<String>,
@@ -105,6 +112,7 @@ impl ApplicationController {
 
     pub fn with_recovery_path(path: PathBuf) -> Self {
         let mut app = Self {
+            review: ReviewSession::default(),
             queue: JobQueue::default(),
             queue_revision: 1,
             notice: None,
@@ -149,6 +157,7 @@ impl ApplicationController {
 
     pub fn snapshot(&self) -> ApplicationSnapshot<'_> {
         ApplicationSnapshot {
+            review: &self.review.view,
             queue: &self.queue,
             queue_revision: self.queue_revision,
             runtime: &self.runtime,
@@ -159,7 +168,31 @@ impl ApplicationController {
 
     pub fn dispatch(&mut self, command: ApplicationCommand) -> Result<(), String> {
         self.poll_worker();
+        if let ApplicationCommand::Review(action) = command {
+            if !matches!(action, ReviewAction::Stop)
+                && !self.queue.active_job().is_some_and(|job| {
+                    job.status == JobStatus::NeedsReview && Some(job.id) == self.review.view.job_id
+                })
+            {
+                return Err("No current book is waiting for audio review.".into());
+            }
+            return self.review.action(action);
+        }
+        if let ApplicationCommand::CancelJob(id) = command {
+            if self.queue.active_job().is_none_or(|job| job.id != id) {
+                return Err(
+                    "The displayed book is no longer active. Check the current queue.".into(),
+                );
+            }
+        }
+        let review_decision = matches!(
+            &command,
+            ApplicationCommand::SaveReviewDecision { .. }
+                | ApplicationCommand::AssignGraphic { .. }
+                | ApplicationCommand::PreserveEdge { .. }
+        );
         let notice = match command {
+            ApplicationCommand::Review(_) => unreachable!(),
             ApplicationCommand::ScanRuntime => return self.start_runtime_task(false),
             ApplicationCommand::InstallMissingRuntime => return self.start_runtime_task(true),
             ApplicationCommand::Enqueue { inputs, settings } => {
@@ -183,7 +216,7 @@ impl ApplicationController {
                 self.start_next_if_idle()?;
                 None
             }
-            ApplicationCommand::CancelActive => {
+            ApplicationCommand::CancelActive | ApplicationCommand::CancelJob(_) => {
                 if let Some(worker) = &self.worker {
                     worker.request_cancellation();
                     self.pending_cancel = self.worker_job_id;
@@ -265,6 +298,9 @@ impl ApplicationController {
         self.notice = notice;
         self.touch_queue();
         self.persist_recovery(true);
+        if review_decision {
+            self.review.reload_after_decision();
+        }
         Ok(())
     }
 
@@ -310,6 +346,12 @@ impl ApplicationController {
             }
         }
         self.persist_recovery(false);
+        self.review.synchronize(
+            self.queue
+                .active_job()
+                .filter(|job| job.status == JobStatus::NeedsReview),
+        );
+        self.review.poll();
     }
 
     fn review_job(&self, id: JobId) -> Result<&Job, String> {
@@ -532,6 +574,7 @@ impl ApplicationController {
     /// Save interrupted work before cancellation, then join owned processing to clean up children.
     /// The saved Running state recovers as Waiting; closing the app is not a user Cancel command.
     pub fn shutdown(&mut self) {
+        self.review.shutdown();
         self.poll_worker();
         self.persist_recovery(true);
         if let Some(worker) = self.worker.take() {
@@ -623,6 +666,26 @@ mod tests {
     }
     fn reject_worker(_job: Job) -> Result<PipelineWorkerHandle, String> {
         Err("test startup failure".into())
+    }
+
+    #[test]
+    fn stale_displayed_book_cannot_cancel_a_new_active_book() {
+        let root = TestRoot::new();
+        let mut app = root.app();
+        let old = enqueue(&mut app, "old");
+        app.queue.finish(old, JobOutcome::Completed, 1).unwrap();
+        let current = enqueue(&mut app, "current");
+        assert!(app
+            .dispatch(ApplicationCommand::CancelJob(old))
+            .unwrap_err()
+            .contains("no longer active"));
+        assert_eq!(app.snapshot().queue.active_job().unwrap().id, current);
+        app.dispatch(ApplicationCommand::CancelJob(current))
+            .unwrap();
+        assert_eq!(
+            app.snapshot().queue.job(current).unwrap().status,
+            JobStatus::Cancelled
+        );
     }
 
     #[test]

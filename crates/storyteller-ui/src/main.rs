@@ -14,7 +14,7 @@ use storyteller_core::{
     AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobQueue,
     JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
 };
-use worker_bridge::{load_audio_review_report, ViewBridge};
+use worker_bridge::ViewBridge;
 
 slint::include_modules!();
 
@@ -24,6 +24,7 @@ pub(crate) type SharedApplication = Rc<RefCell<ApplicationController>>;
 struct PendingSources {
     epub: Option<PathBuf>,
     audiobook: Option<PathBuf>,
+    output_directory: Option<PathBuf>,
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -54,6 +55,7 @@ fn main() -> Result<(), slint::PlatformError> {
             pending.borrow_mut().epub = Some(path);
             if let Some(ui) = ui_weak.upgrade() {
                 ui.set_epub_source_name(label.into());
+                update_output_preview(&ui, &pending.borrow());
                 ui.set_status_text("EPUB selected".into());
             }
         });
@@ -82,6 +84,29 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let pending = Rc::clone(&pending);
+        let ui_weak = ui.as_weak();
+        ui.on_browse_output(move || {
+            let initial = pending.borrow().output_directory.clone().or_else(|| {
+                pending
+                    .borrow()
+                    .epub
+                    .as_ref()
+                    .and_then(|path| path.parent().map(Path::to_path_buf))
+            });
+            let mut dialog = FileDialog::new().set_title("Choose output folder");
+            if let Some(initial) = initial {
+                dialog = dialog.set_directory(initial);
+            }
+            if let Some(directory) = dialog.pick_folder() {
+                pending.borrow_mut().output_directory = Some(directory);
+                if let Some(ui) = ui_weak.upgrade() {
+                    update_output_preview(&ui, &pending.borrow());
+                }
+            }
+        });
+    }
+    {
+        let pending = Rc::clone(&pending);
         let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_queue_book(move || {
@@ -89,6 +114,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             };
             let result = (|| {
+                if !ui.get_runtime_ready() || ui.get_runtime_busy() {
+                    return Err("Finish local setup in Settings before starting a book.".into());
+                }
                 let sources = pending.borrow();
                 let epub_path = sources.epub.clone().ok_or("Choose an EPUB first")?;
                 let audiobook_path = sources
@@ -97,11 +125,14 @@ fn main() -> Result<(), slint::PlatformError> {
                     .ok_or("Choose an audiobook first")?;
                 let title = book_title(&epub_path);
                 let inputs = JobInputs {
-                    output_path: output_path(&epub_path, &title),
+                    output_path: selected_output_path(&sources, &epub_path, &title),
                     title,
                     epub_path,
                     audiobook_path,
                 };
+                if inputs.output_path.exists() {
+                    return Err(format!("An output already exists at {}. Choose another output folder or move that file before starting.", inputs.output_path.display()));
+                }
                 let settings = JobSettings {
                     audio: audio_encoding(
                         ui.get_codec_text().as_str(),
@@ -123,6 +154,8 @@ fn main() -> Result<(), slint::PlatformError> {
                         ui.set_epub_source_name("".into());
                         ui.set_audio_source_name("".into());
                         *pending.borrow_mut() = PendingSources::default();
+                        update_output_preview(&ui, &pending.borrow());
+                        ui.set_workspace_page(1);
                     }
                 }
                 Err(error) => ui.set_status_text(error.into()),
@@ -142,8 +175,42 @@ fn main() -> Result<(), slint::PlatformError> {
         }};
     }
     bind_command!(on_pause_after_book, ApplicationCommand::PauseAfterCurrent);
-    bind_command!(on_cancel_current, ApplicationCommand::CancelActive);
+    {
+        let app = Rc::clone(&app);
+        let weak = ui.as_weak();
+        ui.on_cancel_current(move || {
+            if let Some(ui) = weak.upgrade() {
+                dispatch_job_command(
+                    &ui,
+                    &app,
+                    ui.get_active_job_id().as_str(),
+                    ApplicationCommand::CancelJob,
+                );
+            }
+        });
+    }
     bind_command!(on_resume_queue, ApplicationCommand::ResumeQueue);
+    {
+        let app = Rc::clone(&app);
+        let weak = ui.as_weak();
+        ui.on_open_output(move |id| {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let result = parse_job_id(id.as_str()).and_then(|id| {
+                let app = app.borrow();
+                let snapshot = app.snapshot();
+                let job = snapshot.queue.job(id)?;
+                if job.status != JobStatus::Completed {
+                    return Err("This book has not finished yet.".into());
+                }
+                open_output_folder(&job.inputs.output_path)
+            });
+            if let Err(error) = result {
+                ui.set_status_text(error.into());
+            }
+        });
+    }
     {
         let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
@@ -151,13 +218,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
-            let id = app
-                .borrow()
-                .snapshot()
-                .queue
-                .active_job()
-                .filter(|job| job.status == JobStatus::NeedsReview)
-                .map(|job| job.id);
+            let id = app.borrow().snapshot().review.job_id;
             if let Some(id) = id {
                 dispatch_command(&ui, &app, ApplicationCommand::ContinueWithoutUnmatched(id));
             } else {
@@ -208,18 +269,20 @@ fn main() -> Result<(), slint::PlatformError> {
         let review_ui_controller = Rc::clone(&review_ui_controller);
         let ui_weak = ui.as_weak();
         poll_timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
-            let queue_changed = view_bridge.borrow_mut().poll(
+            view_bridge.borrow_mut().poll(
                 &ui_weak,
                 &app,
                 &queue_rows,
                 &stage_rows,
                 &detail_stage_rows,
             );
-            if queue_changed {
-                review_ui::refresh_review_ui(&ui_weak, &app, &review_ui_controller);
-            }
+            review_ui::refresh_review_ui(&ui_weak, &app, &review_ui_controller);
         });
     }
+    if !app.borrow().snapshot().queue.jobs().is_empty() {
+        ui.set_workspace_page(1);
+    }
+    dispatch_command(&ui, &app, ApplicationCommand::ScanRuntime);
     view_bridge
         .borrow_mut()
         .render(&ui, &app, &queue_rows, &stage_rows, &detail_stage_rows);
@@ -268,6 +331,50 @@ fn book_title(epub_path: &Path) -> String {
 
 fn output_path(epub_path: &Path, title: &str) -> PathBuf {
     epub_path.with_file_name(format!("{title} (readaloud).epub"))
+}
+
+fn selected_output_path(sources: &PendingSources, epub_path: &Path, title: &str) -> PathBuf {
+    let default = output_path(epub_path, title);
+    sources.output_directory.as_ref().map_or_else(
+        || default.clone(),
+        |directory| directory.join(default.file_name().unwrap()),
+    )
+}
+fn update_output_preview(ui: &AppWindow, sources: &PendingSources) {
+    if let Some(epub) = &sources.epub {
+        let output = selected_output_path(sources, epub, &book_title(epub));
+        ui.set_output_name(display_name(&output).into());
+        ui.set_output_directory(
+            output
+                .parent()
+                .map_or_else(String::new, |path| path.display().to_string())
+                .into(),
+        );
+    } else {
+        ui.set_output_name("Choose an EPUB to see the output filename".into());
+        ui.set_output_directory("Saved beside your source EPUB".into());
+    }
+}
+fn open_output_folder(output: &Path) -> Result<(), String> {
+    if !output.is_file() {
+        return Err(format!(
+            "The output has moved or is missing: {}",
+            output.display()
+        ));
+    }
+    let directory = output.parent().ok_or("The output folder is unavailable.")?;
+    let program = if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(directory)
+        .spawn()
+        .map_err(|error| format!("Could not open the output folder: {error}"))?;
+    Ok(())
 }
 
 fn display_name(path: &Path) -> String {
@@ -328,6 +435,9 @@ pub(crate) fn refresh_main_view(
     ui.set_queue_paused(queue.state() == QueueState::Paused);
 
     let Some(job) = queue.active_job() else {
+        ui.set_active_job_id("".into());
+        ui.set_cancel_confirmation(false);
+        ui.set_exclude_confirmation(false);
         update_model(stage_rows, Vec::new());
         update_model(detail_stage_rows, Vec::new());
         ui.set_has_active_job(false);
@@ -344,6 +454,13 @@ pub(crate) fn refresh_main_view(
         ui.set_review_preview_text("".into());
         return;
     };
+
+    let id = job.id.to_string();
+    if ui.get_active_job_id().as_str() != id {
+        ui.set_cancel_confirmation(false);
+        ui.set_exclude_confirmation(false);
+        ui.set_active_job_id(id.into());
+    }
 
     update_model(stage_rows, build_stage_rows(job));
     update_model(detail_stage_rows, build_stage_detail_rows(job));
@@ -365,12 +482,11 @@ pub(crate) fn refresh_main_view(
     );
 
     let needs_review = job.status == JobStatus::NeedsReview;
+    if needs_review && !ui.get_needs_review() {
+        ui.set_workspace_page(1);
+    }
     ui.set_needs_review(needs_review);
-    if needs_review {
-        let (summary, preview) = review_text(job);
-        ui.set_review_summary_text(summary.into());
-        ui.set_review_preview_text(preview.into());
-    } else {
+    if !needs_review {
         ui.set_review_summary_text("".into());
         ui.set_review_preview_text("".into());
     }
@@ -392,40 +508,6 @@ fn update_model<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T
         if model.row_data(index).as_ref() != Some(&row) {
             model.set_row_data(index, row);
         }
-    }
-}
-
-fn review_text(job: &Job) -> (String, String) {
-    match load_audio_review_report(job) {
-        Ok(report) => {
-            let count = report.unmatched.len();
-            let summary = format!(
-                "{count} unmatched audio segment{} will be excluded from synchronization if you continue. Match {:.1}%.",
-                if count == 1 { "" } else { "s" },
-                report.match_percent
-            );
-            let mut previews = report
-                .unmatched
-                .iter()
-                .take(4)
-                .map(|item| {
-                    format!(
-                        "{}–{}  {}",
-                        format_millis(item.audio_start_ms),
-                        format_millis(item.audio_end_ms),
-                        item.transcript_text
-                    )
-                })
-                .collect::<Vec<_>>();
-            if count > previews.len() {
-                previews.push(format!("…and {} more", count - previews.len()));
-            }
-            (summary, previews.join("\n"))
-        }
-        Err(error) => (
-            format!("Review data could not be loaded: {error}"),
-            String::new(),
-        ),
     }
 }
 
@@ -696,6 +778,22 @@ mod tests {
             PathBuf::from("books/The Example Novel (readaloud).epub")
         );
         assert_ne!(source, output);
+    }
+
+    #[test]
+    fn custom_output_folder_keeps_the_filename_and_source_paths() {
+        let epub = PathBuf::from("books/Example.epub");
+        let sources = PendingSources {
+            epub: Some(epub.clone()),
+            audiobook: Some("audio/Example.m4b".into()),
+            output_directory: Some("finished".into()),
+        };
+        assert_eq!(
+            selected_output_path(&sources, &epub, "Example"),
+            PathBuf::from("finished/Example (readaloud).epub")
+        );
+        assert_eq!(sources.epub, Some(epub));
+        assert_eq!(sources.audiobook, Some(PathBuf::from("audio/Example.m4b")));
     }
 
     #[test]

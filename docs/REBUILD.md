@@ -8,9 +8,9 @@ The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and 
 |---|---|---|
 | `storyteller-core` | Job rules, queue, cancellation, resume fingerprints, normalized transcripts, conservative alignment, review decisions, EPUB construction and validation | Rust libraries; no Slint |
 | `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated Whistle processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
-| `storyteller-ui` | File selection, snapshot presentation, review selection/navigation and application command dispatch | Application and core |
+| `storyteller-ui` | File selection, snapshot presentation and application command dispatch | Application and core |
 
-The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review evidence/candidate discovery and audio preview still have UI-side implementation, with further migration and visual optimization tracked under R4.
+The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review report/evidence loading, cached navigation and audio preview now have application-owned workers. The rebuilt native interface is described in [UI.md](UI.md); its Windows checkpoint is pending.
 
 ## Application controller scaffold
 
@@ -59,7 +59,7 @@ English-only mode removes application language options and detection routing. Th
 | R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
 | R2 — Own lifecycle in the application | Validated on Windows | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
 | R3 — Make stage artifacts and publication explicit | Validated on Windows | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
-| R4 — Reduce UI and review coupling | In progress | Snapshot rendering and durable decisions moved; remaining preview/evidence migration, layout/usability optimization and 820×620 visual acceptance |
+| R4 — Rebuild the native UI and reduce review coupling | Awaiting Windows checkpoint | New book/Queue/Settings workspaces, output selection, readable review layout, background evidence/preview, stale-result guards and compact/high-DPI scenes implemented |
 | R5 — Validate complete books and release | Planned | Representative long English audiobooks, difficult speech cuts, accuracy/timing review, reader interoperability and full Windows packaging |
 
 Native smoke tests establish integration correctness, not a quality or speed advantage over the released large-v3-turbo implementation. Cactus’s published M4 Pro comparison against Whisper base is not a Windows audiobook benchmark. R5 must measure representative books before release.

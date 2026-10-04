@@ -1,0 +1,537 @@
+[
+  {
+    "name": "new-book",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Ready · English transcription with Whistle"
+    }
+  },
+  {
+    "name": "first-setup",
+    "properties": {
+      "runtime-busy": true,
+      "status-text": "Checking local tools…"
+    }
+  },
+  {
+    "name": "sources-ready",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Ready · English transcription with Whistle",
+      "epub-source-name": "The Example Novel — Complete and Unabridged Edition.epub",
+      "audio-source-name": "The Example Novel — Narrated by Alex Morgan.m4b",
+      "output-name": "The Example Novel — Complete and Unabridged Edition (readaloud).epub",
+      "output-directory": "C:\\Users\\Reader\\Books\\My read-aloud books"
+    }
+  },
+  {
+    "name": "processing",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Processing The Example Novel",
+      "workspace-page": 1,
+      "has-active-job": true,
+      "active-job-id": "current",
+      "active-title": "The Example Novel",
+      "active-overall-progress": 0.23,
+      "active-progress-text": "23%",
+      "active-activity-text": "Transcribing English audio · Whistle",
+      "active-context-text": "Audio 18:20 / 4:12:45",
+      "active-timing-text": "Elapsed 2:31 · ETA ~28:10",
+      "active-metrics-text": "Whistle · native CPU · 1 worker",
+      "active-stage-details": [
+        {
+          "label": "Prepare",
+          "state": "Done",
+          "elapsed": "0:08",
+          "activity": ""
+        },
+        {
+          "label": "Analyze",
+          "state": "Active",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Align",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Review Audio",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Encode",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Build EPUB",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Validate",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        }
+      ],
+      "queue-rows": [
+        {
+          "id": "1",
+          "position": "1",
+          "title": "A second book",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": true
+        },
+        {
+          "id": "2",
+          "position": "2",
+          "title": "A much longer title to check that the queue leaves room for actions",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": true,
+          "can-move-down": true
+        },
+        {
+          "id": "3",
+          "position": "3",
+          "title": "Another story",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": true,
+          "can-move-down": false
+        },
+        {
+          "id": "complete",
+          "position": "",
+          "title": "A finished book",
+          "status": "Completed",
+          "detail": "Saved to C:\\Users\\Reader\\Books\\A finished book (readaloud).epub",
+          "waiting": false,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": false
+        },
+        {
+          "id": "failed",
+          "position": "",
+          "title": "A book with a problem",
+          "status": "Failed",
+          "detail": "The output already exists. Choose another destination before retrying. Your existing file has been kept.",
+          "waiting": false,
+          "retryable": true,
+          "can-move-up": false,
+          "can-move-down": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "cancel-book",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Processing The Example Novel",
+      "workspace-page": 1,
+      "has-active-job": true,
+      "active-job-id": "current",
+      "active-title": "The Example Novel",
+      "active-overall-progress": 0.23,
+      "active-progress-text": "23%",
+      "active-activity-text": "Transcribing English audio · Whistle",
+      "active-context-text": "Audio 18:20 / 4:12:45",
+      "active-timing-text": "Elapsed 2:31 · ETA ~28:10",
+      "active-metrics-text": "Whistle · native CPU · 1 worker",
+      "active-stage-details": [
+        {
+          "label": "Prepare",
+          "state": "Done",
+          "elapsed": "0:08",
+          "activity": ""
+        },
+        {
+          "label": "Analyze",
+          "state": "Active",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Align",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Review Audio",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Encode",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Build EPUB",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        },
+        {
+          "label": "Validate",
+          "state": "Pending",
+          "elapsed": "",
+          "activity": ""
+        }
+      ],
+      "queue-rows": [
+        {
+          "id": "1",
+          "position": "1",
+          "title": "A second book",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": true
+        },
+        {
+          "id": "2",
+          "position": "2",
+          "title": "A much longer title to check that the queue leaves room for actions",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": true,
+          "can-move-down": true
+        },
+        {
+          "id": "3",
+          "position": "3",
+          "title": "Another story",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": true,
+          "can-move-down": false
+        },
+        {
+          "id": "complete",
+          "position": "",
+          "title": "A finished book",
+          "status": "Completed",
+          "detail": "Saved to C:\\Users\\Reader\\Books\\A finished book (readaloud).epub",
+          "waiting": false,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": false
+        },
+        {
+          "id": "failed",
+          "position": "",
+          "title": "A book with a problem",
+          "status": "Failed",
+          "detail": "The output already exists. Choose another destination before retrying. Your existing file has been kept.",
+          "waiting": false,
+          "retryable": true,
+          "can-move-up": false,
+          "can-move-down": false
+        }
+      ],
+      "cancel-confirmation": true
+    }
+  },
+  {
+    "name": "paused-queue",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Recovered 3 interrupted books. The queue is paused. Resume when ready.",
+      "workspace-page": 1,
+      "queue-paused": true,
+      "queue-rows": [
+        {
+          "id": "1",
+          "position": "1",
+          "title": "A second book",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": true
+        },
+        {
+          "id": "2",
+          "position": "2",
+          "title": "A much longer title to check that the queue leaves room for actions",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": true,
+          "can-move-down": true
+        },
+        {
+          "id": "3",
+          "position": "3",
+          "title": "Another story",
+          "status": "Waiting",
+          "detail": "",
+          "waiting": true,
+          "retryable": false,
+          "can-move-up": true,
+          "can-move-down": false
+        },
+        {
+          "id": "complete",
+          "position": "",
+          "title": "A finished book",
+          "status": "Completed",
+          "detail": "Saved to C:\\Users\\Reader\\Books\\A finished book (readaloud).epub",
+          "waiting": false,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": false
+        },
+        {
+          "id": "failed",
+          "position": "",
+          "title": "A book with a problem",
+          "status": "Failed",
+          "detail": "The output already exists. Choose another destination before retrying. Your existing file has been kept.",
+          "waiting": false,
+          "retryable": true,
+          "can-move-up": false,
+          "can-move-down": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "queue-error",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "The selected output path is already used by another file. Choose another output folder or move the existing file before retrying. Source: C:\\Users\\Reader\\Books\\A book with a problem.epub. Existing output: C:\\Users\\Reader\\Books\\A book with a problem (readaloud).epub.",
+      "workspace-page": 1,
+      "queue-rows": [
+        {
+          "id": "complete",
+          "position": "",
+          "title": "A finished book",
+          "status": "Completed",
+          "detail": "Saved to C:\\Users\\Reader\\Books\\A finished book (readaloud).epub",
+          "waiting": false,
+          "retryable": false,
+          "can-move-up": false,
+          "can-move-down": false
+        },
+        {
+          "id": "failed",
+          "position": "",
+          "title": "A book with a problem",
+          "status": "Failed",
+          "detail": "The output already exists. Choose another destination before retrying. Your existing file has been kept.",
+          "waiting": false,
+          "retryable": true,
+          "can-move-up": false,
+          "can-move-down": false
+        }
+      ],
+      "status-details-open": true
+    }
+  },
+  {
+    "name": "audio-review",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Review needed · Decisions save automatically",
+      "workspace-page": 1,
+      "has-active-job": true,
+      "active-job-id": "review",
+      "active-title": "The Example Novel",
+      "needs-review": true,
+      "review-item-ready": true,
+      "review-item-position-text": "Segment 2 of 8",
+      "review-item-time-text": "18:20.125–18:29.760",
+      "review-item-transcript-text": "At the edge of the clearing, she stopped and listened. Somewhere beyond the trees, a bell was ringing. It was a sound she remembered from long ago.",
+      "review-item-decision-text": "Needs a decision · Choose a match or exclude this segment.",
+      "review-seek-text": "0:00.000 / 0:09.635",
+      "review-can-previous": true,
+      "review-can-next": true,
+      "review-allocator-status-text": "7 of 8 segments still need a decision.",
+      "review-candidates": [
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": 12,
+          "text": "At the edge of the clearing she stopped and listened. Somewhere beyond the trees, a bell was ringing.",
+          "score": "94%"
+        },
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": 13,
+          "text": "She remembered the sound from long ago, before she had left the valley.",
+          "score": "67%"
+        },
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": -1,
+          "text": "Image narration · Map of the valley",
+          "score": "image"
+        }
+      ]
+    }
+  },
+  {
+    "name": "exclude-confirmation",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Review needed · Decisions save automatically",
+      "workspace-page": 1,
+      "has-active-job": true,
+      "active-job-id": "review",
+      "active-title": "The Example Novel",
+      "needs-review": true,
+      "review-item-ready": true,
+      "review-item-position-text": "Segment 2 of 8",
+      "review-item-time-text": "18:20.125–18:29.760",
+      "review-item-transcript-text": "At the edge of the clearing, she stopped and listened. Somewhere beyond the trees, a bell was ringing. It was a sound she remembered from long ago.",
+      "review-item-decision-text": "Needs a decision · Choose a match or exclude this segment.",
+      "review-seek-text": "0:00.000 / 0:09.635",
+      "review-can-previous": true,
+      "review-can-next": true,
+      "review-allocator-status-text": "7 of 8 segments still need a decision.",
+      "review-candidates": [
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": 12,
+          "text": "At the edge of the clearing she stopped and listened. Somewhere beyond the trees, a bell was ringing.",
+          "score": "94%"
+        },
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": 13,
+          "text": "She remembered the sound from long ago, before she had left the valley.",
+          "score": "67%"
+        },
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": -1,
+          "text": "Image narration · Map of the valley",
+          "score": "image"
+        }
+      ],
+      "exclude-confirmation": true
+    }
+  },
+  {
+    "name": "review-complete",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Review needed · Decisions save automatically",
+      "workspace-page": 1,
+      "has-active-job": true,
+      "active-job-id": "review",
+      "active-title": "The Example Novel",
+      "needs-review": true,
+      "review-item-ready": true,
+      "review-item-position-text": "Segment 2 of 8",
+      "review-item-time-text": "18:20.125–18:29.760",
+      "review-item-transcript-text": "At the edge of the clearing, she stopped and listened. Somewhere beyond the trees, a bell was ringing. It was a sound she remembered from long ago.",
+      "review-item-decision-text": "Saved · Preserved on a supplemental read-aloud page.",
+      "review-seek-text": "0:00.000 / 0:09.635",
+      "review-can-previous": true,
+      "review-can-next": true,
+      "review-allocator-status-text": "All decisions saved. Finish review to continue.",
+      "review-candidates": [
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": 12,
+          "text": "At the edge of the clearing she stopped and listened. Somewhere beyond the trees, a bell was ringing.",
+          "score": "94%"
+        },
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": 13,
+          "text": "She remembered the sound from long ago, before she had left the valley.",
+          "score": "67%"
+        },
+        {
+          "href": "Text/chapter-04.xhtml",
+          "line-index": -1,
+          "text": "Image narration · Map of the valley",
+          "score": "image"
+        }
+      ],
+      "review-complete": true,
+      "review-can-preserve-edge": true,
+      "review-preserve-edge-text": "Preserve introduction"
+    }
+  },
+  {
+    "name": "review-loading",
+    "properties": {
+      "runtime-ready": true,
+      "status-text": "Review needed · Decisions save automatically",
+      "workspace-page": 1,
+      "has-active-job": true,
+      "active-job-id": "review",
+      "active-title": "The Example Novel",
+      "needs-review": true,
+      "review-item-ready": false,
+      "review-item-position-text": "Loading review…",
+      "review-item-time-text": "18:20.125–18:29.760",
+      "review-item-transcript-text": "",
+      "review-item-decision-text": "",
+      "review-seek-text": "0:00.000 / 0:09.635",
+      "review-can-previous": true,
+      "review-can-next": true,
+      "review-allocator-status-text": "Loading review…",
+      "review-candidates": [],
+      "review-busy": true
+    }
+  },
+  {
+    "name": "settings",
+    "properties": {
+      "settings-open": true,
+      "runtime-ready": false,
+      "runtime-ffmpeg-text": "Missing · Download the verified audio tools below.",
+      "runtime-transcription-text": "Needle 3.1.0 · native CPU engine available.",
+      "runtime-model-text": "Missing · Whistle model download is 16.9 MB.",
+      "runtime-summary-text": "Two tools need installation.",
+      "status-text": "Local setup needed"
+    }
+  },
+  {
+    "name": "settings-ready",
+    "properties": {
+      "settings-open": true,
+      "runtime-ready": true,
+      "runtime-ffmpeg-text": "Verified · C:\\Users\\Reader\\AppData\\Local\\StoryTeller Lite\\runtime\\ffmpeg\\bin\\ffmpeg.exe",
+      "runtime-transcription-text": "Verified · Needle 3.1.0 · native CPU",
+      "runtime-model-text": "Verified · Whistle · 16.9 MB · English",
+      "runtime-summary-text": "All local tools are ready.",
+      "status-text": "Ready"
+    }
+  }
+]
