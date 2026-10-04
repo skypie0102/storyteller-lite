@@ -36,7 +36,7 @@ Stage completion writes a version-2 JSON `.artifacts` manifest with typed output
 
 Validate always reruns on resume. An existing output is accepted only when its bytes and destination match the current validated candidate and the saved job-owned intent. A missing output is republished; a modified or unrelated output is preserved and fails validation/publication. Cancellation before commit leaves no output, while cancellation after commit reports success. A force termination can leave a unique staging file; later attempts neither trust it nor delete another attempt's staging name.
 
-The failure-boundary regressions inject interruptions before/after intent and after commit; they are application/process-boundary checks, not a storage-device power-loss simulation. A real builder/validator/worker-resume fixture additionally verifies that all seven cached checkpoints cannot bypass external publication checks. Native Windows validation for this R3 implementation is pending.
+The failure-boundary regressions inject interruptions before/after intent and after commit; they are application/process-boundary checks, not a storage-device power-loss simulation. A real builder/validator/worker-resume fixture additionally verifies that all seven cached checkpoints cannot bypass external publication checks. This R3 implementation passed the native Windows checkpoint recorded below.
 
 ## Whistle contract
 
@@ -58,13 +58,24 @@ English-only mode removes application language options and detection routing. Th
 | R0 — Preserve contracts and establish application boundary | Validated on Windows | Existing queue, review, recovery and EPUB regressions pass; Slint compiles |
 | R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
 | R2 — Own lifecycle in the application | Validated on Windows | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
-| R3 — Make stage artifacts and publication explicit | Implemented; Windows checkpoint pending | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
+| R3 — Make stage artifacts and publication explicit | Validated on Windows | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
 | R4 — Reduce UI and review coupling | In progress | Snapshot rendering and durable decisions moved; remaining preview/evidence migration, layout/usability optimization and 820×620 visual acceptance |
 | R5 — Validate complete books and release | Planned | Representative long English audiobooks, difficult speech cuts, accuracy/timing review, reader interoperability and full Windows packaging |
 
 Native smoke tests establish integration correctness, not a quality or speed advantage over the released large-v3-turbo implementation. Cactus’s published M4 Pro comparison against Whisper base is not a Windows audiobook benchmark. R5 must measure representative books before release.
 
 ## Validation
+
+The stage artifact/publication checkpoint [37192046677](https://github.com/skypie0102/storyteller-lite/actions/runs/37192046677) passed on product-source commit `9ec8847b16416466b3bbfd83f6081c74ea2351c7`:
+
+- Formatting, strict locked workspace Clippy, all **154 Windows workspace tests**, and the native Slint build. No dependency or lockfile changes.
+- Typed-output mismatch and cancelled-capture gates; same-size cache edits; missing required roles; incomplete/conflicting/old/truncated manifests; conservative contiguous rewind; review resealing; and mandatory publication revalidation after resume.
+- Eleven publication regressions covering interruption before/after intent and after commit, competing outputs, missing ownership intent, changed bytes, cancellation around commit, invalid intent preservation, abandoned staging names and aliased paths.
+- Real EPUB builder/structural validator plus worker resume with all seven checkpoint stages present. A matching committed output is recovered without rewriting, a missing output is republished, and a changed output fails without overwrite.
+- Hash-verified pinned assets, 14 native timed English speech words and empty native silence, 6.44-second and 55-second application transcription (the latter with three windows/two isolated workers), timestamp/chunk bounds, all-silence rejection and PCM cleanup.
+- Packaged Running/NeedsReview relaunch recovery and absent-language migration, with all restored work remaining paused.
+
+The Windows count includes eight artifact-manifest regressions. The additional Unix-only symbolic-link regression is implemented but was not run by this Windows checkpoint; Linux-specific filesystem coverage remains separate from the Windows acceptance claim. The boundary tests are injected application interruptions, not hardware power-loss tests.
 
 The application controller and first UI optimization checkpoint [37189418973](https://github.com/skypie0102/storyteller-lite/actions/runs/37189418973) passed on product-source commit `24f128886f24cd8bf9cefa83b3a3e8b020c78c3e`:
 
@@ -79,7 +90,7 @@ The application controller and first UI optimization checkpoint [37189418973](ht
 
 The first controller checkpoint [37189026768](https://github.com/skypie0102/storyteller-lite/actions/runs/37189026768) passed 133 tests on `e7a87f9fc1b4fb6e2f89e0b429e7e4dfa2f2f9c7`; the final checkpoint adds the worker-handoff guard and two race regressions. The English-only checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed 121 tests on `df1e49faece11e28a0cb11bb0c79a5a91defea43`, and the initial foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`.
 
-The temporary branch-only checkpoint workflow was removed after the latest pass. Subsequent evidence/cleanup edits remove an unreferenced legacy UI recovery file and record results; compiled product source is unchanged. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+The temporary R3 branch-only checkpoint workflow was removed after the pass. Subsequent evidence/cleanup edits only record results and remove that workflow; compiled product source is unchanged. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
 
 Full-book English recognition accuracy, difficult speech boundaries and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 

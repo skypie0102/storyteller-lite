@@ -10,7 +10,7 @@ The active reliability rebuild replaces Whisper with **Whistle** and moves runti
 
 The application now owns queue commands, workers, saved recovery and durable review decisions. The desktop renders changed snapshots, updates queue rows incrementally and scans dependencies in the background. This scaffold passed all 135 tests and the native Windows checkpoint recorded in the rebuild document; the full rebuild and visual UI acceptance are still in progress.
 
-The next rebuild slice introduces typed stage outputs, cancellable SHA-256 cache verification and validated, no-overwrite EPUB publication with restart recovery. Its Windows checkpoint is pending; see the rebuild document for the exact contract and outstanding visual/full-book acceptance work.
+The next rebuild slice introduces typed stage outputs, cancellable SHA-256 cache verification and validated, no-overwrite EPUB publication with restart recovery. It passed all 154 Windows workspace tests, the native Slint build, Whistle integration and packaged recovery. R0–R3 are validated; review/UI refinement and representative full-book acceptance remain in progress. See the rebuild document for the exact evidence and limits.
 
 ## Released baseline
 
