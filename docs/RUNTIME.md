@@ -45,7 +45,7 @@ The published model stores shared multilingual weights in one 16.9 MB file. Engl
 
 ### CPU workers and automatic recommendation
 
-Whistle's pinned Needle runtime performs transcription on CPU. It has no supported GPU backend in this app; a GPU does not raise the transcription worker count. Slint may use graphics acceleration to draw the window, which is separate from transcription.
+Whistle's pinned Needle runtime performs transcription on CPU, as described in the [Whistle announcement](https://cactuscompute.com/blog/whistle). It has no supported GPU backend in this app; a GPU does not raise the transcription worker count. Slint may use graphics acceleration to draw the window, which is separate from transcription.
 
 The desktop defaults to **Automatic**. The application scans logical CPU threads available to the process and currently available physical RAM in the background during startup and Check setup. Windows uses `GlobalMemoryStatusEx`; Linux reads `MemAvailable`. Other platforms or failed probes fall back to a one-worker recommendation. No hardware-probing dependency was added.
 
@@ -63,6 +63,8 @@ The starting recommendation is the smaller of about half the available logical C
 Manual selection supports 1–16. Sixteen is an application safety ceiling, not a Whistle restriction. Manual settings override the recommendation; more workers may be slower or consume more memory. Automatic is resolved when enqueueing, and recovery schema 2 stores the resulting integer. Older 1–4 records remain valid; changing the scan or preference does not retarget queued or restored books. The adapter reduces the running count when fewer chunks exist, and limits each chunk's FFmpeg decoding/PCM encoding to one thread to reduce nested CPU contention.
 
 The adapter example accepts an explicit worker count or `auto`, with Automatic as the omitted-argument default. Each chunk still launches a fresh native CLI process; persistent loaded models and hardware throughput benchmarks remain future optimization work.
+
+Windows checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403), source `e59482318b661621309179f918dc5056ad48c912`, passed all 171 workspace tests and the real native adapter checks. The hosted runner reported four available CPU threads and about 13 GiB available RAM, yielding a two-worker recommendation. Short Automatic input used one effective worker because it contained one chunk; explicit eight-worker selection on 135 seconds used six workers for six chunks. Native speech/silence, English enforcement, global timestamps, contiguous 30-second-capped coverage, silent-book rejection and temporary PCM cleanup also passed. These fixtures do not measure the fastest worker count or full-book recognition accuracy.
 
 Default chunk target is 25 seconds. Chapter and silence adjustments must keep every chunk at or below 30 seconds. Every source interval appears exactly once in the validated contiguous plan. Workers use separate processes; cancellation stops owned subprocesses and cleanup removes temporary WAVs. Full-book transcript timestamps are restored using chunk offsets.
 

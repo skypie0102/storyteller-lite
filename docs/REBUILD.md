@@ -66,13 +66,23 @@ Native smoke tests establish integration correctness, not a quality or speed adv
 
 ## Validation
 
+The automatic-worker checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed on source commit `e59482318b661621309179f918dc5056ad48c912`:
+
+- Formatting, strict locked workspace Clippy with all targets, all **171 Windows workspace tests**, native Slint build, 39 scene renders including 200% scaling, keyboard/pointer checks and packaged relaunch recovery.
+- Seven CPU/RAM recommendation regressions covering scaling above four, low memory, missing probes, exact manual overrides, display text, Linux memory parsing and the real Windows memory probe. A recovery regression preserves concrete worker counts 1, 4, 8 and 16.
+- Hash-verified unchanged Whistle/Needle/FFmpeg assets, 14 native timed English words and empty native silence. Automatic short-input selection passed. Explicit eight-worker selection transcribed **135 seconds across six chunks with six native workers**, exercising concurrency above four.
+- Global timing order/source bounds, complete contiguous chunk coverage with every input at most 30 seconds, silent-book rejection and temporary PCM cleanup.
+- Six updated Settings scenes were visually inspected at compact, standard and 200% scale; all 33 other scene files matched the earlier inspected UI checkpoint byte for byte. Updated screenshots and hashes are retained in [UI.md](UI.md).
+
+Automatic leaves CPU/RAM headroom and is a starting heuristic. This checkpoint verifies integration and recovery, not optimal throughput, full-book speech-boundary accuracy or GPU transcription. No dependency or lockfile changes were needed.
+
 The native UI checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) passed on source commit `47e74e944fbdcd691c2956050ed26ae4c961f51f`:
 
 - Formatting, strict locked workspace Clippy with all targets, all **164 Windows workspace tests**, the native Slint build and packaged Running/NeedsReview relaunch recovery.
 - Ten additional regressions: displayed-job cancellation cannot cancel another active book; stale job/generation evidence is ignored; cached seeking and idle polling do not reload; durable decisions reload and advance; broken review reports cannot enable completion and can recover after repair; preview natural exit, stop/shutdown/reaping and startup failure; the preview child fixture; and custom output-folder selection.
 - Thirteen actual compiled Slint scenes at 820×620 and 1040×760, plus compact renders at 200% scale: **39 screenshots**, all inspected. The compact processing view shows all seven stages, and compact review keeps the first match/action beside the transcript. Settings, queue and long status details use local scrolling.
 - Real dispatched Tab/Space and pointer events at both normal sizes verify source selection, incomplete/busy start guards, ready submission, Settings/New book navigation, unresolved-review completion gating and the two-click bulk exclusion path. The harness installs fixture callbacks rather than invoking processing, downloads or file dialogs.
-- Five representative lossless PNG renders and all 39 scene hashes are retained in [UI.md](UI.md) and [screenshot provenance](ui-snapshots/provenance.json). The artifact ZIP SHA-256 is `9630442c1bde3cccb7d80219c50199489130d09714f18e0851d299a77e17ddb6`.
+- Five representative lossless PNG renders and all 39 scene hashes were retained in the UI guide. Its screenshots and provenance now track the later automatic-worker checkpoint above. This earlier artifact ZIP SHA-256 is `9630442c1bde3cccb7d80219c50199489130d09714f18e0851d299a77e17ddb6`.
 
 This checkpoint changes UI and application review ownership; it does not change the pinned Whistle adapter/assets. The R3 native speech/silence and multi-window integration evidence below still describes that adapter. Preview child-process tests establish lifecycle behavior; they do not establish audible-device quality. No runtime dependencies or lockfile changes were needed.
 
@@ -100,7 +110,7 @@ The application controller and first UI optimization checkpoint [37189418973](ht
 
 The first controller checkpoint [37189026768](https://github.com/skypie0102/storyteller-lite/actions/runs/37189026768) passed 133 tests on `e7a87f9fc1b4fb6e2f89e0b429e7e4dfa2f2f9c7`; the final checkpoint adds the worker-handoff guard and two race regressions. The English-only checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed 121 tests on `df1e49faece11e28a0cb11bb0c79a5a91defea43`, and the initial foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`.
 
-Temporary branch-only checkpoint workflows are removed after their passes. The R4 evidence/cleanup commit only updates documentation/screenshots and removes its temporary workflow; compiled source remains the validated `47e74e944fbdcd691c2956050ed26ae4c961f51f` source. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+Temporary branch-only checkpoint workflows are removed after their passes. The latest evidence/cleanup commit only updates documentation/screenshots and removes the automatic-worker workflow; compiled source remains the validated `e59482318b661621309179f918dc5056ad48c912` source. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
 
 Full-book English recognition accuracy, difficult speech boundaries and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 

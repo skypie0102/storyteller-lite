@@ -1,12 +1,12 @@
 {
-  "description": "Lossless PNG conversions of actual compiled Slint scene fixtures captured on Windows. These are sample state renders, not a complete-book acceptance run.",
-  "product_source_commit": "47e74e944fbdcd691c2956050ed26ae4c961f51f",
-  "workflow_run": 37199779738,
-  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738",
-  "artifact_id": 11302248767,
-  "artifact_zip_sha256": "9630442c1bde3cccb7d80219c50199489130d09714f18e0851d299a77e17ddb6",
+  "description": "Lossless PNG conversions of actual compiled Slint scene fixtures captured on Windows, with sample book and hardware data. These are state renders, not a complete-book acceptance run.",
+  "product_source_commit": "e59482318b661621309179f918dc5056ad48c912",
+  "workflow_run": 37203054403,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403",
+  "artifact_id": 11303393901,
+  "artifact_zip_sha256": "142c6ea00d5245fc96763833da9f0098d838f17e5fc34e199e45e8f47001f0da",
   "slint_version": "1.17.1",
-  "windows_workspace_tests": 164,
+  "windows_workspace_tests": 171,
   "pointer_keyboard_sizes": [
     [
       820,
@@ -52,7 +52,7 @@
         1040,
         760
       ],
-      "sha256": "c21ca9f745a52e35b513df7a3a57a1793bd37ae01bfbbdb0b5d1e3c543731e6b"
+      "sha256": "747a24cd7ab683581755c17c3de7dbfe17067b6914ab3d4b1dcce94d7aac91de"
     },
     {
       "path": "audio-review-200-percent.png",
@@ -307,7 +307,7 @@
     },
     {
       "path": "settings-1040x760-1x.ppm",
-      "sha256": "da660cdff213f8c475f901b879a4f6a0d676caddec62ab283f4764e38121ebc0",
+      "sha256": "98bf73bd4c2e7fe8ae07bd4b418ccfddacffe75b1bea05fa626a8aed5157787d",
       "dimensions": [
         1040,
         760
@@ -315,7 +315,7 @@
     },
     {
       "path": "settings-820x620-1x.ppm",
-      "sha256": "9cb13f562f26e9db90714231be2bff1d71a63ad79ce42b94af6db82444971c89",
+      "sha256": "22ff662d59e5e21395b928ebb40fa25f18454b13679e8a787ed2c2b9aea7426e",
       "dimensions": [
         820,
         620
@@ -323,7 +323,7 @@
     },
     {
       "path": "settings-820x620-2x.ppm",
-      "sha256": "fd47ba770efc1f91e0c04dfe5be07dae9f0e0bdf4d78820e35af8713f2fbf401",
+      "sha256": "1686f458cd5d6cb3fda421a8ff4b2b6bfdb8bc97aea6a922444f1516b74329ca",
       "dimensions": [
         1640,
         1240
@@ -331,7 +331,7 @@
     },
     {
       "path": "settings-ready-1040x760-1x.ppm",
-      "sha256": "23029c3f11fdd24cb3104db685c398504f678da24954bb10dea28c5de856be52",
+      "sha256": "b96a5f4fe37b1659ac4ebe2b9d69516ae35a5d14088a7cc4be6d2a015d76a684",
       "dimensions": [
         1040,
         760
@@ -339,7 +339,7 @@
     },
     {
       "path": "settings-ready-820x620-1x.ppm",
-      "sha256": "62e1513d5fb759b89dffd695bb38c98693aa43cdf80f8615ea9eb995c2fbf1d2",
+      "sha256": "603aacaa8fb6fe99805c506253dc61fcdcd85de666ef25f057b11e95c8b83b26",
       "dimensions": [
         820,
         620
@@ -347,7 +347,7 @@
     },
     {
       "path": "settings-ready-820x620-2x.ppm",
-      "sha256": "b79e51b3fa1f140ecec9abea04212c8a7c2822c71508c33bf53c10864c2f5260",
+      "sha256": "b843b43d25144a97d8eb46debf893cea3e55a84c2f0d19e54937ed1e19ef3e59",
       "dimensions": [
         1640,
         1240
@@ -377,5 +377,18 @@
         1240
       ]
     }
-  ]
+  ],
+  "comparison_to_prior_checkpoint": {
+    "source_commit": "47e74e944fbdcd691c2956050ed26ae4c961f51f",
+    "workflow_run": 37199779738,
+    "byte_identical_scenes": 33,
+    "updated_scenes_inspected": [
+      "settings-1040x760-1x.ppm",
+      "settings-820x620-1x.ppm",
+      "settings-820x620-2x.ppm",
+      "settings-ready-1040x760-1x.ppm",
+      "settings-ready-820x620-1x.ppm",
+      "settings-ready-820x620-2x.ppm"
+    ]
+  }
 }
