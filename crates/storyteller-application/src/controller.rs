@@ -72,7 +72,7 @@ pub struct ApplicationSnapshot<'a> {
 
 enum RuntimeEvent {
     Progress(String),
-    Finished(Result<RuntimeStatus, String>),
+    Finished(Box<Result<RuntimeStatus, String>>),
 }
 
 struct RuntimeTask {
@@ -538,7 +538,7 @@ impl ApplicationController {
                 } else {
                     Ok(status)
                 };
-            let _ = sender.send(RuntimeEvent::Finished(result));
+            let _ = sender.send(RuntimeEvent::Finished(Box::new(result)));
         });
         self.runtime_task = Some(RuntimeTask {
             receiver,
@@ -568,7 +568,7 @@ impl ApplicationController {
                     self.runtime_revision = self.runtime_revision.wrapping_add(1);
                 }
                 Ok(RuntimeEvent::Finished(result)) => {
-                    task.result = Some(result);
+                    task.result = Some(*result);
                     break;
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
@@ -581,7 +581,7 @@ impl ApplicationController {
         // Drain again after completion before treating a missing result as failure.
         for event in task.receiver.try_iter() {
             if let RuntimeEvent::Finished(result) = event {
-                task.result = Some(result);
+                task.result = Some(*result);
             }
         }
         let Some(task) = self.runtime_task.take() else {
@@ -1284,7 +1284,7 @@ mod tests {
                 .send(RuntimeEvent::Progress("Checking pinned assets".into()))
                 .unwrap();
             sender
-                .send(RuntimeEvent::Finished(Ok(RuntimeStatus::default())))
+                .send(RuntimeEvent::Finished(Box::new(Ok(RuntimeStatus::default()))))
                 .unwrap();
         });
         app.runtime_task = Some(RuntimeTask {
