@@ -133,6 +133,8 @@ fn snapshot(ui: &AppWindow, path: &Path, width: u32, height: u32) -> Result<(), 
 }
 fn click(ui: &AppWindow, x: f32, y: f32) {
     let position = slint::LogicalPosition::new(x, y);
+    ui.window()
+        .dispatch_event(WindowEvent::PointerMoved { position });
     ui.window().dispatch_event(WindowEvent::PointerPressed {
         position,
         button: slint::platform::PointerEventButton::Left,
@@ -146,6 +148,8 @@ fn interaction_smoke(width: u32, height: u32) -> Result<(), Box<dyn Error>> {
     let ui = AppWindow::new()?;
     ui.show()?;
     ui.window().set_size(PhysicalSize::new(width, height));
+    ui.window()
+        .dispatch_event(WindowEvent::WindowActiveChanged(true));
     let picked = Rc::new(Cell::new(0));
     let calls = Rc::clone(&picked);
     ui.on_browse_epub(move || calls.set(calls.get() + 1));

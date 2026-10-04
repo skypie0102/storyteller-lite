@@ -523,6 +523,16 @@ mod tests {
             message: String::new(),
         }
     }
+    fn session_with_task(task: ReviewTask) -> ReviewSession {
+        ReviewSession {
+            view: ReviewView::default(),
+            job: None,
+            generation: 0,
+            cancel: CancellationToken::default(),
+            task: Some(task),
+            preview: crate::review_preview::AudioPreview::default(),
+        }
+    }
     fn settle(session: &mut ReviewSession) {
         let deadline = Instant::now() + Duration::from_secs(3);
         while session.view.busy {
@@ -548,10 +558,7 @@ mod tests {
             Ok(loaded(request))
         })
         .unwrap();
-        let mut session = ReviewSession {
-            task: Some(task),
-            ..Default::default()
-        };
+        let mut session = session_with_task(task);
         session.synchronize(Some(&first));
         entry.recv_timeout(Duration::from_secs(3)).unwrap();
         session.synchronize(Some(&second));
@@ -578,10 +585,7 @@ mod tests {
             Ok(loaded(request))
         })
         .unwrap();
-        let mut session = ReviewSession {
-            task: Some(task),
-            ..Default::default()
-        };
+        let mut session = session_with_task(task);
         session.synchronize(Some(&job("seek")));
         settle(&mut session);
         session.action(ReviewAction::Next).unwrap();
