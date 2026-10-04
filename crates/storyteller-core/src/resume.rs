@@ -157,6 +157,31 @@ mod tests {
     }
 
     #[test]
+    fn backend_switch_invalidates_analysis_and_alignment_while_preserving_prepare() {
+        let first = context(JobSettings::default());
+        let mut second = first.clone();
+        second.transcription_backend = "whisper-cuda:one".into();
+        second.effective_transcription_model = "turbo-q5:one".into();
+        second.settings.transcription_backend = crate::TranscriptionBackend::WhisperCuda;
+        second.settings.transcription_model =
+            second.settings.transcription_backend.model_name().into();
+        assert_eq!(
+            first.stage_fingerprint(PipelineStage::Prepare),
+            second.stage_fingerprint(PipelineStage::Prepare)
+        );
+        for stage in [
+            PipelineStage::Analyze,
+            PipelineStage::Align,
+            PipelineStage::ReviewAudio,
+        ] {
+            assert_ne!(
+                first.stage_fingerprint(stage),
+                second.stage_fingerprint(stage)
+            );
+        }
+    }
+
+    #[test]
     fn worker_count_is_execution_only_for_stage_fingerprints() {
         let first = context(JobSettings::default());
         let changed = JobSettings {

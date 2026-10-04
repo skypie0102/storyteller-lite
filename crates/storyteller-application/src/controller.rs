@@ -50,6 +50,7 @@ pub enum ApplicationCommand {
     },
     ScanRuntime,
     InstallMissingRuntime,
+    InstallWhisperRuntime,
 }
 
 #[derive(Default)]
@@ -71,13 +72,13 @@ pub struct ApplicationSnapshot<'a> {
 
 enum RuntimeEvent {
     Progress(String),
-    Finished(Result<RuntimeStatus, String>),
+    Finished(Box<Result<RuntimeStatus, String>>),
 }
 
 struct RuntimeTask {
     receiver: Receiver<RuntimeEvent>,
     handle: JoinHandle<()>,
-    install: bool,
+    install: Option<storyteller_core::TranscriptionBackend>,
     result: Option<Result<RuntimeStatus, String>>,
 }
 
@@ -193,8 +194,15 @@ impl ApplicationController {
         );
         let notice = match command {
             ApplicationCommand::Review(_) => unreachable!(),
-            ApplicationCommand::ScanRuntime => return self.start_runtime_task(false),
-            ApplicationCommand::InstallMissingRuntime => return self.start_runtime_task(true),
+            ApplicationCommand::ScanRuntime => return self.start_runtime_task(None),
+            ApplicationCommand::InstallMissingRuntime => {
+                return self
+                    .start_runtime_task(Some(storyteller_core::TranscriptionBackend::Whistle))
+            }
+            ApplicationCommand::InstallWhisperRuntime => {
+                return self
+                    .start_runtime_task(Some(storyteller_core::TranscriptionBackend::WhisperCuda))
+            }
             ApplicationCommand::Enqueue { inputs, settings } => {
                 self.queue.enqueue(Job::new(inputs, settings)?);
                 self.start_next_if_idle()?;
@@ -308,7 +316,12 @@ impl ApplicationController {
     pub fn poll(&mut self) {
         self.poll_runtime_task();
         self.poll_worker();
-        if self.worker.is_none() {
+        if self.worker.is_none()
+            && !self
+                .runtime_task
+                .as_ref()
+                .is_some_and(|task| task.install.is_some())
+        {
             match self.queue.start_next() {
                 Ok(Some(_)) => {
                     self.notice = None;
@@ -373,7 +386,12 @@ impl ApplicationController {
     fn start_next_if_idle(&mut self) -> Result<(), String> {
         // A final snapshot may arrive before the thread releases its resources.
         // Keep new jobs Waiting until the owned worker has actually been joined.
-        if self.worker.is_none() {
+        if self.worker.is_none()
+            && !self
+                .runtime_task
+                .as_ref()
+                .is_some_and(|task| task.install.is_some())
+        {
             self.queue.start_next()?;
         }
         Ok(())
@@ -490,22 +508,37 @@ impl ApplicationController {
         }
     }
 
-    fn start_runtime_task(&mut self, install: bool) -> Result<(), String> {
+    fn start_runtime_task(
+        &mut self,
+        install: Option<storyteller_core::TranscriptionBackend>,
+    ) -> Result<(), String> {
         if self.runtime_task.is_some() {
             return Err("Dependency setup is already running.".into());
+        }
+        if install.is_some() && self.worker.is_some() {
+            return Err("Finish or cancel the active book before installing runtime tools.".into());
         }
         let (sender, receiver) = mpsc::channel();
         let handle = thread::spawn(move || {
             let status = crate::detect_runtime();
-            let result = if install && !status.ready() {
-                crate::install_missing_dependencies(&status, |message| {
-                    let _ = sender.send(RuntimeEvent::Progress(message));
-                })
-                .map(|()| crate::detect_runtime())
-            } else {
-                Ok(status)
-            };
-            let _ = sender.send(RuntimeEvent::Finished(result));
+            let result =
+                if let Some(backend) = install.filter(|backend| !status.ready_for(*backend)) {
+                    let progress = |message| {
+                        let _ = sender.send(RuntimeEvent::Progress(message));
+                    };
+                    match backend {
+                        storyteller_core::TranscriptionBackend::Whistle => {
+                            crate::install_missing_dependencies(&status, progress)
+                        }
+                        storyteller_core::TranscriptionBackend::WhisperCuda => {
+                            crate::install_whisper_dependencies(&status, progress)
+                        }
+                    }
+                    .map(|()| crate::detect_runtime())
+                } else {
+                    Ok(status)
+                };
+            let _ = sender.send(RuntimeEvent::Finished(Box::new(result)));
         });
         self.runtime_task = Some(RuntimeTask {
             receiver,
@@ -514,7 +547,7 @@ impl ApplicationController {
             result: None,
         });
         self.runtime.busy = true;
-        self.runtime.message = if install {
+        self.runtime.message = if install.is_some() {
             "Preparing dependency download…"
         } else {
             "Scanning dependencies…"
@@ -535,7 +568,7 @@ impl ApplicationController {
                     self.runtime_revision = self.runtime_revision.wrapping_add(1);
                 }
                 Ok(RuntimeEvent::Finished(result)) => {
-                    task.result = Some(result);
+                    task.result = Some(*result);
                     break;
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
@@ -548,7 +581,7 @@ impl ApplicationController {
         // Drain again after completion before treating a missing result as failure.
         for event in task.receiver.try_iter() {
             if let RuntimeEvent::Finished(result) = event {
-                task.result = Some(result);
+                task.result = Some(*result);
             }
         }
         let Some(task) = self.runtime_task.take() else {
@@ -558,9 +591,11 @@ impl ApplicationController {
         self.runtime.busy = false;
         match task.result {
             Some(Ok(status)) if joined.is_ok() => {
-                self.runtime.message = if !task.install { "Scan complete." }
-                    else if status.ready() { "Dependencies installed and verified successfully." }
-                    else { "Installation completed, but dependencies are still missing. Re-scan or install them manually." }.into();
+                self.runtime.message = match task.install {
+                    None => "Scan complete.",
+                    Some(backend) if status.ready_for(backend) => "Dependencies installed and verified successfully.",
+                    Some(_) => "Installation completed, but setup is still needed. Check the engine and GPU status below.",
+                }.into();
                 self.runtime.status = Some(status);
             }
             Some(Err(error)) => self.runtime.message = format!("Dependency setup failed: {error}"),
@@ -1214,6 +1249,32 @@ mod tests {
     }
 
     #[test]
+    fn installation_holds_queued_books_until_runtime_replacement_finishes() {
+        let root = TestRoot::new();
+        let mut app = root.app();
+        let (sender, receiver) = mpsc::channel();
+        let (stop, stopped) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            stopped.recv().unwrap();
+            drop(sender);
+        });
+        app.runtime_task = Some(RuntimeTask {
+            receiver,
+            handle,
+            install: Some(storyteller_core::TranscriptionBackend::WhisperCuda),
+            result: None,
+        });
+        app.runtime.busy = true;
+        enqueue(&mut app, "Waiting for setup");
+        app.poll();
+        assert_eq!(app.queue.jobs()[0].status, JobStatus::Waiting);
+        assert!(app.worker.is_none());
+        stop.send(()).unwrap();
+        app.runtime_task.take().unwrap().handle.join().unwrap();
+        app.runtime.busy = false;
+    }
+
+    #[test]
     fn runtime_task_finishes_without_blocking_commands_or_losing_its_result() {
         let root = TestRoot::new();
         let mut app = root.app();
@@ -1223,13 +1284,15 @@ mod tests {
                 .send(RuntimeEvent::Progress("Checking pinned assets".into()))
                 .unwrap();
             sender
-                .send(RuntimeEvent::Finished(Ok(RuntimeStatus::default())))
+                .send(RuntimeEvent::Finished(Box::new(Ok(
+                    RuntimeStatus::default(),
+                ))))
                 .unwrap();
         });
         app.runtime_task = Some(RuntimeTask {
             receiver,
             handle,
-            install: false,
+            install: None,
             result: None,
         });
         app.runtime.busy = true;

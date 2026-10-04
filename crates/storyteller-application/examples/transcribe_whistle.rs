@@ -1,7 +1,7 @@
 //! Runs the same chunked Whistle adapter used by the desktop pipeline.
 use std::{env, fs, path::PathBuf};
 use storyteller_application::{
-    detect_runtime, transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig,
+    detect_runtime, transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, TranscriptionEngine,
 };
 use storyteller_core::CancellationToken;
 
@@ -15,13 +15,15 @@ fn main() -> Result<(), String> {
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
     let mut config = ChunkedTranscriptionConfig {
         ffmpeg: PathBuf::from(&args[2]),
-        whistle_cli: PathBuf::from(&args[3]),
-        whistle_model: PathBuf::from(&args[4]),
+        engine: TranscriptionEngine::Whistle {
+            executable: PathBuf::from(&args[3]),
+            model: PathBuf::from(&args[4]),
+        },
         workers: 1,
     };
     env::set_var("STORYTELLER_FFMPEG", &config.ffmpeg);
-    env::set_var("STORYTELLER_WHISTLE", &config.whistle_cli);
-    env::set_var("STORYTELLER_WHISTLE_MODEL", &config.whistle_model);
+    env::set_var("STORYTELLER_WHISTLE", &args[3]);
+    env::set_var("STORYTELLER_WHISTLE_MODEL", &args[4]);
     let runtime = detect_runtime();
     if !runtime.ready() {
         return Err(format!(

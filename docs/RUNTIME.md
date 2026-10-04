@@ -1,6 +1,6 @@
 # Runtime tooling
 
-Analyze uses FFmpeg and Whistle through the native Needle 3.1.0 executable. The application has no Python, whisper.cpp, ggml model, CUDA package or Whisper archive import requirement.
+Analyze uses FFmpeg and Whistle through the native Needle 3.1.0 executable. The default installation has no Python, whisper.cpp, ggml model or CUDA requirement. Whisper GPU is an explicit optional download; it does not replace Whistle.
 
 ## Owned assets
 
@@ -60,7 +60,7 @@ The starting recommendation is the smaller of about half the available logical C
 | 16 | 1.5 GiB | 2 |
 | CPU or RAM unknown | — | 1 |
 
-Manual selection supports 1–16. Sixteen is an application safety ceiling, not a Whistle restriction. Manual settings override the recommendation; more workers may be slower or consume more memory. Automatic is resolved when enqueueing, and recovery schema 2 stores the resulting integer. Older 1–4 records remain valid; changing the scan or preference does not retarget queued or restored books. The adapter reduces the running count when fewer chunks exist, and limits each chunk's FFmpeg decoding/PCM encoding to one thread to reduce nested CPU contention.
+Manual selection supports 1–16. Sixteen is an application safety ceiling, not a Whistle restriction. Manual settings override the recommendation; more workers may be slower or consume more memory. Automatic is resolved when enqueueing, and recovery schema 3 stores the resulting integer (schema 2 remains readable). Older 1–4 records remain valid; changing the scan or preference does not retarget queued or restored books. The adapter reduces the running count when fewer chunks exist, and limits each chunk's FFmpeg decoding/PCM encoding to one thread to reduce nested CPU contention.
 
 The adapter example accepts an explicit worker count or `auto`, with Automatic as the omitted-argument default. Each chunk still launches a fresh native CLI process; persistent loaded models and hardware throughput benchmarks remain future optimization work.
 
@@ -75,3 +75,46 @@ The normalized transcript contains phrase-level millisecond intervals. Native at
 Analyze resume identity contains the engine/model contents and the English adapter semantics. Older automatic/multilingual Analyze checkpoints cannot be reused under the new adapter profile. Schema-1 recovered Whisper jobs restart from Analyze with Whistle. Absent/auto language settings migrate to English. Explicit foreign-language requests remain in the recovered paused queue with only Prepare eligible for reuse; worker preflight rejects them clearly before processing and allows the queue's existing failure handling to continue to other books. Recovery remains paused until the user resumes.
 
 See [REBUILD.md](REBUILD.md) for acceptance checks and remaining rebuild work. The released v0.1.0 runtime is historical and is documented in Git history.
+
+## Optional Whisper Turbo GPU
+
+Choose **Whisper Turbo · NVIDIA GPU** in Settings, check setup, then select **Download Whisper tools**. The installer downloads FFmpeg only if needed, plus the separate CUDA runtime and model; it does not download Whistle for a Whisper job. Whistle's normal installation never acquires Whisper assets. Runtime installation is disabled while a book is active. Both backends process local audio offline after setup.
+
+This first GPU package supports **Windows x64 NVIDIA only**, using the first GPU in PCI bus order. `nvidia-smi` must report at least 4096 MiB free VRAM. This is a conservative initial application policy, not a measured minimum for all devices. Custom `CUDA_VISIBLE_DEVICES` mappings are not supported. A working NVIDIA driver is required; a separately installed CUDA toolkit is not required by the pinned archive. AMD/Intel/Vulkan support and multiple-GPU selection are pending. There is no automatic CPU fallback and no automatic switch away from Whistle.
+
+| Asset | Pinned source | SHA-256 |
+|---|---|---|
+| whisper.cpp CUDA 11.8 runtime | Official release `b5130`, commit `927cfce34f31707e17f2bff35c349632fb9e2c3a` (v1.9.4), `whisper-cublas-11.8.0-bin-x64.zip` | `0b29b2175bb17ec26da29677cbc7c467c57d103245144d62a49a703f6bc3fdae` |
+| Turbo Q5 model | `ggerganov/whisper.cpp`, revision `5359861c739e955e79d9a303bcbc70fb988958b1`, `ggml-large-v3-turbo-q5_0.bin` | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` |
+
+The optional download is about 847 MB, with about 1.2 GB installed; allow 3 GB free disk space for staging/replacement. The archive is verified first, then only the expected individually hash-verified CLI/DLL files are staged and published as a bundle. Discovery rejects extra executables or DLLs in that bundle. The upstream MIT notice accompanies the runtime. Model installation uses the same verified sibling-file publication as Whistle. No Cargo dependencies or base executable CUDA linkage are added.
+
+Managed paths and optional advanced overrides:
+
+```text
+tools/whisper-cuda/whisper-cli.exe
+models/ggml-large-v3-turbo-q5_0.bin
+STORYTELLER_WHISPER=<path to the pinned CLI with the complete supported DLL bundle>
+STORYTELLER_WHISPER_MODEL=<path to the pinned Turbo Q5 model>
+```
+
+Whisper uses `--language en`, disables non-speech tokens, and emits native JSON offsets in milliseconds. The shared adapter uses 25-second targets refined around chapters/silence, merges global offsets, and cleans temporary WAV/JSON files on success, failure and cancellation. Every invocation must show actual CUDA backend initialization and CUDA model-weight allocation. A GPU request flag or a CUDA-compiled executable alone does not count as offload evidence. Initialization failure stops CPU fallback before its result can be accepted. Progress only counts completed audio.
+
+English-only routing does not remove multilingual weights from Turbo; there is no official Turbo `.en` variant in this pinned set. The smaller Q5 checkpoint reduces the optional model download relative to unquantized Turbo. No accuracy or speed improvement is claimed without a representative comparison.
+
+Schema 3 saves `transcription_backend` alongside model and workers. Whisper requires exactly one worker to avoid repeated VRAM copies; Whistle retains Automatic/1–16 CPU workers. Restored GPU jobs retain their backend even if the GPU is unavailable. Schema 2 defaults to Whistle, while schema 1 retains the earlier migration behavior. Engine/model profiles distinguish cached Whisper and Whistle analysis.
+
+### Hardware acceptance still required
+
+The current CLI integration loads its model per chunk. Keeping a resident model, GPU batching and measured backend recommendations are future optimizations. Hosted Windows checks have no GPU: they can test native English JSON using the pinned Turbo Q5 model on CPU, fallback rejection, recovery and UI, but cannot validate Turbo GPU execution or throughput.
+
+The [Windows checkpoint](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379) passed those native checks, all 183 workspace tests and strict Clippy. Its only failure was formatting, corrected by a formatting-only change and a successful [formatting check](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790). [REBUILD.md](REBUILD.md) records the exact source commits and evidence limits.
+
+On a compatible Windows NVIDIA system, compare the same representative English audiobook with both backends, inspect transcript/alignment quality, record elapsed time and peak GPU memory, and verify that later chunks keep global timing and temporary data is removed:
+
+```text
+cargo run --locked -p storyteller-application --example transcribe_whisper -- AUDIO OUTPUT_DIRECTORY FFMPEG WHISPER_CLI TURBO_Q5_MODEL
+cargo run --locked -p storyteller-application --example transcribe_whistle -- AUDIO OUTPUT_DIRECTORY FFMPEG NEEDLE WHISTLE_MODEL auto
+```
+
+Use distinct output directories. This helper checks the pinned full bundle/model and the same real-offload guard as the desktop; CPU test fixtures never satisfy product GPU readiness.

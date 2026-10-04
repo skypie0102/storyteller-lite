@@ -7,6 +7,7 @@ use storyteller_application::ApplicationCommand;
 pub(crate) struct ViewBridge {
     queue_revision: Option<u64>,
     runtime_revision: Option<u64>,
+    backend_selection: Option<i32>,
     settings_was_open: bool,
     review_was_visible: bool,
 }
@@ -39,7 +40,11 @@ impl ViewBridge {
         ui.set_runtime_refresh_requested(false);
         if (install || scan) && !app.borrow().snapshot().runtime.busy {
             let command = if install {
-                ApplicationCommand::InstallMissingRuntime
+                if ui.get_transcription_backend_selection() == 1 {
+                    ApplicationCommand::InstallWhisperRuntime
+                } else {
+                    ApplicationCommand::InstallMissingRuntime
+                }
             } else {
                 ApplicationCommand::ScanRuntime
             };
@@ -78,18 +83,51 @@ impl ViewBridge {
             }
             self.queue_revision = Some(snapshot.queue_revision);
         }
-        if self.runtime_revision != Some(snapshot.runtime_revision) {
+        let selection = ui.get_transcription_backend_selection();
+        let backend = crate::selected_transcription_backend(selection).unwrap_or_default();
+        if self.runtime_revision != Some(snapshot.runtime_revision)
+            || self.backend_selection != Some(selection)
+            || changed
+        {
             ui.set_runtime_busy(snapshot.runtime.busy);
             ui.set_runtime_install_status_text(snapshot.runtime.message.clone().into());
             if let Some(status) = &snapshot.runtime.status {
                 ui.set_worker_recommendation_text(status.workers.description().into());
-                ui.set_runtime_summary_text(status.summary().into());
+                let whisper = backend == storyteller_core::TranscriptionBackend::WhisperCuda;
+                ui.set_gpu_status_text(status.whisper.gpu_text.clone().into());
+                ui.set_runtime_installable(!whisper || status.whisper.hardware_ready());
+                ui.set_runtime_summary_text(status.summary_for(backend).into());
                 ui.set_runtime_ffmpeg_text(status.ffmpeg_text().into());
-                ui.set_runtime_transcription_text(status.transcription_text().into());
-                ui.set_runtime_model_text(status.model_text().into());
-                ui.set_runtime_ready(status.ready());
+                ui.set_runtime_transcription_text(
+                    if whisper {
+                        status.whisper.engine_text()
+                    } else {
+                        status.transcription_text()
+                    }
+                    .into(),
+                );
+                ui.set_runtime_model_text(
+                    if whisper {
+                        status.whisper.model_text()
+                    } else {
+                        status.model_text()
+                    }
+                    .into(),
+                );
+                ui.set_runtime_ready(status.ready_for(backend));
+                let next_backend = snapshot
+                    .queue
+                    .jobs()
+                    .iter()
+                    .find(|job| job.status == storyteller_core::JobStatus::Waiting)
+                    .map_or(backend, |job| job.settings.transcription_backend);
+                ui.set_queue_runtime_ready(status.ready_for(next_backend));
+            } else {
+                ui.set_queue_runtime_ready(false);
+                ui.set_runtime_ready(false);
             }
             self.runtime_revision = Some(snapshot.runtime_revision);
+            self.backend_selection = Some(selection);
         }
         changed
     }

@@ -1,13 +1,13 @@
-# Reliability rebuild — English-only Whistle
+# Reliability rebuild — English transcription
 
-The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and Slint, and the seven visible stages. Whistle replaces Whisper completely. There is one supported transcription engine and no Whisper fallback.
+The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and Slint, and the seven visible stages. The validated Whistle rebuild is merged into `main` through PR #30. Whistle remains the default; the user subsequently authorized an explicit optional Whisper NVIDIA GPU backend. Both integrations force English, with no automatic backend fallback.
 
 ## Boundaries
 
 | Layer | Responsibility | Dependencies |
 |---|---|---|
 | `storyteller-core` | Job rules, queue, cancellation, resume fingerprints, normalized transcripts, conservative alignment, review decisions, EPUB construction and validation | Rust libraries; no Slint |
-| `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated Whistle processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
+| `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated native transcription processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
 | `storyteller-ui` | File selection, snapshot presentation and application command dispatch | Application and core |
 
 The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review report/evidence loading, cached navigation and audio preview now have application-owned workers. The rebuilt native interface and validated Windows scenes are described in [UI.md](UI.md).
@@ -110,7 +110,7 @@ The application controller and first UI optimization checkpoint [37189418973](ht
 
 The first controller checkpoint [37189026768](https://github.com/skypie0102/storyteller-lite/actions/runs/37189026768) passed 133 tests on `e7a87f9fc1b4fb6e2f89e0b429e7e4dfa2f2f9c7`; the final checkpoint adds the worker-handoff guard and two race regressions. The English-only checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed 121 tests on `df1e49faece11e28a0cb11bb0c79a5a91defea43`, and the initial foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`.
 
-Temporary branch-only checkpoint workflows are removed after their passes. The latest evidence/cleanup commit only updates documentation/screenshots and removes the automatic-worker workflow; compiled source remains the validated `e59482318b661621309179f918dc5056ad48c912` source. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+Temporary branch-only checkpoint workflows are removed after their passes. The automatic-worker evidence/cleanup commit only updated documentation/screenshots and removed its workflow, with compiled source unchanged from `e59482318b661621309179f918dc5056ad48c912`. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
 
 Full-book English recognition accuracy, difficult speech boundaries and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 
@@ -123,3 +123,27 @@ cargo test --locked -p storyteller-core -p storyteller-application
 At the Windows checkpoint, additionally run strict workspace Clippy, all workspace tests, the native Slint build, packaged relaunch recovery, and `.github/scripts/whistle-smoke.ps1` with verified assets. The script exercises the same adapter as Analyze through `transcribe_whistle`.
 
 References: [Whistle announcement](https://cactuscompute.com/blog/whistle), [model card](https://huggingface.co/Cactus-Compute/whistle), [supported native devices](https://cactuscompute.com/blog/needle-supported-devices), [reference wrapper](https://github.com/cactus-compute/needle/blob/main/needle/agent/whistle.py).
+
+## Optional Whisper GPU follow-up
+
+Work is on `feature/optional-whisper-gpu`, based on merge `e04853cb26475a6aa94d8b5c658713473f7e3e7a`. The optional backend uses pinned whisper.cpp CUDA 11.8 Windows x64 binaries and the 574 MB Turbo Q5 model, one GPU worker, English native JSON and the shared bounded chapter/silence-aware chunk pipeline. Backend/model identity is preserved in schema-3 recovery and Analyze/Align/Review cache identity. Existing Whistle settings and schema-2 recovery remain compatible. Setup and book readiness follow the selected backend; queue resume follows the next book's saved backend.
+
+GPU availability/free VRAM checks are a conservative startup policy. Actual invocations must show CUDA backend initialization plus model weights on CUDA and must not report failed initialization or CPU fallback. Real-GPU acceptance and throughput measurements remain outstanding; the CPU-hosted native validation helper checks the ABI/JSON adapter and rejects unconfirmed GPU execution. Model residency across chunks and non-NVIDIA runtime packages are not implemented in this milestone.
+
+The implementation is available in [draft PR #31](https://github.com/skypie0102/storyteller-lite/pull/31). Windows checkpoint [37211560379](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379) tested source `8fb11d4e0172541e7818c5c46fde5731f129aa5d`:
+
+- Strict locked workspace Clippy, all **183 tests** (47 application, 122 core, eight integration and six UI), and the native Slint build passed.
+- All **48 compiled Slint scenes** and real keyboard/pointer checks passed at compact/standard sizes and 200% scale. All 48 captures match the previously inspected native capture byte for byte. Seven representative PNGs and hashes are retained in [UI.md](UI.md).
+- The pinned CUDA archive, all 18 supported executable/DLL hashes and the actual Turbo Q5 model checksum passed. Native Turbo inference on the CPU-only runner produced two English timed segments; the product GPU adapter stopped no-GPU fallback and removed temporary WAV/JSON files.
+- Whistle native/application speech and silence checks passed. Automatic recommended two workers on the four-thread runner; 135 seconds used six real native workers for six chunks, retaining full coverage/global timing and cleaning temporary PCM.
+- Packaged relaunch restored interrupted work paused, retained Whisper's saved GPU backend/model/one-worker setting, and preserved existing Whistle recovery behavior.
+
+The overall run failed **only** formatting: Rust 1.99 required a multiline expression in one controller test after boxing the runtime result. A formatting-only correction at `9190f50c215d0ed29579a4a244abb6fda428dbea` passed [formatting run 37215449790](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790). The functional gates were not repeated for this formatting-only change, in accordance with CI policy. The final evidence commit updates docs/screenshots and removes the temporary workflow; compiled source remains unchanged from that formatting commit. No Cargo dependency/lockfile changes, PR #31 merge or release publication are included.
+
+## Dark-default appearance follow-up
+
+Dark is now the default regardless of system appearance, with a live Light option in Settings → Appearance → Theme. Both the custom palette and native Slint controls switch together. The preference is written to the per-user `appearance.json` using sibling-file replacement and restored before the window opens; missing or unreadable settings use Dark. It is independent of job/recovery/cache settings.
+
+Windows checkpoint [37216454960](https://github.com/skypie0102/storyteller-lite/actions/runs/37216454960) passed on `855a086fbbb9ee88901d884fa294e2cf2133b412`: formatting, strict locked UI Clippy/all targets, all six UI tests, the native build and **96 native scenes** covering sixteen states in both themes at 820×620, 1040×760 and compact 200% scale. Existing pointer/keyboard flows passed in both themes. Additional native input checks selected Light/Dark, verified immediate rendered canvas updates, reloaded both saved choices in fresh windows and verified Dark fallback for unreadable preferences at both normal sizes. All 96 scenes were inspected; nine PNGs and complete hashes are retained in [UI.md](UI.md).
+
+The final evidence/cleanup changes only docs/screenshots and removes the temporary workflow. Compiled source remains the checkpoint source, with no dependency, lockfile or processing changes. The earlier 183-test/native Whistle/Whisper checkpoint still supplies processing evidence; this UI-only follow-up did not repeat ASR downloads or full-book/GPU acceptance.

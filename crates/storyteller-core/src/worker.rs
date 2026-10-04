@@ -131,12 +131,45 @@ pub fn spawn_pipeline_worker<B: PipelineBackend>(
 pub fn spawn_pipeline_worker_with_preflight<B: PipelineBackend>(
     job: Job,
     workspace: JobWorkspace,
-    mut runtime: RuntimeCoordinator,
+    runtime: RuntimeCoordinator,
     environment: PipelineEnvironment,
-    mut backend: B,
+    backend: B,
 ) -> Result<PipelineWorkerHandle, String> {
     environment.validate()?;
+    spawn_pipeline_worker_with_runtime_preflight(
+        job,
+        workspace,
+        runtime,
+        move |_, _| Ok(environment),
+        backend,
+    )
+}
+
+/// Discovers and fingerprints native runtimes on the owned worker, never the UI thread.
+pub fn spawn_pipeline_worker_with_runtime_preflight<B, F>(
+    job: Job,
+    workspace: JobWorkspace,
+    mut runtime: RuntimeCoordinator,
+    resolve_environment: F,
+    mut backend: B,
+) -> Result<PipelineWorkerHandle, String>
+where
+    B: PipelineBackend,
+    F: FnOnce(&Job, &CancellationToken) -> Result<PipelineEnvironment, String> + Send + 'static,
+{
     spawn_worker(job, move |job, cancellation, sender| {
+        job.progress.set_activity("Verifying local runtime")?;
+        let _ = sender.send(job.clone());
+        let environment = match resolve_environment(job, cancellation) {
+            Ok(environment) => environment,
+            Err(_) if cancellation.is_requested() => {
+                return finish_preflight_cancelled(job, sender)
+            }
+            Err(error) => return finish_preflight_failure(job, sender, error),
+        };
+        if cancellation.is_requested() {
+            return finish_preflight_cancelled(job, sender);
+        }
         job.progress.set_activity("Fingerprinting sources")?;
         let _ = sender.send(job.clone());
 
@@ -338,6 +371,72 @@ mod tests {
         workspace
             .capture_stage_artifacts(stage, &artifacts, &CancellationToken::default())
             .unwrap();
+    }
+
+    #[test]
+    fn runtime_resolution_runs_off_caller_thread_and_honors_cancellation() {
+        struct NeverRuns;
+        impl PipelineBackend for NeverRuns {
+            fn plan_stage(
+                &mut self,
+                _: &Job,
+                _: PipelineStage,
+            ) -> Result<crate::StagePlan, String> {
+                panic!("preflight must prevent stage execution")
+            }
+            fn run_stage(
+                &mut self,
+                _: &mut crate::StageRunContext<'_>,
+            ) -> Result<crate::StageRunOutput, crate::StageRunError> {
+                panic!("preflight must prevent stage execution")
+            }
+        }
+        for cancel in [false, true] {
+            let mut job = job();
+            job.start().unwrap();
+            let scheduler = crate::ResourceScheduler::automatic(&crate::HardwareProfile {
+                logical_cpu_threads: 1,
+                memory_gib: None,
+                gpu_backend: None,
+                gpu_vram_mib: None,
+            })
+            .unwrap();
+            let mut runtime = RuntimeCoordinator::new(scheduler);
+            runtime.register_job(job.id).unwrap();
+            let (started, running) = mpsc::channel();
+            let (release, released) = mpsc::channel();
+            let worker = spawn_pipeline_worker_with_runtime_preflight(
+                job,
+                temp_workspace(),
+                runtime,
+                move |_, _| {
+                    started.send(thread::current().id()).unwrap();
+                    released.recv().unwrap();
+                    Err("runtime checksum failed".into())
+                },
+                NeverRuns,
+            )
+            .unwrap();
+            assert_ne!(
+                running
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap(),
+                thread::current().id()
+            );
+            if cancel {
+                worker.request_cancellation();
+            }
+            release.send(()).unwrap();
+            let result = worker.join().unwrap();
+            if cancel {
+                assert_eq!(result.run_result.unwrap(), PipelineRunState::Cancelled);
+            } else {
+                assert_eq!(
+                    result.run_result.unwrap(),
+                    PipelineRunState::Failed("runtime checksum failed".into())
+                );
+            }
+        }
     }
 
     #[test]

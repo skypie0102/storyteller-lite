@@ -1,6 +1,8 @@
 # Native UI rebuild
 
-StoryTeller Lite uses one native Rust + Slint window, with New book, Queue and Settings workspaces. English-only Whistle remains the transcription engine.
+StoryTeller Lite uses one native Rust + Slint window, with New book, Queue and Settings workspaces. Whistle is the default; Settings also offers optional English transcription with Whisper Turbo on NVIDIA GPUs.
+
+The default appearance is **Dark**, regardless of the system theme. Settings → Appearance → Theme offers Dark and Light; selection updates both custom surfaces/text and native buttons, menus, selectors and scrollbars immediately. The choice is saved in the application's `appearance.json` and restored before the window opens. Missing or unreadable preferences use Dark. Appearance is separate from job settings and never changes queued books or cached processing.
 
 ## Book creation
 
@@ -10,7 +12,7 @@ The app scans local tools in the background on startup. Start book requires both
 
 Processing preferences are in Settings rather than repeated beside every book. Defaults are Opus/64K, Smart review, English and Automatic CPU workers. Startup and Check setup scan available logical CPU threads and RAM on the computer running the app, alongside runtime discovery. Settings displays the detected resources and a starting worker recommendation. Manual counts of 1–16 override it. Automatic resolves to a concrete count when a book is queued; saved and recovered books keep that count. Preferences apply to newly queued books.
 
-Whistle transcription uses the pinned CPU engine; no GPU transcription backend is available. The recommendation leaves CPU/RAM headroom and is a heuristic, not a measured fastest setting. If CPU or RAM information is unavailable, Automatic falls back to one worker. [RUNTIME.md](RUNTIME.md) records the policy and its limits.
+Whistle transcription uses the pinned CPU engine. Selecting Whisper shows separate CUDA engine/model readiness and detected free VRAM; its CPU-worker selector is disabled because GPU jobs use one worker. Downloads are explicit and unavailable when hardware setup is insufficient. Backend preferences apply only to newly queued books; each waiting row displays its saved engine/worker count, and Resume queue checks the next book's saved backend. The recommendation leaves CPU/RAM headroom and is a heuristic, not a measured fastest setting. If CPU or RAM information is unavailable, Automatic falls back to one worker. [RUNTIME.md](RUNTIME.md) records the policy and its limits.
 
 ## Processing and queue
 
@@ -40,13 +42,17 @@ Run the actual compiled Slint scenes without a desktop session:
 cargo run --locked -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.json ui-snapshots
 ```
 
-The harness uses Slint 1.17.1's software renderer to capture 39 PPM images: thirteen scenes at 820×620 and 1040×760, plus compact scenes at 200% scale. It also dispatches real pointer and keyboard events to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Fixtures have no processing/download/file-dialog callbacks.
+The harness uses Slint 1.17.1's software renderer to capture 96 PPM images: sixteen scenes in both Dark and Light at 820×620 and 1040×760, plus compact scenes at 200% scale. It dispatches real pointer and keyboard events in both themes to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Additional native checks select Light/Dark by keyboard, verify immediate canvas changes and reload the saved choices in fresh windows. Scene fixtures have no processing/download/file-dialog callbacks.
 
-Windows checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed on source commit `e59482318b661621309179f918dc5056ad48c912`: formatting, strict locked workspace Clippy, all 171 workspace tests, native Slint build, all 39 scene renders, pointer/keyboard checks at both normal sizes, and packaged relaunch recovery. It also verified the Windows CPU/RAM probe, Automatic transcription and a 135-second native Whistle run with six workers across six chunks. The recommendation tests cover missing probes and low RAM; recovery preserves older 1–4 choices and new 8/16 choices. This is integration evidence, not a throughput benchmark.
+The dark/light checkpoint [37216454960](https://github.com/skypie0102/storyteller-lite/actions/runs/37216454960) passed on source `855a086fbbb9ee88901d884fa294e2cf2133b412`: formatting, strict locked UI Clippy with all targets, all six UI tests, the native build, all 96 scene captures and pointer/keyboard checks in both themes. Keyboard selection verified Dark → Light → Dark, immediate rendered canvas changes, saved choices reloaded in fresh windows and Dark fallback for unreadable preferences at both normal sizes. The theme change adds no dependency or lockfile changes.
+
+The preceding Whisper checkpoint [37211560379](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379), source `8fb11d4e0172541e7818c5c46fde5731f129aa5d`, passed strict workspace Clippy, all 183 workspace tests, 48 scenes/input checks, native Whistle/Turbo adapter checks and packaged recovery. Its only failure was formatting in one controller test; the formatting-only correction passed [run 37215449790](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790). Processing source is unchanged by this appearance follow-up. [REBUILD.md](REBUILD.md) records the complete evidence and hardware limits.
+
+The merged Whistle [worker checkpoint](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed 171 tests and 39 scenes. Worker recommendation tests cover missing probes and low RAM; recovery preserves older 1–4 choices and new 8/16 choices. The latest native smoke again verified Automatic and a 135-second Whistle run with six workers across six chunks. This is integration evidence, not a throughput benchmark.
 
 The earlier UI checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) established the rebuilt layout and review lifecycle. Tab followed by Space activates the source picker; native Fluent buttons deliberately do not take keyboard focus from a pointer click.
 
-All six updated Settings renders were inspected at compact, standard and 200% scale. The remaining 33 scene files are byte-identical to the fully inspected earlier UI checkpoint. The screenshots below are lossless conversions of the latest actual Windows fixture renders, with sample book and hardware data. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and per-scene hashes; [the 200% review render](ui-snapshots/audio-review-200-percent.png) is also retained. The temporary branch-only checkpoint workflow was removed after the pass. No runtime dependencies or lockfile changes were needed.
+All 96 scenes were visually inspected at compact, standard and 200% scale in both themes. The screenshots below are lossless conversions of actual Windows fixture renders, with sample book and hardware data; Dark is the default. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and all 96 scene hashes. Nine representative PNGs are retained, including [Light New book](ui-snapshots/new-book-light.png) and [the 200% Dark review render](ui-snapshots/audio-review-200-percent.png). The temporary workflow was removed after the pass, with compiled source unchanged.
 
 ### New book — compact window
 
@@ -64,4 +70,18 @@ All six updated Settings renders were inspected at compact, standard and 200% sc
 
 ![Processing preferences and local setup at 1040×760](ui-snapshots/settings.png)
 
+### Optional Light theme — standard window
+
+![Settings with the Light theme selected at 1040×760](ui-snapshots/settings-light.png)
+
+### Optional Whisper setup — standard window
+
+![Optional Whisper engine download and GPU readiness at 1040×760](ui-snapshots/whisper-setup.png)
+
+### Whisper without a compatible GPU — compact window
+
+![Whisper hardware requirements and unavailable download at 820×620](ui-snapshots/whisper-no-gpu.png)
+
 These scene and interaction checks do not establish full-book recognition accuracy, audible preview quality, reader interoperability or full release packaging; those remain R5 acceptance work.
+
+The optional Whisper fixtures cover installable/missing assets, ready CUDA assets and unavailable GPU states at all three sizes. These are rendered setup states, not evidence of real GPU hardware or throughput.

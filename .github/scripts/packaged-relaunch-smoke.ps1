@@ -14,11 +14,12 @@ $stdoutPath = Join-Path $smokeRoot 'storyteller.stdout.log'
 $stderrPath = Join-Path $smokeRoot 'storyteller.stderr.log'
 $runningJobId = '11111111-1111-4111-8111-111111111111'
 $reviewJobId = '22222222-2222-4222-8222-222222222222'
+$gpuJobId = '33333333-3333-4333-8333-333333333333'
 
 New-Item -ItemType Directory -Force $appData | Out-Null
 
 $seed = [ordered]@{
-    version = 2
+    version = 3
     jobs = @(
         [ordered]@{
             id = $runningJobId
@@ -29,6 +30,7 @@ $seed = [ordered]@{
             audio_codec = 'opus'
             audio_bitrate_kbps = 64
             language = $null
+            transcription_backend = 'whistle'
             transcription_model = 'whistle'
             audio_review_policy = 'smart'
             transcription_workers = 1
@@ -44,6 +46,7 @@ $seed = [ordered]@{
             audio_codec = 'opus'
             audio_bitrate_kbps = 64
             language = $null
+            transcription_backend = 'whistle'
             transcription_model = 'whistle'
             audio_review_policy = 'smart'
             transcription_workers = 1
@@ -54,6 +57,22 @@ $seed = [ordered]@{
                 [ordered]@{ stage = 'align'; fingerprint = 'align-smoke' },
                 [ordered]@{ stage = 'review_audio'; fingerprint = 'review-smoke' }
             )
+        },
+        [ordered]@{
+            id = $gpuJobId
+            title = 'Packaged Whisper GPU recovery smoke'
+            epub_path = (Join-Path $smokeRoot 'missing-gpu.epub')
+            audiobook_path = (Join-Path $smokeRoot 'missing-gpu.m4b')
+            output_path = (Join-Path $smokeRoot 'gpu-output.epub')
+            audio_codec = 'opus'
+            audio_bitrate_kbps = 64
+            language = 'en'
+            transcription_backend = 'whisper_cuda'
+            transcription_model = 'large-v3-turbo-q5_0'
+            audio_review_policy = 'smart'
+            transcription_workers = 1
+            previous_status = 'running'
+            checkpoints = @()
         }
     )
 }
@@ -88,11 +107,11 @@ try {
 
     $restored = Get-Content -LiteralPath $recoveryPath -Raw | ConvertFrom-Json
     $jobs = @($restored.jobs)
-    if ($restored.version -ne 2) {
+    if ($restored.version -ne 3) {
         throw "Unexpected queue recovery version after packaged launch: $($restored.version)."
     }
-    if ($jobs.Count -ne 2) {
-        throw "Expected exactly two recovered jobs after packaged launch; found $($jobs.Count)."
+    if ($jobs.Count -ne 3) {
+        throw "Expected exactly three recovered jobs after packaged launch; found $($jobs.Count)."
     }
     foreach ($job in $jobs) {
         if ($job.language -ne 'en') {
@@ -129,12 +148,17 @@ try {
         throw 'NeedsReview rewind retained the Review Audio checkpoint instead of forcing review to rerun.'
     }
 
+    $gpu = @($jobs | Where-Object { $_.id -eq $gpuJobId })
+    if ($gpu.Count -ne 1 -or $gpu[0].previous_status -ne 'waiting' -or $gpu[0].transcription_backend -ne 'whisper_cuda' -or $gpu[0].transcription_model -ne 'large-v3-turbo-q5_0' -or $gpu[0].transcription_workers -ne 1) {
+        throw 'Packaged Whisper recovery changed its backend, model, worker count or paused status.'
+    }
+
     $quarantined = @(Get-ChildItem -LiteralPath $appData -Filter 'queue-recovery.invalid-*' -File -ErrorAction SilentlyContinue)
     if ($quarantined.Count -ne 0) {
         throw 'A valid packaged recovery snapshot was unexpectedly quarantined.'
     }
 
-    Write-Host 'Packaged relaunch recovery smoke test passed: Running restored as waiting, NeedsReview rewound before Review Audio, and recovered work remained paused.'
+    Write-Host 'Packaged relaunch recovery smoke test passed: Running restored as waiting, NeedsReview rewound before Review Audio, and Whisper retained its GPU backend/model/one-worker setting, and recovered work remained paused.'
 }
 finally {
     if ($null -ne $process) {

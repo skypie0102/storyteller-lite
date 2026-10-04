@@ -4,13 +4,13 @@ Rust + Slint successor to Storyteller OneClick.
 
 The reconstructed implementation has now been promoted to **`main`**, which is the canonical product branch. The historical `recovery/rust-slint` branch is retained only as reconstruction history. See `docs/HANDOFF.md` for current implementation truth, `docs/ROADMAP.md` for scope/status, and `docs/RECOVERY.md` for provenance.
 
-## Whistle rebuild
+## Current rebuild
 
-The active branch, `rebuild/reliability-foundation`, replaces Whisper with **Whistle** and moves runtime, lifecycle and pipeline execution into `storyteller-application`, independent of Slint. Transcription supports English only, with the published 16.9 MB native CPU model. [The rebuild milestones](docs/REBUILD.md) record validation and remaining acceptance work; [the runtime contract](docs/RUNTIME.md) defines pinned assets.
+PR #30 merged the validated rebuild into `main` at `e04853cb26475a6aa94d8b5c658713473f7e3e7a`. **Whistle** is the lightweight default, with runtime, lifecycle and pipeline execution in `storyteller-application`, independent of Slint. Optional Whisper Turbo NVIDIA GPU support is implemented on `feature/optional-whisper-gpu` in [draft PR #31](https://github.com/skypie0102/storyteller-lite/pull/31). Both integrations support English only; Whistle uses the published 16.9 MB native CPU model. [The rebuild milestones](docs/REBUILD.md) record validation and remaining acceptance work; [the runtime contract](docs/RUNTIME.md) defines pinned assets.
 
-The native UI has been rebuilt around New book, Queue and Settings. It previews the output destination, keeps processing and review controls readable at 820×620, and uses native keyboard-accessible buttons. CPU/RAM detection recommends Whistle workers through the default Automatic setting, with manual 1–16 selection. Review evidence and audio preview run on application-owned workers; cached snapshots update only changed rows. See [the UI guide](docs/UI.md) for behavior and reproducible native scenes.
+The native UI has been rebuilt around New book, Queue and Settings. Dark is the default; Settings → Appearance → Theme offers Light and remembers your choice. It previews the output destination, keeps processing and review controls readable at 820×620, and uses native keyboard-accessible buttons. CPU/RAM detection recommends Whistle workers through the default Automatic setting, with manual 1–16 selection. Review evidence and audio preview run on application-owned workers; cached snapshots update only changed rows. See [the UI guide](docs/UI.md) for behavior and reproducible native scenes.
 
-Typed stage outputs, cancellable SHA-256 cache verification and validated publication protect resumed work and existing outputs. R0–R4 passed Windows checkpoints; the latest passed all 171 workspace tests, native keyboard/pointer checks, 39 scene renders including 200% scaling, relaunch recovery, and 135-second Whistle transcription with six native workers. Automatic detection and saved 1–16 worker settings are covered. Representative full English books, recognition/timing assessment and release packaging remain R5 acceptance work. This branch has not replaced the published v0.1.0 baseline.
+Typed stage outputs, cancellable SHA-256 cache verification and validated publication protect resumed work and existing outputs. R0–R4 passed Windows checkpoints. The optional Whisper follow-up passed strict locked workspace Clippy, all 183 workspace tests, native keyboard/pointer checks, 48 scene renders including 200% scaling, relaunch recovery, 135-second Whistle transcription with six native workers, native Turbo English JSON and rejection of GPU-to-CPU fallback. A separate formatting check passed after a formatting-only correction; [REBUILD.md](docs/REBUILD.md) records both runs. Real NVIDIA offload/performance and representative full English books remain acceptance work. The published v0.1.0 release remains unchanged.
 
 ## Released baseline
 
@@ -29,6 +29,8 @@ The Slint UI is functionally complete for the supported 820×620 minimum window.
 P5 release/interoperability hardening remains active. EPUBCheck 5.4.0 passes the three representative exported fixtures. The same three artifacts have also been manually tested and reported to work normally.
 
 **v0.1.0 is released.** The public portable Windows x64 release was built from commit `f208abbd9ee27eb19cb3ed2f802a8ecda17c38c8`; release run `35302413893` passed version identity, rustfmt, strict workspace Clippy, all workspace tests, the locked release build, package/hash verification, packaged relaunch recovery, archive verification, and GitHub Release publication. The executable is unsigned; there is no installer or auto-update channel.
+
+Optional Whisper Turbo Q5 uses a separately downloaded, pinned whisper.cpp CUDA runtime on Windows x64 NVIDIA systems. Choose the engine in Settings; jobs save the backend/model and use one GPU worker. Inference must confirm CUDA offload; CPU fallback is rejected. See [RUNTIME.md](docs/RUNTIME.md) for installation and hardware validation limits.
 
 ## Build
 

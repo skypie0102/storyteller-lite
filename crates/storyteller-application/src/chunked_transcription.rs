@@ -8,9 +8,9 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    merge_chunk_transcripts, parse_whistle_transcript, plan_transcription_chunks,
-    run_cancellable_command, validate_chunk_plan, write_transcript, CancellationToken,
-    CommandOutput, CommandRunError, Transcript, TranscriptionChunk,
+    merge_chunk_transcripts, parse_whisper_transcript, parse_whistle_transcript,
+    plan_transcription_chunks, run_cancellable_command, validate_chunk_plan, write_transcript,
+    CancellationToken, CommandOutput, CommandRunError, Transcript, TranscriptionChunk,
     DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
 };
 
@@ -36,9 +36,23 @@ pub struct ChunkedTranscriptionProgress {
 #[derive(Debug, Clone)]
 pub struct ChunkedTranscriptionConfig {
     pub ffmpeg: PathBuf,
-    pub whistle_cli: PathBuf,
-    pub whistle_model: PathBuf,
+    pub engine: TranscriptionEngine,
     pub workers: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum TranscriptionEngine {
+    Whistle { executable: PathBuf, model: PathBuf },
+    WhisperCuda { executable: PathBuf, model: PathBuf },
+}
+
+impl TranscriptionEngine {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Whistle { .. } => "Whistle / native CPU",
+            Self::WhisperCuda { .. } => "Whisper Turbo / NVIDIA GPU",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -58,6 +72,9 @@ pub fn transcribe_audiobook_in_chunks(
     cancellation: &CancellationToken,
     observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
 ) -> Result<ChunkedTranscriptionSummary, String> {
+    if matches!(config.engine, TranscriptionEngine::WhisperCuda { .. }) && config.workers != 1 {
+        return Err("Whisper GPU uses exactly one transcription worker.".into());
+    }
     if !(1..=storyteller_core::MAX_TRANSCRIPTION_WORKERS).contains(&config.workers) {
         return Err(format!(
             "Transcription worker count must be between 1 and {}.",
@@ -239,7 +256,7 @@ fn run_chunk_workers(
                     completed_chunks: completed,
                     total_chunks: chunks.len(),
                     percent: overall.min(100),
-                    backend: Some("Whistle / native CPU".into()),
+                    backend: Some(config.engine.label().into()),
                 }) {
                     worker_cancellation.request();
                     first_error = Some(error);
@@ -325,18 +342,46 @@ fn transcribe_one_chunk(
     if cancellation.is_requested() {
         return Err("Transcription was cancelled.".into());
     }
-    let mut whistle = crate::runtime_setup::whistle_command(
-        &config.whistle_cli,
-        &config.whistle_model,
-        &wav_path,
-    );
-    let output = match run_cancellable_command(&mut whistle, cancellation, |_, _| {}) {
+    let output_prefix = temporary_dir.join(format!("whisper-{:05}", chunk.index));
+    let mut command = match &config.engine {
+        TranscriptionEngine::Whistle { executable, model } => {
+            crate::runtime_setup::whistle_command(executable, model, &wav_path)
+        }
+        TranscriptionEngine::WhisperCuda { executable, model } => {
+            crate::whisper_runtime::whisper_command(executable, model, &wav_path, &output_prefix)
+        }
+    };
+    let mut gpu_failed = false;
+    let whisper = matches!(config.engine, TranscriptionEngine::WhisperCuda { .. });
+    let result = run_cancellable_command(&mut command, cancellation, |_, line| {
+        if whisper && (line.contains("no GPU found") || line.contains("failed to initialize")) {
+            gpu_failed = true;
+            cancellation.request();
+        }
+    });
+    if gpu_failed {
+        return Err("Whisper GPU initialization failed; CPU fallback was stopped. Check your NVIDIA driver and free VRAM, or select Whistle for a new book.".into());
+    }
+    let output = match result {
         Ok(output) if output.success => output,
-        Ok(output) => return Err(command_failure("Whistle transcription chunk", &output)),
+        Ok(output) => return Err(command_failure(config.engine.label(), &output)),
         Err(CommandRunError::Cancelled) => return Err("Transcription was cancelled.".into()),
         Err(error) => return Err(format!("Could not transcribe audio chunk: {error}")),
     };
-    let transcript = parse_whistle_transcript(&output.stdout, chunk.duration_ms())?;
+    let transcript = match &config.engine {
+        TranscriptionEngine::Whistle { .. } => {
+            parse_whistle_transcript(&output.stdout, chunk.duration_ms())?
+        }
+        TranscriptionEngine::WhisperCuda { .. } => {
+            crate::whisper_runtime::require_cuda_offload(&format!(
+                "{}\n{}",
+                output.stdout, output.stderr
+            ))?;
+            let json = fs::read_to_string(output_prefix.with_extension("json"))
+                .map_err(|error| format!("Could not read Whisper JSON: {error}"))?;
+            parse_whisper_transcript(&json, chunk.duration_ms())?
+        }
+    };
     let _ = fs::remove_file(&wav_path);
     Ok(transcript)
 }
@@ -665,6 +710,28 @@ fn diagnostic_tail(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gpu_worker_limit_is_checked_before_audio_or_processes_are_opened() {
+        let config = ChunkedTranscriptionConfig {
+            ffmpeg: "missing-ffmpeg".into(),
+            engine: TranscriptionEngine::WhisperCuda {
+                executable: "missing-whisper".into(),
+                model: "missing-model".into(),
+            },
+            workers: 2,
+        };
+        let error = transcribe_audiobook_in_chunks(
+            Path::new("missing-audio"),
+            Path::new("missing-stage"),
+            Path::new("missing-transcript"),
+            &config,
+            &CancellationToken::default(),
+            &mut |_| Ok(()),
+        )
+        .unwrap_err();
+        assert!(error.contains("exactly one"));
+    }
 
     #[test]
     fn parses_ffmpeg_duration_clock() {
