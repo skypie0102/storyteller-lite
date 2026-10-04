@@ -2,6 +2,8 @@
 
 StoryTeller Lite uses one native Rust + Slint window, with New book, Queue and Settings workspaces. Whistle is the default; Settings also offers optional English transcription with Whisper Turbo on NVIDIA GPUs.
 
+The default appearance is **Dark**, regardless of the system theme. Settings → Appearance → Theme offers Dark and Light; selection updates both custom surfaces/text and native buttons, menus, selectors and scrollbars immediately. The choice is saved in the application's `appearance.json` and restored before the window opens. Missing or unreadable preferences use Dark. Appearance is separate from job settings and never changes queued books or cached processing.
+
 ## Book creation
 
 Choose an EPUB and its matching audiobook with keyboard-accessible native buttons. The output filename and folder appear before starting. Change folder selects a destination without changing either source. Existing outputs are preserved: a new book cannot start with an occupied destination.
@@ -40,7 +42,7 @@ Run the actual compiled Slint scenes without a desktop session:
 cargo run --locked -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.json ui-snapshots
 ```
 
-The harness uses Slint 1.17.1's software renderer to capture 48 PPM images: sixteen scenes at 820×620 and 1040×760, plus compact scenes at 200% scale. It also dispatches real pointer and keyboard events to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Fixtures have no processing/download/file-dialog callbacks.
+The harness uses Slint 1.17.1's software renderer to capture 96 PPM images: sixteen scenes in both Dark and Light at 820×620 and 1040×760, plus compact scenes at 200% scale. It dispatches real pointer and keyboard events in both themes to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Additional native checks select Light/Dark by keyboard, verify immediate canvas changes and reload the saved choices in fresh windows. Scene fixtures have no processing/download/file-dialog callbacks.
 
 Windows checkpoint [37211560379](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379) on source commit `8fb11d4e0172541e7818c5c46fde5731f129aa5d` passed strict locked workspace Clippy, all 183 workspace tests, the native Slint build, all 48 scene renders, pointer/keyboard checks at both normal sizes, native Whistle/Turbo adapter checks and packaged relaunch recovery. Its only failure was formatting in one controller test. A formatting-only correction passed [formatting run 37215449790](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790); UI source is unchanged between these runs. [REBUILD.md](REBUILD.md) records the complete evidence and hardware limits.
 

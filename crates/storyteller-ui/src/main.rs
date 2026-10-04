@@ -1,3 +1,4 @@
+mod appearance;
 mod review_ui;
 mod worker_bridge;
 
@@ -29,6 +30,10 @@ struct PendingSources {
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
+    appearance::install(
+        &ui,
+        storyteller_application::recovery_app_root().join("appearance.json"),
+    );
     let pending = Rc::new(RefCell::new(PendingSources::default()));
     let app = Rc::new(RefCell::new(ApplicationController::new()));
     let queue_rows = Rc::new(VecModel::<QueueRow>::default());

@@ -9,15 +9,17 @@ export struct StageDetailRow { label: string, state: string, elapsed: string, ac
 export struct ReviewCandidateRow { href: string, line-index: int, text: string, score: string }
 
 global Colors {
-    out property <color> canvas: #f4f6f5;
-    out property <color> paper: #ffffff;
-    out property <color> ink: #172b30;
-    out property <color> muted: #52656a;
-    out property <color> line: #dce4e1;
-    out property <color> accent: #166c57;
-    out property <color> soft-accent: #edf6f1;
-    out property <color> warning: #835318;
-    out property <color> soft-warning: #fff5e5;
+    private property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+    out property <color> canvas: dark ? #101719 : #f4f6f5;
+    out property <color> paper: dark ? #192329 : #ffffff;
+    out property <color> ink: dark ? #e6edf0 : #172b30;
+    out property <color> muted: dark ? #b1c1c7 : #52656a;
+    out property <color> line: dark ? #33454b : #dce4e1;
+    out property <color> accent: dark ? #79d5b6 : #166c57;
+    out property <color> soft-accent: dark ? #203e36 : #edf6f1;
+    out property <color> warning: dark ? #efc17d : #835318;
+    out property <color> soft-warning: dark ? #372c1d : #fff5e5;
+    out property <color> brand: #166c57;
 }
 component Label inherits Text { color: Colors.ink; font-size: 14px; }
 component Hint inherits Text { color: Colors.muted; font-size: 13px; wrap: word-wrap; }
@@ -68,7 +70,9 @@ export component AppWindow inherits Window {
     min-width: 820px; min-height: 620px;
     background: Colors.canvas;
     default-font-size: 14px;
-    init => { Palette.color-scheme = ColorScheme.light; }
+    in-out property <bool> dark-theme: true;
+    init => { Palette.color-scheme = root.dark-theme ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-theme => { Palette.color-scheme = root.dark-theme ? ColorScheme.dark : ColorScheme.light; }
 
     private property <bool> sources-ready: root.epub-source-name != "" && root.audio-source-name != "";
     in-out property <int> workspace-page: 0;
@@ -134,6 +138,7 @@ export component AppWindow inherits Window {
     in property <bool> review-complete: false;
 
     callback browse-epub();
+    callback theme-changed(bool);
     callback browse-audio();
     callback browse-output();
     callback queue-book();
@@ -162,7 +167,7 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             min-height: 42px; max-height: 42px; spacing: 10px;
             Rectangle {
-                width: 34px; height: 34px; border-radius: 9px; background: Colors.accent;
+                width: 34px; height: 34px; border-radius: 9px; background: Colors.brand;
                 Label { text: "S"; color: #ffffff; font-size: 22px; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
             }
             Label { text: "StoryTeller"; font-size: 21px; font-weight: 700; vertical-alignment: center; }
@@ -469,12 +474,32 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 spacing: 6px;
                 Label { text: "Settings"; font-size: 27px; font-weight: 700; }
-                Hint { text: "Preferences apply to newly added books. Local setup continues if you leave this page."; }
+                Hint { text: "Theme applies immediately. Processing preferences apply to new books. Local setup continues if you leave this page."; }
             }
             ScrollView {
                 vertical-stretch: 1; horizontal-scrollbar-policy: always-off;
                 VerticalLayout {
                     spacing: 18px;
+                    Card {
+                        min-height: 112px;
+                        VerticalLayout {
+                            padding: 18px; spacing: 12px;
+                            Label { text: "Appearance"; font-size: 18px; font-weight: 600; }
+                            HorizontalLayout {
+                                spacing: 16px;
+                                Label { text: "Theme"; vertical-alignment: center; }
+                                ComboBox {
+                                    model: ["Dark", "Light"]; min-width: 150px;
+                                    current-index: root.dark-theme ? 0 : 1;
+                                    selected(value) => {
+                                        root.dark-theme = self.current-index == 0;
+                                        root.theme-changed(root.dark-theme);
+                                    }
+                                }
+                                Hint { text: "Dark by default. Your choice is remembered."; horizontal-stretch: 1; vertical-alignment: center; }
+                            }
+                        }
+                    }
                     Card {
                         min-height: 370px;
                         VerticalLayout {
