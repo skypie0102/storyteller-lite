@@ -1,0 +1,381 @@
+{
+  "description": "Lossless PNG conversions of actual compiled Slint scene fixtures captured on Windows. These are sample state renders, not a complete-book acceptance run.",
+  "product_source_commit": "47e74e944fbdcd691c2956050ed26ae4c961f51f",
+  "workflow_run": 37199779738,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738",
+  "artifact_id": 11302248767,
+  "artifact_zip_sha256": "9630442c1bde3cccb7d80219c50199489130d09714f18e0851d299a77e17ddb6",
+  "slint_version": "1.17.1",
+  "windows_workspace_tests": 164,
+  "pointer_keyboard_sizes": [
+    [
+      820,
+      620
+    ],
+    [
+      1040,
+      760
+    ]
+  ],
+  "retained_images": [
+    {
+      "path": "new-book.png",
+      "fixture_ppm": "sources-ready-820x620-1x.ppm",
+      "dimensions": [
+        820,
+        620
+      ],
+      "sha256": "a94ae1bb7f202f030fd69dd29754ccaf17e7844a27223f2798beb9cdd607a6ac"
+    },
+    {
+      "path": "processing.png",
+      "fixture_ppm": "processing-820x620-1x.ppm",
+      "dimensions": [
+        820,
+        620
+      ],
+      "sha256": "1f51d9112090eeaad28ad96f2d98998777e923cd03e8e9bf40df907365cf4178"
+    },
+    {
+      "path": "audio-review.png",
+      "fixture_ppm": "audio-review-820x620-1x.ppm",
+      "dimensions": [
+        820,
+        620
+      ],
+      "sha256": "dcb45fcfcc605d007c6b07f3449812d9d0ea4b9250f24aabd14b23f87fca89d7"
+    },
+    {
+      "path": "settings.png",
+      "fixture_ppm": "settings-ready-1040x760-1x.ppm",
+      "dimensions": [
+        1040,
+        760
+      ],
+      "sha256": "c21ca9f745a52e35b513df7a3a57a1793bd37ae01bfbbdb0b5d1e3c543731e6b"
+    },
+    {
+      "path": "audio-review-200-percent.png",
+      "fixture_ppm": "audio-review-820x620-2x.ppm",
+      "dimensions": [
+        1640,
+        1240
+      ],
+      "sha256": "3f2e752eb0880af0433c7d847ea92a44a070c896d3a5cc77334892e50cdf2815"
+    }
+  ],
+  "rendered_scenes": [
+    {
+      "path": "audio-review-1040x760-1x.ppm",
+      "sha256": "b3f3c64027b3989134451c8e2e30b72738d7b1c48000c63cf9338c93299bcbaa",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "audio-review-820x620-1x.ppm",
+      "sha256": "4a5e37a54da61521bea72ca86cb55dc10740802d60b7c493994fb2612d8a2ef6",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "audio-review-820x620-2x.ppm",
+      "sha256": "4e1d44808844f433c85cba39ce0a0765c1cd4e99256231d0c52aa20dd2f0e09f",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "cancel-book-1040x760-1x.ppm",
+      "sha256": "da683814dd2173edc686619f842734702d1f2063f9096b3a738d110ed361a4ae",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "cancel-book-820x620-1x.ppm",
+      "sha256": "5c7b20725593a0f86fdf1640ccfe7088fcb3cc53d99415683e8d960eb40b8d35",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "cancel-book-820x620-2x.ppm",
+      "sha256": "cc8ce471d902c704f3e0b7f9acd1db8252ae2a72520161cd736a991a305eed3e",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "exclude-confirmation-1040x760-1x.ppm",
+      "sha256": "8d73f7792be52496f85f8fb1f566a105c5ae23da664c08ea4da577c6da80606f",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "exclude-confirmation-820x620-1x.ppm",
+      "sha256": "2995b4c1d182bc48b7a7e38fa14711da6d2fa8df873b413fd3af10081cc0164f",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "exclude-confirmation-820x620-2x.ppm",
+      "sha256": "0a435758964aaf601ef262b439782e1b8e206a68eafef9514ac0a16dcd232956",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "first-setup-1040x760-1x.ppm",
+      "sha256": "77550ea609363ebb7df11abe9d33dac819991ff2f3e943bd73d2f7ba2cd7f922",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "first-setup-820x620-1x.ppm",
+      "sha256": "d503171ef44527e0ea29e76450aac72a1ccb125e9df7fb01fff9c1a49ed65960",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "first-setup-820x620-2x.ppm",
+      "sha256": "41cc5fed1f4254d74325bc08393f0f29ed12ae1af1f555f56ce631110530d2ac",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "new-book-1040x760-1x.ppm",
+      "sha256": "50658a700efd262e2bb80d4d5ed6a656453600d3c0346b4512581694f9b458ec",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "new-book-820x620-1x.ppm",
+      "sha256": "b06251434e13ba5c78043f1e8f02e8338651d30ee58398e0c408176d72d64f5c",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "new-book-820x620-2x.ppm",
+      "sha256": "3afe4a20405446ec69ffbdf771ece1a7f9eb7722263e05dfcd53adc7619651e1",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "paused-queue-1040x760-1x.ppm",
+      "sha256": "e5dbc2eee2fa55fc76db8bd9ae28b5d22e2bba0302a59794496230e765deb097",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "paused-queue-820x620-1x.ppm",
+      "sha256": "e82f8b6dc8865a0a1fea1b5a16611e87fdeb1b33f98f00e6634fd0cde461e8a7",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "paused-queue-820x620-2x.ppm",
+      "sha256": "d5c9ac7f5d2503deb79785d64e7addc124ff628df6a4b0f81b77a4bf9d03c48f",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "processing-1040x760-1x.ppm",
+      "sha256": "32914fd323f9e32e07d606c55f7650945a86d52ec1fe0c3391e23ce09ab98949",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "processing-820x620-1x.ppm",
+      "sha256": "f669a9e8b6a382de863eee3a722b4967c2c0960c753bbcdc47ab04dd9591e8f0",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "processing-820x620-2x.ppm",
+      "sha256": "6cf23c2b94a063376bb6121ecd329581cb343caf2da4831744073d5bbdef5970",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "queue-error-1040x760-1x.ppm",
+      "sha256": "afb1d7b9d57bc80afdcd4593e4bf2f0d45de2f034843688fd8da258eceaaaeec",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "queue-error-820x620-1x.ppm",
+      "sha256": "9e3458cf12c3fc589c0ad80379c9524d458b78ebe20f51d922fdf3062e675a78",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "queue-error-820x620-2x.ppm",
+      "sha256": "e05a3ea8266dab42c568b4fd4ad15322a67f7935090b87f8de3f4c51061c1ef0",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "review-complete-1040x760-1x.ppm",
+      "sha256": "2c59d932bf1aa21ade16b08f13b0c31ded779c620fd4a512f57f7f4e4e1cfd0c",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "review-complete-820x620-1x.ppm",
+      "sha256": "5ce316395430e53d2c4b2bb0e5b65a785980ea859b7074824f7c7d994c59d553",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "review-complete-820x620-2x.ppm",
+      "sha256": "8d93eac85a168ea8ba3d974bb1e5365a0e09b6fa278f93434ecac833a92b2f4b",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "review-loading-1040x760-1x.ppm",
+      "sha256": "3d036ff30bb5f976f12f33748b0e2da48c338cd06209d92466b1843a172c6966",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "review-loading-820x620-1x.ppm",
+      "sha256": "b8257480b914e1c95e1c58d7f20d7c1348b70040ce2438bfed9e34ac30959d9c",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "review-loading-820x620-2x.ppm",
+      "sha256": "dcb9654f3297416ee80a2261f80faaaef890c3c66a884acb311e6d3304daf98a",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "settings-1040x760-1x.ppm",
+      "sha256": "da660cdff213f8c475f901b879a4f6a0d676caddec62ab283f4764e38121ebc0",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "settings-820x620-1x.ppm",
+      "sha256": "9cb13f562f26e9db90714231be2bff1d71a63ad79ce42b94af6db82444971c89",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "settings-820x620-2x.ppm",
+      "sha256": "fd47ba770efc1f91e0c04dfe5be07dae9f0e0bdf4d78820e35af8713f2fbf401",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "settings-ready-1040x760-1x.ppm",
+      "sha256": "23029c3f11fdd24cb3104db685c398504f678da24954bb10dea28c5de856be52",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "settings-ready-820x620-1x.ppm",
+      "sha256": "62e1513d5fb759b89dffd695bb38c98693aa43cdf80f8615ea9eb995c2fbf1d2",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "settings-ready-820x620-2x.ppm",
+      "sha256": "b79e51b3fa1f140ecec9abea04212c8a7c2822c71508c33bf53c10864c2f5260",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "sources-ready-1040x760-1x.ppm",
+      "sha256": "b283d806efad07590eb00743301d82b1cb020331764821acf3367d68bd014e01",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "sources-ready-820x620-1x.ppm",
+      "sha256": "dcb47bcfd3e32c4d0052f1731f77d7be179f710fd9cf4d773b1bdeffef2b6dca",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "sources-ready-820x620-2x.ppm",
+      "sha256": "c0d17e88775e0ea7c8543d707e351a656da673acbb634f8e77acc1ee28626e41",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    }
+  ]
+}

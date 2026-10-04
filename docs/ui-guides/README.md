@@ -1,6 +1,8 @@
 # Storyteller Lite UI guides
 
-These files are the current visual/layout references for the recovered Rust + Slint Lite project. They came from user-provided mockups in the recovery conversation and are design targets, not screenshots of the current implementation.
+The active Whistle rebuild UI is documented in [UI.md](../UI.md), with actual native screenshots and a reproducible Slint scene harness. It uses New book, Queue and Settings workspaces, native browse buttons, output-destination preview and application-owned review workers.
+
+The files below are historical visual references for the recovered Rust + Slint Lite baseline. They came from user-provided mockups in the recovery conversation and are design targets, not screenshots of the current implementation. The active UI guide takes precedence where the new layout differs.
 
 ## Assets
 
@@ -25,7 +27,7 @@ Treat the main mockup as the hierarchy target:
 - Seven pipeline stages: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate.
 - Real metrics only: elapsed, ETA, speed, backend, model, match percentage, and useful current activity/context.
 - Queue-first workflow with waiting/recent books and pause-after-current.
-- Settings remains a separate experience and includes the simple Whisper worker-count control without manual CPU-thread tuning.
+- Settings remains a separate experience and includes the simple transcription worker-count control without manual CPU-thread tuning. The active rebuild uses English-only Whistle.
 
 The mockup is a wide-window target, not a fixed canvas. Slint should reflow, hide secondary metadata when necessary, and use localized scrolling instead of absolute positioning.
 

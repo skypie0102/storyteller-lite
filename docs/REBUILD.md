@@ -10,7 +10,7 @@ The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and 
 | `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated Whistle processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
 | `storyteller-ui` | File selection, snapshot presentation and application command dispatch | Application and core |
 
-The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review report/evidence loading, cached navigation and audio preview now have application-owned workers. The rebuilt native interface is described in [UI.md](UI.md); its Windows checkpoint is pending.
+The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review report/evidence loading, cached navigation and audio preview now have application-owned workers. The rebuilt native interface and validated Windows scenes are described in [UI.md](UI.md).
 
 ## Application controller scaffold
 
@@ -22,9 +22,9 @@ The application controller now owns queue transitions, processing workers and re
 - Closing saves interrupted work before requesting cancellation and joining the processing worker. That saved work restores as Waiting; closing is distinct from an explicit Cancel command.
 - Durable text/image/exclusion/edge decisions and review completion checks execute in the application. Stale job IDs cannot change another book's review.
 - Dependency scans and downloads run on an application-owned background thread, keeping model hashing and probing for Settings off the UI thread.
-- Borrowed snapshots have separate queue and runtime revisions. Unchanged polls do not rebuild the main view or re-read review reports. Queue/stage models update changed rows; progress no longer resets the whole queue model. Queue buttons require both source selections.
+- Borrowed snapshots have separate queue, runtime and review revisions. Unchanged polls do not rebuild the main view or re-read review reports. Queue/stage/candidate models update changed rows; progress and seeking no longer reset the whole list model. Submission requires both source selections and ready local tools.
 
-Fourteen controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. The controller and connected Slint shell passed the native Windows checkpoint below. The superseded UI recovery module was removed only after its replacement regressions passed in the application crate.
+Controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. R4 adds displayed-job cancellation, stale evidence, cached seeking, durable review reload and real child-process lifetime regressions. The controller and connected Slint shell passed the native Windows checkpoints below. The superseded UI recovery module was removed only after its replacement regressions passed in the application crate.
 
 ## Stage artifacts and publication
 
@@ -59,12 +59,22 @@ English-only mode removes application language options and detection routing. Th
 | R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
 | R2 — Own lifecycle in the application | Validated on Windows | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
 | R3 — Make stage artifacts and publication explicit | Validated on Windows | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
-| R4 — Rebuild the native UI and reduce review coupling | Awaiting Windows checkpoint | New book/Queue/Settings workspaces, output selection, readable review layout, background evidence/preview, stale-result guards and compact/high-DPI scenes implemented |
+| R4 — Rebuild the native UI and reduce review coupling | Validated on Windows | New book/Queue/Settings workspaces, output selection, readable review layout, background evidence/preview, stale-result guards, keyboard/pointer checks and 39 compact/standard/high-DPI scenes |
 | R5 — Validate complete books and release | Planned | Representative long English audiobooks, difficult speech cuts, accuracy/timing review, reader interoperability and full Windows packaging |
 
 Native smoke tests establish integration correctness, not a quality or speed advantage over the released large-v3-turbo implementation. Cactus’s published M4 Pro comparison against Whisper base is not a Windows audiobook benchmark. R5 must measure representative books before release.
 
 ## Validation
+
+The native UI checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) passed on source commit `47e74e944fbdcd691c2956050ed26ae4c961f51f`:
+
+- Formatting, strict locked workspace Clippy with all targets, all **164 Windows workspace tests**, the native Slint build and packaged Running/NeedsReview relaunch recovery.
+- Ten additional regressions: displayed-job cancellation cannot cancel another active book; stale job/generation evidence is ignored; cached seeking and idle polling do not reload; durable decisions reload and advance; broken review reports cannot enable completion and can recover after repair; preview natural exit, stop/shutdown/reaping and startup failure; the preview child fixture; and custom output-folder selection.
+- Thirteen actual compiled Slint scenes at 820×620 and 1040×760, plus compact renders at 200% scale: **39 screenshots**, all inspected. The compact processing view shows all seven stages, and compact review keeps the first match/action beside the transcript. Settings, queue and long status details use local scrolling.
+- Real dispatched Tab/Space and pointer events at both normal sizes verify source selection, incomplete/busy start guards, ready submission, Settings/New book navigation, unresolved-review completion gating and the two-click bulk exclusion path. The harness installs fixture callbacks rather than invoking processing, downloads or file dialogs.
+- Five representative lossless PNG renders and all 39 scene hashes are retained in [UI.md](UI.md) and [screenshot provenance](ui-snapshots/provenance.json). The artifact ZIP SHA-256 is `9630442c1bde3cccb7d80219c50199489130d09714f18e0851d299a77e17ddb6`.
+
+This checkpoint changes UI and application review ownership; it does not change the pinned Whistle adapter/assets. The R3 native speech/silence and multi-window integration evidence below still describes that adapter. Preview child-process tests establish lifecycle behavior; they do not establish audible-device quality. No runtime dependencies or lockfile changes were needed.
 
 The stage artifact/publication checkpoint [37192046677](https://github.com/skypie0102/storyteller-lite/actions/runs/37192046677) passed on product-source commit `9ec8847b16416466b3bbfd83f6081c74ea2351c7`:
 
@@ -90,7 +100,7 @@ The application controller and first UI optimization checkpoint [37189418973](ht
 
 The first controller checkpoint [37189026768](https://github.com/skypie0102/storyteller-lite/actions/runs/37189026768) passed 133 tests on `e7a87f9fc1b4fb6e2f89e0b429e7e4dfa2f2f9c7`; the final checkpoint adds the worker-handoff guard and two race regressions. The English-only checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed 121 tests on `df1e49faece11e28a0cb11bb0c79a5a91defea43`, and the initial foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`.
 
-The temporary R3 branch-only checkpoint workflow was removed after the pass. Subsequent evidence/cleanup edits only record results and remove that workflow; compiled product source is unchanged. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+Temporary branch-only checkpoint workflows are removed after their passes. The R4 evidence/cleanup commit only updates documentation/screenshots and removes its temporary workflow; compiled source remains the validated `47e74e944fbdcd691c2956050ed26ae4c961f51f` source. Earlier controller cleanup also removed the unreferenced legacy UI recovery file. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
 
 Full-book English recognition accuracy, difficult speech boundaries and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 

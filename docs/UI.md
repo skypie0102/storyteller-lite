@@ -40,4 +40,24 @@ cargo run --locked -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.
 
 The harness uses Slint 1.17.1's software renderer to capture 39 PPM images: thirteen scenes at 820×620 and 1040×760, plus compact scenes at 200% scale. It also dispatches real pointer and keyboard events to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Fixtures have no processing/download/file-dialog callbacks.
 
-The native Windows checkpoint and final screenshots are pending while this implementation is being validated. These scenes do not establish full-book recognition accuracy or reader interoperability; those remain R5 work.
+Windows checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) passed on source commit `47e74e944fbdcd691c2956050ed26ae4c961f51f`: formatting, strict locked workspace Clippy, all 164 workspace tests, native Slint build, all 39 scene renders, pointer/keyboard checks at both normal sizes, and packaged relaunch recovery. Tab followed by Space activates the source picker; native Fluent buttons deliberately do not take keyboard focus from a pointer click.
+
+All 39 renders were inspected at compact, standard and 200% scale. The screenshots below are lossless conversions of actual Windows fixture renders, with sample book data. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and per-scene hashes; [the 200% review render](ui-snapshots/audio-review-200-percent.png) is also retained. The temporary branch-only checkpoint workflow was removed after the pass. No runtime dependencies or lockfile changes were needed.
+
+### New book — compact window
+
+![Output preview and selected sources at 820×620](ui-snapshots/new-book.png)
+
+### Processing — compact window
+
+![Seven processing stages beside the queue at 820×620](ui-snapshots/processing.png)
+
+### Audio review — compact window
+
+![Transcript and nearby EPUB matches at 820×620](ui-snapshots/audio-review.png)
+
+### Settings — standard window
+
+![Processing preferences and local setup at 1040×760](ui-snapshots/settings.png)
+
+These scene and interaction checks do not establish full-book recognition accuracy, audible preview quality, reader interoperability or full release packaging; those remain R5 acceptance work.

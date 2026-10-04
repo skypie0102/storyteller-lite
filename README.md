@@ -6,11 +6,11 @@ The reconstructed implementation has now been promoted to **`main`**, which is t
 
 ## Whistle rebuild
 
-The active reliability rebuild replaces Whisper with **Whistle** and moves runtime and pipeline execution into `storyteller-application`, independent of Slint. The app supports English transcription only, using the published 16.9 MB native CPU model. Read [the rebuild milestones](docs/REBUILD.md) and [the pinned runtime contract](docs/RUNTIME.md). The foundation passed full Windows validation, native speech/silence, multi-window transcription and packaged relaunch recovery. The remaining rebuild and full-book acceptance milestones are recorded in the rebuild document.
+The active branch, `rebuild/reliability-foundation`, replaces Whisper with **Whistle** and moves runtime, lifecycle and pipeline execution into `storyteller-application`, independent of Slint. Transcription supports English only, with the published 16.9 MB native CPU model. [The rebuild milestones](docs/REBUILD.md) record validation and remaining acceptance work; [the runtime contract](docs/RUNTIME.md) defines pinned assets.
 
-The application now owns queue commands, workers, saved recovery and durable review decisions. The desktop renders changed snapshots, updates queue rows incrementally and scans dependencies in the background. This scaffold passed all 135 tests and the native Windows checkpoint recorded in the rebuild document; the full rebuild and visual UI acceptance are still in progress.
+The native UI has been rebuilt around New book, Queue and Settings. It previews the output destination, keeps processing and review controls readable at 820×620, and uses native keyboard-accessible buttons. Review evidence and audio preview run on application-owned workers; cached snapshots update only changed rows. See [the UI guide](docs/UI.md) for behavior and reproducible native scenes.
 
-The next rebuild slice introduces typed stage outputs, cancellable SHA-256 cache verification and validated, no-overwrite EPUB publication with restart recovery. It passed all 154 Windows workspace tests, the native Slint build, Whistle integration and packaged recovery. R0–R3 are validated; review/UI refinement and representative full-book acceptance remain in progress. See the rebuild document for the exact evidence and limits.
+Typed stage outputs, cancellable SHA-256 cache verification and validated publication protect resumed work and existing outputs. R0–R4 passed Windows checkpoints; the latest passed all 164 workspace tests, native keyboard/pointer checks, 39 scene renders including 200% scaling, and relaunch recovery. Representative full English books, recognition/timing assessment and release packaging remain R5 acceptance work. This branch has not replaced the published v0.1.0 baseline.
 
 ## Released baseline
 
