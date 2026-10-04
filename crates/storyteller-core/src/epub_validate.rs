@@ -1,5 +1,4 @@
 use crate::{
-    copy_file_cancellable,
     epub_overlay::{parent_archive_path, resolve_archive_href},
     CancellationToken,
 };
@@ -13,7 +12,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::{self, File},
     io::{Read, Seek},
-    path::{Path, PathBuf},
+    path::Path,
 };
 use zip::{CompressionMethod, ZipArchive};
 
@@ -178,63 +177,12 @@ pub fn write_validation_report(path: &Path, summary: EpubValidationSummary) -> R
     }
     let json = serde_json::to_vec_pretty(&summary)
         .map_err(|error| format!("Could not serialize EPUB validation report: {error}"))?;
-    fs::write(path, json).map_err(|error| {
+    crate::workspace::write_atomic(path, &json).map_err(|error| {
         format!(
             "Could not write EPUB validation report {}: {error}",
             path.display()
         )
     })
-}
-
-pub fn publish_validated_epub(
-    candidate: &Path,
-    destination: &Path,
-    cancellation: &CancellationToken,
-) -> Result<(), String> {
-    if candidate == destination {
-        return Err("Validated EPUB candidate and publication destination must differ.".into());
-    }
-    if destination.exists() {
-        return Err(format!(
-            "Output EPUB already exists and will not be overwritten: {}",
-            destination.display()
-        ));
-    }
-    let parent = destination
-        .parent()
-        .ok_or("Output EPUB path has no parent directory.")?;
-    fs::create_dir_all(parent).map_err(|error| {
-        format!(
-            "Could not create output directory {}: {error}",
-            parent.display()
-        )
-    })?;
-    let temp = publication_temp_path(destination)?;
-    if temp.exists() {
-        fs::remove_file(&temp).map_err(|error| {
-            format!(
-                "Could not remove stale publication temporary file {}: {error}",
-                temp.display()
-            )
-        })?;
-    }
-    let result = (|| {
-        copy_file_cancellable(candidate, &temp, cancellation)?;
-        if cancellation.is_requested() {
-            return Err("EPUB publication was cancelled.".into());
-        }
-        fs::rename(&temp, destination).map_err(|error| {
-            format!(
-                "Could not publish validated EPUB from {} to {}: {error}",
-                temp.display(),
-                destination.display()
-            )
-        })
-    })();
-    if result.is_err() && temp.exists() {
-        let _ = fs::remove_file(&temp);
-    }
-    result
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -767,14 +715,6 @@ fn hex(value: u8) -> Option<u8> {
     }
 }
 
-fn publication_temp_path(destination: &Path) -> Result<PathBuf, String> {
-    let file_name = destination
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or("Output EPUB filename is not valid UTF-8.")?;
-    Ok(destination.with_file_name(format!(".{file_name}.storyteller.tmp")))
-}
-
 fn attribute_value(element: &BytesStart<'_>, wanted: &[u8]) -> Result<Option<String>, String> {
     for attribute in element.attributes().with_checks(false) {
         let attribute =
@@ -805,14 +745,5 @@ mod tests {
         assert_eq!(parse_clock("0:00:00.250").unwrap(), 250);
         assert!(parse_clock("0:61:00.000").is_err());
         assert!(parse_clock("0:00:01.1234").is_err());
-    }
-
-    #[test]
-    fn publication_temp_stays_next_to_output() {
-        let output = Path::new("books/Novel (readaloud).epub");
-        assert_eq!(
-            publication_temp_path(output).unwrap(),
-            PathBuf::from("books/.Novel (readaloud).epub.storyteller.tmp")
-        );
     }
 }

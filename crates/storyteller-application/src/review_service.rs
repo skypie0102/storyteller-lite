@@ -4,7 +4,7 @@ use storyteller_core::{
     read_audio_review_report, AlignmentDocument, AlignmentStatus, AudioReviewClassification,
     AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination, AudioReviewEdge,
     AudioReviewItem, AudioReviewReport, AudioReviewSupplementalPlacement, CancellationToken, Job,
-    PipelineStage,
+    PipelineStage, StageArtifacts,
 };
 
 pub fn audio_review_path(job: &Job) -> PathBuf {
@@ -19,6 +19,16 @@ pub fn audio_review_draft_path(job: &Job) -> PathBuf {
 
 pub fn load_audio_review_report(job: &Job) -> Result<AudioReviewReport, String> {
     read_audio_review_report(&audio_review_path(job))
+}
+
+pub(crate) fn seal_review(job: &Job) -> Result<(), String> {
+    crate::job_workspace(job).capture_stage_artifacts(
+        PipelineStage::ReviewAudio,
+        &StageArtifacts::ReviewAudio {
+            report: PathBuf::from("review.json"),
+        },
+        &CancellationToken::default(),
+    )
 }
 
 pub(crate) fn save_decision(

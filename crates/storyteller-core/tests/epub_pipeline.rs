@@ -9,7 +9,7 @@ use storyteller_core::{
     AlignmentSegment, AlignmentStatus, AudioReviewClassification, AudioReviewDecision,
     AudioReviewDecisionSource, AudioReviewDestination, AudioReviewPolicy, AudioReviewReport,
     AudioReviewSupplementalPlacement, CancellationToken, CorpusPosition, EncodedAudioDescriptor,
-    EpubCorpus, EpubSection,
+    EpubCorpus, EpubSection, ValidatedEpub,
 };
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
@@ -298,11 +298,216 @@ fn build_validate_and_publish_media_overlay_epub() {
     assert!(zip.by_name("OPS/storyteller/audio/audio.mp3").is_ok());
 
     let published = root.join("Test Book (readaloud).epub");
-    publish_validated_epub(&candidate, &published, &cancellation).unwrap();
+    let validated = ValidatedEpub::validate(&candidate, &cancellation).unwrap();
+    let intent = root.join("resume-workspace").join("publication.json");
+    publish_validated_epub(&validated, &published, &intent, &cancellation).unwrap();
     assert!(published.is_file());
-    assert!(publish_validated_epub(&candidate, &published, &cancellation).is_err());
+    // A matching job-owned intent plus matching bytes recovers a completed commit.
+    publish_validated_epub(&validated, &published, &intent, &cancellation).unwrap();
+    assert!(publish_validated_epub(
+        &validated,
+        &published,
+        &root.join("unrelated-intent.json"),
+        &cancellation
+    )
+    .is_err());
+    assert_cached_publication_is_rechecked(&root, &published);
+    fs::write(&candidate, b"modified after validation").unwrap();
+    let refused = root.join("Refused.epub");
+    assert!(publish_validated_epub(
+        &validated,
+        &refused,
+        &root.join("refused-intent.json"),
+        &cancellation
+    )
+    .unwrap_err()
+    .contains("changed after validation"));
+    assert!(!refused.exists());
 
     let _ = fs::remove_dir_all(root);
+}
+
+/// Exercise the worker resume path with a real built EPUB and synthetic earlier
+/// stage files. Every checkpoint is present, including Validate, when it relaunches.
+fn assert_cached_publication_is_rechecked(root: &Path, published: &Path) {
+    use storyteller_core::{
+        spawn_pipeline_worker, write_validation_report, AudioEncoding, HardwareProfile, Job,
+        JobInputs, JobSettings, JobStatus, JobWorkspace, PipelineBackend, PipelineRunState,
+        PipelineStage, ResourceRequest, ResourceScheduler, ResumeContext, RuntimeCoordinator,
+        StageArtifacts, StagePlan, StageRunContext, StageRunError, StageRunOutput, StageStatus,
+    };
+    struct PublishBackend {
+        validated: Option<ValidatedEpub>,
+    }
+    impl PipelineBackend for PublishBackend {
+        fn plan_stage(&mut self, _job: &Job, stage: PipelineStage) -> Result<StagePlan, String> {
+            assert_eq!(stage, PipelineStage::Validate);
+            Ok(StagePlan::run(
+                "Recheck publication",
+                ResourceRequest::io_heavy(1),
+                0,
+            ))
+        }
+        fn run_stage(
+            &mut self,
+            context: &mut StageRunContext<'_>,
+        ) -> Result<StageRunOutput, StageRunError> {
+            let token = ValidatedEpub::validate(
+                &context
+                    .workspace()
+                    .stage_dir(PipelineStage::BuildEpub)
+                    .join("readaloud.epub"),
+                &context.cancellation_token(),
+            )
+            .map_err(|error| StageRunError::failed(error, 0))?;
+            write_validation_report(
+                &context
+                    .workspace()
+                    .stage_dir(PipelineStage::Validate)
+                    .join("validation.json"),
+                token.summary(),
+            )
+            .map_err(|error| StageRunError::failed(error, 0))?;
+            self.validated = Some(token);
+            Ok(StageRunOutput::new(
+                StageArtifacts::Validate {
+                    report: "validation.json".into(),
+                },
+                1,
+                1,
+            ))
+        }
+        fn finalize_stage(
+            &mut self,
+            context: &mut StageRunContext<'_>,
+            _output: &StageRunOutput,
+        ) -> Result<(), StageRunError> {
+            publish_validated_epub(
+                self.validated.as_ref().unwrap(),
+                &context.job().inputs.output_path,
+                &context.workspace().root().join("publication.json"),
+                &context.cancellation_token(),
+            )
+            .map_err(|error| StageRunError::failed(error, 0))
+        }
+    }
+    let workspace = JobWorkspace::new(root.join("resume-workspace"));
+    let mut job = Job::new(
+        JobInputs {
+            title: "Resume publication".into(),
+            epub_path: root.join("source.epub"),
+            audiobook_path: root.join("encode/audio.mp3"),
+            output_path: published.to_owned(),
+        },
+        JobSettings {
+            audio: AudioEncoding::copy(),
+            ..JobSettings::default()
+        },
+    )
+    .unwrap();
+    job.start().unwrap();
+    let resume = ResumeContext {
+        epub_source: "fixture:epub".into(),
+        audiobook_source: "fixture:audio".into(),
+        transcription_backend: "fixture:whistle".into(),
+        alignment_backend: "fixture:align".into(),
+        audio_backend: "fixture:audio".into(),
+        ocr_backend: "fixture:ocr".into(),
+        epub_backend: "fixture:epub".into(),
+        effective_language: "en".into(),
+        effective_transcription_model: "whistle".into(),
+        settings: job.settings.clone(),
+    };
+    let artifacts = [
+        StageArtifacts::Prepare {
+            epub: "source.epub".into(),
+            audiobook: "audio.mp3".into(),
+        },
+        StageArtifacts::Analyze {
+            corpus: "corpus.json".into(),
+            plan: "plan.json".into(),
+            transcript: "transcript.json".into(),
+        },
+        StageArtifacts::Align {
+            alignment: "alignment.json".into(),
+        },
+        StageArtifacts::ReviewAudio {
+            report: "review.json".into(),
+        },
+        StageArtifacts::Encode {
+            audio: "audio.mp3".into(),
+            descriptor: "descriptor.json".into(),
+        },
+        StageArtifacts::BuildEpub {
+            candidate: "readaloud.epub".into(),
+            effective_alignment: "effective.json".into(),
+        },
+        StageArtifacts::Validate {
+            report: "validation.json".into(),
+        },
+    ];
+    for output in artifacts {
+        let stage = output.stage();
+        let dir = workspace.stage_dir(stage);
+        fs::create_dir_all(&dir).unwrap();
+        for relative in output.paths() {
+            if stage == PipelineStage::BuildEpub && relative == Path::new("readaloud.epub") {
+                fs::copy(root.join("candidate.epub"), dir.join(relative)).unwrap();
+            } else {
+                fs::write(dir.join(relative), b"sealed earlier fixture stage").unwrap();
+            }
+        }
+        workspace
+            .capture_stage_artifacts(stage, &output, &CancellationToken::default())
+            .unwrap();
+        job.progress
+            .start_stage(stage, "Fixture completed")
+            .unwrap();
+        job.progress.complete_stage(stage, 1).unwrap();
+        job.checkpoint_completed_stage(stage, &resume).unwrap();
+    }
+    let run = || {
+        let scheduler = ResourceScheduler::automatic(&HardwareProfile {
+            logical_cpu_threads: 2,
+            memory_gib: None,
+            gpu_backend: None,
+            gpu_vram_mib: None,
+        })
+        .unwrap();
+        let mut runtime = RuntimeCoordinator::new(scheduler);
+        runtime.register_job(job.id).unwrap();
+        spawn_pipeline_worker(
+            job.clone(),
+            workspace.clone(),
+            runtime,
+            resume.clone(),
+            PublishBackend { validated: None },
+        )
+        .unwrap()
+        .join()
+        .unwrap()
+    };
+    let before = fs::metadata(published).unwrap().modified().unwrap();
+    let result = run();
+    assert_eq!(result.run_result.unwrap(), PipelineRunState::Completed);
+    assert_eq!(result.job.status, JobStatus::Completed);
+    assert!(result.job.progress.stages()[..6]
+        .iter()
+        .all(|stage| stage.status == StageStatus::Cached));
+    assert_eq!(
+        result.job.progress.stages()[6].status,
+        StageStatus::Completed
+    );
+    assert_eq!(fs::metadata(published).unwrap().modified().unwrap(), before);
+    fs::remove_file(published).unwrap();
+    assert_eq!(run().run_result.unwrap(), PipelineRunState::Completed);
+    validate_readaloud_epub(published, &CancellationToken::default()).unwrap();
+    fs::write(published, b"externally changed output").unwrap();
+    assert!(matches!(
+        run().run_result.unwrap(),
+        PipelineRunState::Failed(_)
+    ));
+    assert_eq!(fs::read(published).unwrap(), b"externally changed output");
 }
 
 #[test]

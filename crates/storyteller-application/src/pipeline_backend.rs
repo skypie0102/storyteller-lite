@@ -13,16 +13,17 @@ use storyteller_core::{
     materialize_reviewed_alignment, prepare_job_sources, prepared_job_sources,
     publish_validated_epub, read_audio_review_report, run_cancellable_command,
     set_audio_review_silence_evidence, spawn_pipeline_worker_with_preflight,
-    validate_readaloud_epub, write_validation_report, AudioCodec, AudioReviewEdge,
-    AudioReviewPolicy, AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace, LiveMetrics,
-    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
-    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
-    StageRunOutput,
+    write_validation_report, AudioCodec, AudioReviewEdge, AudioReviewPolicy,
+    AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
+    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
+    RuntimeCoordinator, StageArtifacts, StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    ValidatedEpub,
 };
 
 pub(crate) struct LitePipelineBackend {
     attempt_started: Instant,
     cpu_threads: usize,
+    validated_candidate: Option<ValidatedEpub>,
 }
 
 impl LitePipelineBackend {
@@ -30,6 +31,7 @@ impl LitePipelineBackend {
         Self {
             attempt_started: Instant::now(),
             cpu_threads: cpu_threads.max(1),
+            validated_candidate: None,
         }
     }
 
@@ -64,7 +66,15 @@ impl LitePipelineBackend {
             .set_stage_percent(100, completed_at)
             .map_err(|error| StageRunError::failed(error, completed_at))?;
         Ok(StageRunOutput::new(
-            prepared.relative_artifacts(),
+            StageArtifacts::Prepare {
+                epub: PathBuf::from(prepared.epub().file_name().expect("prepared EPUB filename")),
+                audiobook: PathBuf::from(
+                    prepared
+                        .audiobook()
+                        .file_name()
+                        .expect("prepared audio filename"),
+                ),
+            },
             stage_started.elapsed().as_secs(),
             completed_at,
         ))
@@ -169,11 +179,11 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![
-                PathBuf::from("book-corpus.json"),
-                PathBuf::from("transcription-plan.json"),
-                PathBuf::from("transcript.json"),
-            ],
+            StageArtifacts::Analyze {
+                corpus: PathBuf::from("book-corpus.json"),
+                plan: PathBuf::from("transcription-plan.json"),
+                transcript: PathBuf::from("transcript.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -240,7 +250,9 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![PathBuf::from("alignment.json")],
+            StageArtifacts::Align {
+                alignment: PathBuf::from("alignment.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -366,7 +378,9 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         let output = StageRunOutput::new(
-            vec![PathBuf::from("review.json")],
+            StageArtifacts::ReviewAudio {
+                report: PathBuf::from("review.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         );
@@ -469,7 +483,10 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            encoded.relative_artifacts,
+            StageArtifacts::Encode {
+                audio: PathBuf::from(encoded.descriptor.file_name),
+                descriptor: PathBuf::from("encoded-audio.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -544,10 +561,10 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![
-                PathBuf::from("effective-alignment.json"),
-                PathBuf::from("readaloud.epub"),
-            ],
+            StageArtifacts::BuildEpub {
+                effective_alignment: PathBuf::from("effective-alignment.json"),
+                candidate: PathBuf::from("readaloud.epub"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -558,6 +575,7 @@ impl LitePipelineBackend {
         context: &mut StageRunContext<'_>,
     ) -> Result<StageRunOutput, StageRunError> {
         let stage_started = Instant::now();
+        self.validated_candidate = None;
         let candidate = context
             .workspace()
             .stage_dir(PipelineStage::BuildEpub)
@@ -581,14 +599,15 @@ impl LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        let summary = validate_readaloud_epub(&candidate, &cancellation);
-        let summary = match summary {
-            Ok(summary) => summary,
+        let validated = ValidatedEpub::validate(&candidate, &cancellation);
+        let validated = match validated {
+            Ok(validated) => validated,
             Err(error) if cancellation.is_requested() => {
                 return Err(StageRunError::cancelled(error, self.elapsed_millis()));
             }
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         };
+        let summary = validated.summary();
         write_validation_report(&report_path, summary)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         context.set_metrics(
@@ -607,8 +626,11 @@ impl LitePipelineBackend {
             .set_stage_percent(100, self.elapsed_millis())
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
+        self.validated_candidate = Some(validated);
         Ok(StageRunOutput::new(
-            vec![PathBuf::from("validation.json")],
+            StageArtifacts::Validate {
+                report: PathBuf::from("validation.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -685,11 +707,14 @@ impl PipelineBackend for LitePipelineBackend {
             return Ok(());
         }
 
-        let candidate = context
-            .workspace()
-            .stage_dir(PipelineStage::BuildEpub)
-            .join("readaloud.epub");
+        let candidate = self.validated_candidate.take().ok_or_else(|| {
+            StageRunError::failed(
+                "Publication requires this attempt's validated EPUB candidate.",
+                self.elapsed_millis(),
+            )
+        })?;
         let output_path = context.job().inputs.output_path.clone();
+        let intent_path = context.workspace().root().join("publication.json");
         let cancellation = context.cancellation_token();
         context
             .set_activity(
@@ -697,7 +722,7 @@ impl PipelineBackend for LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        match publish_validated_epub(&candidate, &output_path, &cancellation) {
+        match publish_validated_epub(&candidate, &output_path, &intent_path, &cancellation) {
             Ok(()) => Ok(()),
             Err(error) if cancellation.is_requested() => {
                 Err(StageRunError::cancelled(error, self.elapsed_millis()))

@@ -1,0 +1,61 @@
+name: Temporary artifact and publication checkpoint
+on:
+  push:
+    branches: [rebuild/reliability-foundation]
+permissions:
+  contents: read
+concurrency:
+  group: artifact-publication-checkpoint
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Acquire verified native assets
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'whistle-runtime'
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $needle = Join-Path $root 'needle.exe'
+          $model = Join-Path $root 'whistle.cact'
+          Invoke-WebRequest 'https://huggingface.co/Cactus-Compute/needle3/resolve/f84005f8992caf37f17b0d64a4b5b31a84ce0d2a/windows-x86_64/needle.exe' -OutFile $needle
+          Invoke-WebRequest 'https://huggingface.co/Cactus-Compute/whistle/resolve/d3ea19e0fe4f99fa7dfb9afa63070b1c6eacaff1/whistle.cact' -OutFile $model
+          if ((Get-FileHash $needle).Hash.ToLowerInvariant() -ne 'c70ca998f6c542c862c06c22352046e303ef5c769384069ee25cef9f4667e4cf') { throw 'Engine SHA mismatch' }
+          if ((Get-FileHash $model).Hash.ToLowerInvariant() -ne 'b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb') { throw 'Model SHA mismatch' }
+          $archive = Join-Path $root 'ffmpeg.zip'
+          Invoke-WebRequest 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip' -OutFile $archive
+          if ((Get-FileHash $archive).Hash.ToLowerInvariant() -ne 'fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9') { throw 'FFmpeg SHA mismatch' }
+          Expand-Archive $archive (Join-Path $root 'ffmpeg')
+          $ffmpeg = @(Get-ChildItem (Join-Path $root 'ffmpeg') -Recurse -Filter ffmpeg.exe)[0].FullName
+          "STORYTELLER_WHISTLE=$needle" >> $env:GITHUB_ENV
+          "STORYTELLER_WHISTLE_MODEL=$model" >> $env:GITHUB_ENV
+          "STORYTELLER_FFMPEG=$ffmpeg" >> $env:GITHUB_ENV
+      - name: Native engine smoke
+        id: native
+        continue-on-error: true
+        shell: powershell
+        run: ./.github/scripts/whistle-smoke.ps1 -FFmpeg $env:STORYTELLER_FFMPEG -Needle $env:STORYTELLER_WHISTLE -Model $env:STORYTELLER_WHISTLE_MODEL -NativeOnly
+      - name: Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Strict workspace lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Workspace regressions
+        run: cargo test --workspace --locked
+      - name: Native Slint build
+        run: cargo build -p storyteller-ui --locked
+      - name: Application Whistle smoke
+        shell: powershell
+        run: ./.github/scripts/whistle-smoke.ps1 -FFmpeg $env:STORYTELLER_FFMPEG -Needle $env:STORYTELLER_WHISTLE -Model $env:STORYTELLER_WHISTLE_MODEL
+      - name: Packaged relaunch recovery
+        shell: pwsh
+        run: ./.github/scripts/packaged-relaunch-smoke.ps1 -Executable (Resolve-Path 'target/debug/storyteller-ui.exe').Path
+      - name: Require native engine success
+        if: ${{ always() && steps.native.outcome != 'success' }}
+        run: throw 'Native Whistle smoke did not pass.'

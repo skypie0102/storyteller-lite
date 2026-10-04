@@ -1,4 +1,4 @@
-# Reliability rebuild — Whistle foundation
+# Reliability rebuild — English-only Whistle
 
 The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and Slint, and the seven visible stages. Whistle replaces Whisper completely. There is one supported transcription engine and no Whisper fallback.
 
@@ -26,6 +26,18 @@ The application controller now owns queue transitions, processing workers and re
 
 Fourteen controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. The controller and connected Slint shell passed the native Windows checkpoint below. The superseded UI recovery module was removed only after its replacement regressions passed in the application crate.
 
+## Stage artifacts and publication
+
+`StageRunOutput` carries a `StageArtifacts` variant for its actual stage. Required roles are explicit: source EPUB/audiobook; corpus/plan/transcript; alignment; review report; encoded audio/descriptor; candidate/effective alignment; and validation report. The runner rejects a stage mismatch or a review request outside Review Audio before finalization and checkpointing.
+
+Stage completion writes a version-2 JSON `.artifacts` manifest with typed output roles, byte lengths and SHA-256 contents. The full manifest is flushed and atomically replaced only after every required nonempty file has been inspected. Resume rehashes the contiguous reusable prefix with cancellation checks, rejects missing/changed/conflicting outputs and invalid or old line-list manifests, and rewinds from the first invalid stage. The new format intentionally rebuilds older unsealed work rather than assigning unverified hashes to it. Review completion seals the edited report before continuing, so durable manual decisions remain reusable.
+
+`ValidatedEpub` can only be created by independent structural validation with matching content hashes before and after the audit. Publication consumes that proof, streams and hashes a uniquely owned sibling staging file, flushes it, records a job-owned `publication.json` intent, and commits complete bytes without overwriting an existing path. Windows uses a same-directory `MoveFileExW` rename without the replace/cross-volume-copy flags; non-Windows uses an exclusive hard link and fails safely on filesystems without support. No new runtime dependency is introduced.
+
+Validate always reruns on resume. An existing output is accepted only when its bytes and destination match the current validated candidate and the saved job-owned intent. A missing output is republished; a modified or unrelated output is preserved and fails validation/publication. Cancellation before commit leaves no output, while cancellation after commit reports success. A force termination can leave a unique staging file; later attempts neither trust it nor delete another attempt's staging name.
+
+The failure-boundary regressions inject interruptions before/after intent and after commit; they are application/process-boundary checks, not a storage-device power-loss simulation. A real builder/validator/worker-resume fixture additionally verifies that all seven cached checkpoints cannot bypass external publication checks. Native Windows validation for this R3 implementation is pending.
+
 ## Whistle contract
 
 - Model: `whistle.cact`, 16.9 MB, native CPU inference through the Needle 3.1.0 runtime.
@@ -46,7 +58,7 @@ English-only mode removes application language options and detection routing. Th
 | R0 — Preserve contracts and establish application boundary | Validated on Windows | Existing queue, review, recovery and EPUB regressions pass; Slint compiles |
 | R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
 | R2 — Own lifecycle in the application | Validated on Windows | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
-| R3 — Make stage artifacts and publication explicit | Planned | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
+| R3 — Make stage artifacts and publication explicit | Implemented; Windows checkpoint pending | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
 | R4 — Reduce UI and review coupling | In progress | Snapshot rendering and durable decisions moved; remaining preview/evidence migration, layout/usability optimization and 820×620 visual acceptance |
 | R5 — Validate complete books and release | Planned | Representative long English audiobooks, difficult speech cuts, accuracy/timing review, reader interoperability and full Windows packaging |
 

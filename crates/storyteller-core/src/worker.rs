@@ -101,10 +101,14 @@ pub fn spawn_pipeline_worker<B: PipelineBackend>(
 ) -> Result<PipelineWorkerHandle, String> {
     resume_context.validate()?;
     spawn_worker(job, move |job, cancellation, sender| {
-        let validated_resume = match apply_validated_resume(job, &workspace, &resume_context) {
-            Ok(plan) => plan,
-            Err(error) => return finish_preflight_failure(job, sender, error),
-        };
+        let validated_resume =
+            match apply_validated_resume(job, &workspace, &resume_context, cancellation) {
+                Ok(plan) => plan,
+                Err(_) if cancellation.is_requested() => {
+                    return finish_preflight_cancelled(job, sender)
+                }
+                Err(error) => return finish_preflight_failure(job, sender, error),
+            };
         job.progress
             .set_activity(resume_activity(&validated_resume))?;
         let _ = sender.send(job.clone());
@@ -160,10 +164,14 @@ pub fn spawn_pipeline_worker_with_preflight<B: PipelineBackend>(
                 return Ok(PipelineRunState::Failed(error));
             }
         };
-        let validated_resume = match apply_validated_resume(job, &workspace, &resume_context) {
-            Ok(plan) => plan,
-            Err(error) => return finish_preflight_failure(job, sender, error),
-        };
+        let validated_resume =
+            match apply_validated_resume(job, &workspace, &resume_context, cancellation) {
+                Ok(plan) => plan,
+                Err(_) if cancellation.is_requested() => {
+                    return finish_preflight_cancelled(job, sender)
+                }
+                Err(error) => return finish_preflight_failure(job, sender, error),
+            };
         job.progress
             .set_activity(resume_activity(&validated_resume))?;
         let _ = sender.send(job.clone());
@@ -187,12 +195,23 @@ fn apply_validated_resume(
     job: &mut Job,
     workspace: &JobWorkspace,
     resume_context: &ResumeContext,
+    cancellation: &CancellationToken,
 ) -> Result<ValidatedResumePlan, String> {
     job.invalidate_stale_cache(resume_context)?;
     let resume_plan = job.resume_plan(resume_context)?;
-    let validated = workspace.validate_resume_plan(&resume_plan);
+    let validated = workspace.validate_resume_plan(&resume_plan, cancellation)?;
     job.apply_validated_resume_plan(&validated)?;
     Ok(validated)
+}
+
+fn finish_preflight_cancelled(
+    job: &mut Job,
+    sender: &mpsc::Sender<Job>,
+) -> Result<PipelineRunState, String> {
+    job.progress.set_activity("Resume verification cancelled")?;
+    job.finish(JobOutcome::Cancelled, 0)?;
+    let _ = sender.send(job.clone());
+    Ok(PipelineRunState::Cancelled)
 }
 
 fn resume_activity(plan: &ValidatedResumePlan) -> String {
@@ -301,9 +320,23 @@ mod tests {
     fn capture_artifact(workspace: &JobWorkspace, stage: PipelineStage, name: &str) {
         let stage_dir = workspace.stage_dir(stage);
         fs::create_dir_all(&stage_dir).unwrap();
-        fs::write(stage_dir.join(name), b"artifact").unwrap();
+        let artifacts = match stage {
+            PipelineStage::Prepare => crate::StageArtifacts::Prepare {
+                epub: name.into(),
+                audiobook: "audio.bin".into(),
+            },
+            PipelineStage::Analyze => crate::StageArtifacts::Analyze {
+                corpus: "corpus.json".into(),
+                plan: "plan.json".into(),
+                transcript: name.into(),
+            },
+            _ => panic!("unexpected test stage"),
+        };
+        for path in artifacts.paths() {
+            fs::write(stage_dir.join(path), b"artifact").unwrap();
+        }
         workspace
-            .capture_stage_artifacts(stage, &[PathBuf::from(name)])
+            .capture_stage_artifacts(stage, &artifacts, &CancellationToken::default())
             .unwrap();
     }
 
@@ -317,7 +350,13 @@ mod tests {
         let workspace = temp_workspace();
         capture_artifact(&workspace, PipelineStage::Prepare, "prepared.bin");
 
-        let validated = apply_validated_resume(&mut job, &workspace, &context).unwrap();
+        let validated = apply_validated_resume(
+            &mut job,
+            &workspace,
+            &context,
+            &CancellationToken::default(),
+        )
+        .unwrap();
         assert_eq!(validated.reusable(), &[PipelineStage::Prepare]);
         assert_eq!(
             validated.invalid().map(|invalid| invalid.stage),
@@ -352,7 +391,13 @@ mod tests {
 
         let mut changed = context.clone();
         changed.transcription_backend = "whistle:two".into();
-        let validated = apply_validated_resume(&mut job, &workspace, &changed).unwrap();
+        let validated = apply_validated_resume(
+            &mut job,
+            &workspace,
+            &changed,
+            &CancellationToken::default(),
+        )
+        .unwrap();
 
         assert_eq!(validated.reusable(), &[PipelineStage::Prepare]);
         assert!(validated.invalid().is_none());

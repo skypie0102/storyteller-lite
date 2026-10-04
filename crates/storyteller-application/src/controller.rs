@@ -221,6 +221,7 @@ impl ApplicationController {
                         report.pending_count()
                     ));
                 }
+                review_service::seal_review(job)?;
                 self.queue.resume_after_review(id)?;
                 Some("Audio review complete; continuing.".into())
             }
@@ -230,6 +231,7 @@ impl ApplicationController {
                     &review_service::audio_review_path(job),
                     &review_service::audio_review_draft_path(job),
                 )?;
+                review_service::seal_review(job)?;
                 self.queue.resume_after_review(id)?;
                 Some("Review accepted; continuing.".into())
             }
@@ -573,8 +575,8 @@ mod tests {
     use storyteller_core::{
         spawn_pipeline_worker, AudioReviewDecisionSource, AudioReviewItem, AudioReviewReport,
         HardwareProfile, JobWorkspace, PipelineBackend, PipelineStage, QueueState, ResourceRequest,
-        ResourceScheduler, ResumeContext, RuntimeCoordinator, StagePlan, StageRunContext,
-        StageRunError, StageRunOutput,
+        ResourceScheduler, ResumeContext, RuntimeCoordinator, StageArtifacts, StagePlan,
+        StageRunContext, StageRunError, StageRunOutput,
     };
 
     struct TestRoot(PathBuf);
@@ -848,7 +850,17 @@ mod tests {
         })
         .unwrap();
         assert!(workspace.join("review-draft.json").is_file());
+        assert!(!workspace.join("review-audio").join(".artifacts").exists());
         app.dispatch(ApplicationCommand::FinishReview(id)).unwrap();
+        let sealed: serde_json::Value = serde_json::from_slice(
+            &fs::read(workspace.join("review-audio").join(".artifacts")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(sealed["outputs"]["stage"], "review_audio");
+        assert!(sealed["files"][0]["sha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
         assert_eq!(
             app.snapshot().queue.job(id).unwrap().status,
             JobStatus::Running
@@ -880,7 +892,39 @@ mod tests {
                 .unwrap()
                 .is_complete()
         );
+        assert!(workspace.join("review-audio").join(".artifacts").is_file());
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    fn test_artifacts(stage: PipelineStage) -> StageArtifacts {
+        match stage {
+            PipelineStage::Prepare => StageArtifacts::Prepare {
+                epub: "source.epub".into(),
+                audiobook: "audiobook.m4b".into(),
+            },
+            PipelineStage::Analyze => StageArtifacts::Analyze {
+                corpus: "corpus.json".into(),
+                plan: "plan.json".into(),
+                transcript: "transcript.json".into(),
+            },
+            PipelineStage::Align => StageArtifacts::Align {
+                alignment: "alignment.json".into(),
+            },
+            PipelineStage::ReviewAudio => StageArtifacts::ReviewAudio {
+                report: "review.json".into(),
+            },
+            PipelineStage::Encode => StageArtifacts::Encode {
+                audio: "audio.m4b".into(),
+                descriptor: "encoded-audio.json".into(),
+            },
+            PipelineStage::BuildEpub => StageArtifacts::BuildEpub {
+                candidate: "readaloud.epub".into(),
+                effective_alignment: "effective-alignment.json".into(),
+            },
+            PipelineStage::Validate => StageArtifacts::Validate {
+                report: "validation.json".into(),
+            },
+        }
     }
 
     struct TestBackend {
@@ -918,8 +962,11 @@ mod tests {
             }
             let dir = context.workspace().stage_dir(context.stage());
             fs::create_dir_all(&dir).unwrap();
-            fs::write(dir.join("artifact.txt"), context.stage().label()).unwrap();
-            let output = StageRunOutput::new(vec![PathBuf::from("artifact.txt")], 1, 1);
+            let artifacts = test_artifacts(context.stage());
+            for path in artifacts.paths() {
+                fs::write(dir.join(path), context.stage().label()).unwrap();
+            }
+            let output = StageRunOutput::new(artifacts, 1, 1);
             Ok(
                 if self.require_review && context.stage() == PipelineStage::ReviewAudio {
                     output.requiring_review()
