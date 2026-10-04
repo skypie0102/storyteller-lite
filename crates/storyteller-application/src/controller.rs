@@ -1284,7 +1284,9 @@ mod tests {
                 .send(RuntimeEvent::Progress("Checking pinned assets".into()))
                 .unwrap();
             sender
-                .send(RuntimeEvent::Finished(Box::new(Ok(RuntimeStatus::default()))))
+                .send(RuntimeEvent::Finished(Box::new(Ok(
+                    RuntimeStatus::default(),
+                ))))
                 .unwrap();
         });
         app.runtime_task = Some(RuntimeTask {
