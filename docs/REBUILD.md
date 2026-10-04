@@ -7,10 +7,24 @@ The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and 
 | Layer | Responsibility | Dependencies |
 |---|---|---|
 | `storyteller-core` | Job rules, queue, cancellation, resume fingerprints, normalized transcripts, conservative alignment, review decisions, EPUB construction and validation | Rust libraries; no Slint |
-| `storyteller-application` | Runtime discovery/acquisition, isolated Whistle processes, FFmpeg conversion, chunk orchestration, stage execution and workspace paths | Core; no Slint |
-| `storyteller-ui` | File selection, queue presentation, review interaction and application event polling | Application and core |
+| `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated Whistle processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
+| `storyteller-ui` | File selection, snapshot presentation, review selection/navigation and application command dispatch | Application and core |
 
-The first milestone moves the existing pipeline implementation behind the application boundary. Queue ownership and some review operations still live in the UI bridge; their migration is an explicit later milestone, not an architectural claim already completed.
+The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review evidence/candidate discovery and audio preview still have UI-side implementation, with further migration and visual optimization tracked under R4.
+
+## Application controller scaffold
+
+`ApplicationController` provides one command interface for enqueue, pause after the current book, resume, cancel, reorder, remove, retry from scratch, finish review, explicit pending-audio exclusion, individual review decisions and dependency setup. It owns the processing worker and applies final results before permitting conflicting commands for that book.
+
+- Startup recovery loads before any new enqueue command. Recovered books remain paused.
+- Explicit commands and worker completion save recovery immediately; progress saves are dirty-only and throttled to one second. Idle polling performs no recovery writes.
+- Worker startup failure marks that book failed and advances to the next waiting book on the next poll. Pause-after-current still takes precedence.
+- Closing saves interrupted work before requesting cancellation and joining the processing worker. That saved work restores as Waiting; closing is distinct from an explicit Cancel command.
+- Durable text/image/exclusion/edge decisions and review completion checks execute in the application. Stale job IDs cannot change another book's review.
+- Dependency scans and downloads run on an application-owned background thread, keeping model hashing and probing for Settings off the UI thread.
+- Borrowed snapshots have separate queue and runtime revisions. Unchanged polls do not rebuild the main view or re-read review reports. Queue/stage models update changed rows; progress no longer resets the whole queue model. Queue buttons require both source selections.
+
+Twelve controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. Native Windows validation is pending for this scaffold; the earlier Whistle checkpoint below predates it.
 
 ## Whistle contract
 
@@ -31,9 +45,9 @@ English-only mode removes application language options and detection routing. Th
 |---|---|---|
 | R0 — Preserve contracts and establish application boundary | Validated on Windows | Existing queue, review, recovery and EPUB regressions pass; Slint compiles |
 | R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
-| R2 — Own lifecycle in the application | Planned | One command/event interface owns start, pause, cancel, review and resume; UI cannot bypass transition rules |
+| R2 — Own lifecycle in the application | Implemented; Windows validation pending | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
 | R3 — Make stage artifacts and publication explicit | Planned | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
-| R4 — Reduce UI and review coupling | Planned | UI consumes snapshots, application owns durable decisions and lazy evidence; 820×620 behavior preserved |
+| R4 — Reduce UI and review coupling | In progress | Snapshot rendering and durable decisions moved; remaining preview/evidence migration, layout/usability optimization and 820×620 visual acceptance |
 | R5 — Validate complete books and release | Planned | Representative long English audiobooks, difficult speech cuts, accuracy/timing review, reader interoperability and full Windows packaging |
 
 Native smoke tests establish integration correctness, not a quality or speed advantage over the released large-v3-turbo implementation. Cactus’s published M4 Pro comparison against Whisper base is not a Windows audiobook benchmark. R5 must measure representative books before release.

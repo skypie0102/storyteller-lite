@@ -76,6 +76,7 @@ export component AppWindow inherits Window {
 
     private property <bool> compact-layout: root.width < 900px;
     private property <bool> short-layout: root.height < 700px;
+    private property <bool> sources-ready: root.epub-source-name != "" && root.audio-source-name != "";
 
     in-out property <string> status-text: "Ready";
     in-out property <string> epub-source-name: "";
@@ -263,7 +264,7 @@ export component AppWindow inherits Window {
                     current-index: root.unmatched-audio-policy-text == "Review all" ? 1 : 0;
                     selected(value) => { root.unmatched-audio-policy-text = value; }
                 }
-                Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
+                Button { text: "Queue Book"; primary: true; enabled: root.sources-ready; clicked => { root.queue-book(); } }
             }
 
             if root.compact-layout : VerticalBox {
@@ -294,7 +295,7 @@ export component AppWindow inherits Window {
                         selected(value) => { root.unmatched-audio-policy-text = value; }
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    Button { text: "Queue Book"; primary: true; clicked => { root.queue-book(); } }
+                    Button { text: "Queue Book"; primary: true; enabled: root.sources-ready; clicked => { root.queue-book(); } }
                 }
             }
         }
@@ -336,7 +337,7 @@ export component AppWindow inherits Window {
                     selected(value) => { root.unmatched-audio-policy-text = value; }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+                Button { text: "Queue"; primary: true; enabled: root.sources-ready; clicked => { root.queue-book(); } }
             }
         }
 
@@ -388,7 +389,7 @@ export component AppWindow inherits Window {
                         selected(value) => { root.unmatched-audio-policy-text = value; }
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    Button { text: "Queue"; primary: true; clicked => { root.queue-book(); } }
+                    Button { text: "Queue"; primary: true; enabled: root.sources-ready; clicked => { root.queue-book(); } }
                 }
             }
         }

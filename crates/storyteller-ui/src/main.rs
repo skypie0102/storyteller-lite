@@ -2,20 +2,23 @@ mod review_ui;
 mod worker_bridge;
 
 use rfd::FileDialog;
-use slint::{ComponentHandle, TimerMode, VecModel};
+use slint::{ComponentHandle, Model, TimerMode, VecModel};
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
     rc::Rc,
     time::Duration,
 };
+use storyteller_application::{ApplicationCommand, ApplicationController};
 use storyteller_core::{
-    AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobOutcome,
-    JobQueue, JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
+    AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobQueue,
+    JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
 };
-use worker_bridge::{accept_audio_review_exclusion, load_audio_review_report, WorkerBridge};
+use worker_bridge::{load_audio_review_report, ViewBridge};
 
 slint::include_modules!();
+
+pub(crate) type SharedApplication = Rc<RefCell<ApplicationController>>;
 
 #[derive(Debug, Default)]
 struct PendingSources {
@@ -26,12 +29,12 @@ struct PendingSources {
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
     let pending = Rc::new(RefCell::new(PendingSources::default()));
-    let queue = Rc::new(RefCell::new(JobQueue::default()));
+    let app = Rc::new(RefCell::new(ApplicationController::new()));
     let queue_rows = Rc::new(VecModel::<QueueRow>::default());
     let stage_rows = Rc::new(VecModel::<StageRow>::default());
     let detail_stage_rows = Rc::new(VecModel::<StageDetailRow>::default());
-    let worker_bridge = Rc::new(RefCell::new(WorkerBridge::default()));
-    let review_ui_controller = review_ui::install_review_ui(&ui, Rc::clone(&queue));
+    let view_bridge = Rc::new(RefCell::new(ViewBridge::default()));
+    let review_ui_controller = review_ui::install_review_ui(&ui, Rc::clone(&app));
     ui.set_queue_rows(queue_rows.clone().into());
     ui.set_active_stages(stage_rows.clone().into());
     ui.set_active_stage_details(detail_stage_rows.clone().into());
@@ -55,7 +58,6 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-
     {
         let pending = Rc::clone(&pending);
         let ui_weak = ui.as_weak();
@@ -78,387 +80,182 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-
     {
         let pending = Rc::clone(&pending);
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_queue_book(move || {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
-
-            let (epub_path, audiobook_path) = {
-                let pending = pending.borrow();
-                let Some(epub_path) = pending.epub.clone() else {
-                    ui.set_status_text("Choose an EPUB first".into());
-                    return;
-                };
-                let Some(audiobook_path) = pending.audiobook.clone() else {
-                    ui.set_status_text("Choose an audiobook first".into());
-                    return;
-                };
-                (epub_path, audiobook_path)
-            };
-
-            let codec = ui.get_codec_text().to_string();
-            let bitrate = ui.get_bitrate_text().to_string();
-            let audio = match audio_encoding(&codec, &bitrate) {
-                Ok(audio) => audio,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let workers_text = ui.get_transcription_workers_text().to_string();
-            let transcription_workers = match parse_transcription_workers(&workers_text) {
-                Ok(workers) => workers,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let audio_review_policy =
-                match parse_audio_review_policy(ui.get_unmatched_audio_policy_text().as_str()) {
-                    Ok(policy) => policy,
-                    Err(error) => {
-                        ui.set_status_text(error.into());
-                        return;
-                    }
-                };
-            let title = book_title(&epub_path);
-            let output_path = output_path(&epub_path, &title);
-            let settings = JobSettings {
-                audio,
-                audio_review_policy,
-                transcription_workers,
-                ..JobSettings::default()
-            };
-            let job = match Job::new(
-                JobInputs {
-                    title: title.clone(),
+            let result = (|| {
+                let sources = pending.borrow();
+                let epub_path = sources.epub.clone().ok_or("Choose an EPUB first")?;
+                let audiobook_path = sources
+                    .audiobook
+                    .clone()
+                    .ok_or("Choose an audiobook first")?;
+                let title = book_title(&epub_path);
+                let inputs = JobInputs {
+                    output_path: output_path(&epub_path, &title),
+                    title,
                     epub_path,
                     audiobook_path,
-                    output_path,
-                },
-                settings,
-            ) {
-                Ok(job) => job,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
+                };
+                let settings = JobSettings {
+                    audio: audio_encoding(
+                        ui.get_codec_text().as_str(),
+                        ui.get_bitrate_text().as_str(),
+                    )?,
+                    transcription_workers: parse_transcription_workers(
+                        ui.get_transcription_workers_text().as_str(),
+                    )?,
+                    audio_review_policy: parse_audio_review_policy(
+                        ui.get_unmatched_audio_policy_text().as_str(),
+                    )?,
+                    ..JobSettings::default()
+                };
+                Ok::<_, String>(ApplicationCommand::Enqueue { inputs, settings })
+            })();
+            match result {
+                Ok(command) => {
+                    if dispatch_command(&ui, &app, command) {
+                        ui.set_epub_source_name("".into());
+                        ui.set_audio_source_name("".into());
+                        *pending.borrow_mut() = PendingSources::default();
+                    }
                 }
-            };
-
-            let start_result = {
-                let mut queue = queue.borrow_mut();
-                queue.enqueue(job);
-                queue.start_next()
-            };
-            if let Err(error) = start_result {
-                ui.set_status_text(error.into());
-                return;
+                Err(error) => ui.set_status_text(error.into()),
             }
-
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            ui.set_epub_source_name("".into());
-            ui.set_audio_source_name("".into());
-            *pending.borrow_mut() = PendingSources::default();
         });
     }
 
-    {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
-        let ui_weak = ui.as_weak();
-        ui.on_pause_after_book(move || {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            queue.borrow_mut().request_pause_after_current();
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-        });
+    macro_rules! bind_command {
+        ($callback:ident, $command:expr) => {{
+            let app = Rc::clone(&app);
+            let ui_weak = ui.as_weak();
+            ui.$callback(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    dispatch_command(&ui, &app, $command);
+                }
+            });
+        }};
     }
-
+    bind_command!(on_pause_after_book, ApplicationCommand::PauseAfterCurrent);
+    bind_command!(on_cancel_current, ApplicationCommand::CancelActive);
+    bind_command!(on_resume_queue, ApplicationCommand::ResumeQueue);
     {
-        let worker_bridge = Rc::clone(&worker_bridge);
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
-        let ui_weak = ui.as_weak();
-        ui.on_cancel_current(move || {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            if worker_bridge.borrow().request_cancellation() {
-                ui.set_status_text("Cancellation requested".into());
-                return;
-            }
-
-            let review_job = {
-                queue
-                    .borrow()
-                    .active_job()
-                    .filter(|job| job.status == JobStatus::NeedsReview)
-                    .map(|job| (job.id, elapsed_stage_seconds(job)))
-            };
-            let Some((job_id, runtime_seconds)) = review_job else {
-                ui.set_status_text("Active worker is not ready to cancel".into());
-                return;
-            };
-            let result = {
-                let mut queue = queue.borrow_mut();
-                queue
-                    .finish(job_id, JobOutcome::Cancelled, runtime_seconds)
-                    .and_then(|()| queue.start_next().map(|_| ()))
-            };
-            if let Err(error) = result {
-                ui.set_status_text(error.into());
-                return;
-            }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            ui.set_status_text("Cancelled".into());
-        });
-    }
-
-    {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_continue_after_review(move || {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
-            let review_job = {
-                queue
-                    .borrow()
-                    .active_job()
-                    .filter(|job| job.status == JobStatus::NeedsReview)
-                    .cloned()
-            };
-            let Some(job) = review_job else {
+            let id = app
+                .borrow()
+                .snapshot()
+                .queue
+                .active_job()
+                .filter(|job| job.status == JobStatus::NeedsReview)
+                .map(|job| job.id);
+            if let Some(id) = id {
+                dispatch_command(&ui, &app, ApplicationCommand::ContinueWithoutUnmatched(id));
+            } else {
                 ui.set_status_text("No book is waiting for audio review".into());
-                return;
-            };
-            if let Err(error) = accept_audio_review_exclusion(&job) {
-                ui.set_status_text(error.into());
-                return;
-            }
-            if let Err(error) = queue.borrow_mut().resume_after_review(job.id) {
-                ui.set_status_text(error.into());
-                return;
-            }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            ui.set_status_text("Review accepted; continuing".into());
-        });
-    }
-
-    {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
-        let ui_weak = ui.as_weak();
-        ui.on_resume_queue(move || {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let start_result = {
-                let mut queue = queue.borrow_mut();
-                queue.resume();
-                queue.start_next()
-            };
-            if let Err(error) = start_result {
-                ui.set_status_text(error.into());
-                return;
-            }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            if queue.borrow().active_job().is_none() {
-                ui.set_status_text("Queue resumed".into());
             }
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_move_waiting(move |id, up| {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let id = match parse_job_id(id.as_str()) {
-                Ok(id) => id,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let direction = if up { QueueMove::Up } else { QueueMove::Down };
-            if let Err(error) = queue.borrow_mut().move_waiting(id, direction) {
-                ui.set_status_text(error.into());
-                return;
+            if let Some(ui) = ui_weak.upgrade() {
+                dispatch_job_command(&ui, &app, id.as_str(), |id| {
+                    ApplicationCommand::MoveWaiting {
+                        id,
+                        direction: if up { QueueMove::Up } else { QueueMove::Down },
+                    }
+                });
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_remove_job(move |id| {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let id = match parse_job_id(id.as_str()) {
-                Ok(id) => id,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            if let Err(error) = queue.borrow_mut().remove(id) {
-                ui.set_status_text(error.into());
-                return;
+            if let Some(ui) = ui_weak.upgrade() {
+                dispatch_job_command(&ui, &app, id.as_str(), ApplicationCommand::Remove);
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_retry_from_start(move |id| {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let id = match parse_job_id(id.as_str()) {
-                Ok(id) => id,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let retry_result = {
-                let mut queue = queue.borrow_mut();
-                queue
-                    .retry_from_scratch(id)
-                    .and_then(|()| queue.start_next().map(|_| ()))
-            };
-            if let Err(error) = retry_result {
-                ui.set_status_text(error.into());
-                return;
+            if let Some(ui) = ui_weak.upgrade() {
+                dispatch_job_command(&ui, &app, id.as_str(), ApplicationCommand::RetryFromScratch);
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
         });
     }
-
-    ui.on_open_settings(|| {
-        println!("Settings requested");
-    });
 
     let poll_timer = slint::Timer::default();
     {
-        let worker_bridge = Rc::clone(&worker_bridge);
-        let queue = Rc::clone(&queue);
+        let app = Rc::clone(&app);
+        let view_bridge = Rc::clone(&view_bridge);
         let queue_rows = Rc::clone(&queue_rows);
         let stage_rows = Rc::clone(&stage_rows);
         let detail_stage_rows = Rc::clone(&detail_stage_rows);
         let review_ui_controller = Rc::clone(&review_ui_controller);
         let ui_weak = ui.as_weak();
         poll_timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
-            worker_bridge.borrow_mut().poll(
+            let queue_changed = view_bridge.borrow_mut().poll(
                 &ui_weak,
-                &queue,
+                &app,
                 &queue_rows,
                 &stage_rows,
                 &detail_stage_rows,
             );
-            review_ui::refresh_review_ui(&ui_weak, &queue, &review_ui_controller);
+            if queue_changed {
+                review_ui::refresh_review_ui(&ui_weak, &app, &review_ui_controller);
+            }
         });
     }
-
-    refresh_main_view(
-        &ui,
-        &queue.borrow(),
-        &queue_rows,
-        &stage_rows,
-        &detail_stage_rows,
-    );
-    review_ui::refresh_review_ui(&ui.as_weak(), &queue, &review_ui_controller);
+    view_bridge
+        .borrow_mut()
+        .render(&ui, &app, &queue_rows, &stage_rows, &detail_stage_rows);
+    review_ui::refresh_review_ui(&ui.as_weak(), &app, &review_ui_controller);
     let result = ui.run();
     poll_timer.stop();
+    app.borrow_mut().shutdown();
     result
 }
 
-fn display_name(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+pub(crate) fn dispatch_command(
+    ui: &AppWindow,
+    app: &SharedApplication,
+    command: ApplicationCommand,
+) -> bool {
+    match app.borrow_mut().dispatch(command) {
+        Ok(()) => true,
+        Err(error) => {
+            ui.set_status_text(error.into());
+            false
+        }
+    }
+}
+
+fn dispatch_job_command(
+    ui: &AppWindow,
+    app: &SharedApplication,
+    id: &str,
+    command: impl FnOnce(JobId) -> ApplicationCommand,
+) {
+    match parse_job_id(id) {
+        Ok(id) => {
+            dispatch_command(ui, app, command(id));
+        }
+        Err(error) => ui.set_status_text(error.into()),
+    }
 }
 
 fn book_title(epub_path: &Path) -> String {
@@ -471,6 +268,12 @@ fn book_title(epub_path: &Path) -> String {
 
 fn output_path(epub_path: &Path, title: &str) -> PathBuf {
     epub_path.with_file_name(format!("{title} (readaloud).epub"))
+}
+
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 fn parse_job_id(value: &str) -> Result<JobId, String> {
@@ -521,12 +324,12 @@ pub(crate) fn refresh_main_view(
     stage_rows: &VecModel<StageRow>,
     detail_stage_rows: &VecModel<StageDetailRow>,
 ) {
-    queue_rows.set_vec(build_queue_rows(queue));
+    update_model(queue_rows, build_queue_rows(queue));
     ui.set_queue_paused(queue.state() == QueueState::Paused);
 
     let Some(job) = queue.active_job() else {
-        stage_rows.set_vec(Vec::new());
-        detail_stage_rows.set_vec(Vec::new());
+        update_model(stage_rows, Vec::new());
+        update_model(detail_stage_rows, Vec::new());
         ui.set_has_active_job(false);
         ui.set_active_title("".into());
         ui.set_active_overall_progress(0.0);
@@ -542,8 +345,8 @@ pub(crate) fn refresh_main_view(
         return;
     };
 
-    stage_rows.set_vec(build_stage_rows(job));
-    detail_stage_rows.set_vec(build_stage_detail_rows(job));
+    update_model(stage_rows, build_stage_rows(job));
+    update_model(detail_stage_rows, build_stage_detail_rows(job));
     ui.set_has_active_job(true);
     ui.set_active_title(job.inputs.title.clone().into());
     ui.set_active_overall_progress(job.progress.overall_percent() as f32 / 100.0);
@@ -578,6 +381,18 @@ pub(crate) fn refresh_main_view(
         }
         .into(),
     );
+}
+
+fn update_model<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T>) {
+    if model.row_count() != rows.len() {
+        model.set_vec(rows);
+        return;
+    }
+    for (index, row) in rows.into_iter().enumerate() {
+        if model.row_data(index).as_ref() != Some(&row) {
+            model.set_row_data(index, row);
+        }
+    }
 }
 
 fn review_text(job: &Job) -> (String, String) {
@@ -836,7 +651,7 @@ fn format_millis(total_millis: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use storyteller_core::{LiveMetrics, PipelineStage};
+    use storyteller_core::{JobOutcome, LiveMetrics, PipelineStage};
 
     fn sample_job(title: &str) -> Job {
         Job::new(

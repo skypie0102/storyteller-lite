@@ -1,4 +1,4 @@
-use crate::{worker_bridge, AppWindow, ReviewCandidateRow};
+use crate::{worker_bridge, AppWindow, ReviewCandidateRow, SharedApplication};
 use slint::{ComponentHandle, VecModel};
 use std::{
     cell::RefCell,
@@ -7,13 +7,12 @@ use std::{
     process::{Child, Command, Stdio},
     rc::Rc,
 };
+use storyteller_application::ApplicationCommand;
 use storyteller_core::{
-    apply_audio_review_decision, assign_manual_graphic_readout, prepared_job_sources,
-    read_epub_corpus, review_image_candidates, review_text_candidates, AlignmentDocument,
-    AlignmentStatus, AudioReviewClassification, AudioReviewDecision, AudioReviewDecisionSource,
-    AudioReviewDestination, AudioReviewEdge, AudioReviewItem, AudioReviewSupplementalPlacement,
-    CancellationToken, Job, JobId, JobQueue, JobStatus, PipelineStage,
-    DEFAULT_REVIEW_CANDIDATE_LIMIT, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
+    prepared_job_sources, read_epub_corpus, review_image_candidates, review_text_candidates,
+    AlignmentDocument, AudioReviewDecision, AudioReviewDecisionSource, AudioReviewDestination,
+    AudioReviewEdge, AudioReviewItem, CancellationToken, Job, JobId, JobQueue, JobStatus,
+    PipelineStage, DEFAULT_REVIEW_CANDIDATE_LIMIT, DEFAULT_REVIEW_IMAGE_DOCUMENT_LIMIT,
     DEFAULT_REVIEW_IMAGE_LIMIT,
 };
 
@@ -56,7 +55,7 @@ impl Drop for ReviewUiController {
 
 pub(crate) fn install_review_ui(
     ui: &AppWindow,
-    queue: Rc<RefCell<JobQueue>>,
+    queue: SharedApplication,
 ) -> Rc<RefCell<ReviewUiController>> {
     let controller = Rc::new(RefCell::new(ReviewUiController::new()));
     ui.set_review_candidates(controller.borrow().candidates.clone().into());
@@ -75,7 +74,7 @@ pub(crate) fn install_review_ui(
                 controller.seek_ms = 0;
                 controller.stop_preview();
             }
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -88,7 +87,7 @@ pub(crate) fn install_review_ui(
                 return;
             };
             let mut controller = controller.borrow_mut();
-            if let Some(job) = review_job(&queue.borrow()) {
+            if let Some(job) = review_job(queue.borrow().snapshot().queue) {
                 if let Ok(report) = worker_bridge::load_audio_review_report(job) {
                     if controller.selected_index + 1 < report.unmatched.len() {
                         controller.selected_index += 1;
@@ -97,7 +96,7 @@ pub(crate) fn install_review_ui(
                     }
                 }
             }
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -110,7 +109,7 @@ pub(crate) fn install_review_ui(
                 return;
             };
             let mut controller = controller.borrow_mut();
-            if let Some(job) = review_job(&queue.borrow()) {
+            if let Some(job) = review_job(queue.borrow().snapshot().queue) {
                 if let Ok(report) = worker_bridge::load_audio_review_report(job) {
                     if let Some(item) = report.unmatched.get(controller.selected_index) {
                         let duration = item.audio_end_ms.saturating_sub(item.audio_start_ms);
@@ -121,7 +120,7 @@ pub(crate) fn install_review_ui(
                 }
             }
             controller.stop_preview();
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -135,7 +134,7 @@ pub(crate) fn install_review_ui(
             };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
-            let result = review_job(&queue.borrow())
+            let result = review_job(queue.borrow().snapshot().queue)
                 .ok_or_else(|| "No book is waiting for audio review.".to_string())
                 .and_then(|job| play_selected(job, &mut controller));
             match result {
@@ -166,80 +165,55 @@ pub(crate) fn install_review_ui(
             };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
-            let is_graphic = line_index < 0;
-            let result = review_job(&queue.borrow())
-                .ok_or_else(|| "No book is waiting for audio review.".to_string())
-                .and_then(|job| {
-                    let report = worker_bridge::load_audio_review_report(job)?;
-                    let item = report
-                        .unmatched
-                        .get(controller.selected_index)
-                        .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
-                    if line_index >= 0 {
-                        let line_index = usize::try_from(line_index)
-                            .map_err(|_| "EPUB text-block index is invalid.".to_string())?;
-                        return apply_audio_review_decision(
-                            &worker_bridge::audio_review_path(job),
-                            &worker_bridge::audio_review_draft_path(job),
-                            &item.id,
-                            AudioReviewDecision::Assigned {
-                                destination: AudioReviewDestination {
-                                    href: href.to_string(),
-                                    line_index: Some(line_index),
-                                    image_href: None,
-                                    supplemental: None,
-                                },
-                                classification: None,
-                                source: AudioReviewDecisionSource::Manual,
+            let command = (|| {
+                let app = queue.borrow();
+                let job = review_job(app.snapshot().queue)
+                    .ok_or_else(|| "No book is waiting for audio review.".to_string())?;
+                let report = worker_bridge::load_audio_review_report(job)?;
+                let item = report
+                    .unmatched
+                    .get(controller.selected_index)
+                    .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
+                if line_index >= 0 {
+                    let line_index = usize::try_from(line_index)
+                        .map_err(|_| "EPUB text-block index is invalid.".to_string())?;
+                    return Ok(ApplicationCommand::SaveReviewDecision {
+                        id: job.id,
+                        item_id: item.id.clone(),
+                        decision: AudioReviewDecision::Assigned {
+                            destination: AudioReviewDestination {
+                                href: href.to_string(),
+                                line_index: Some(line_index),
+                                image_href: None,
+                                supplemental: None,
                             },
-                        );
-                    }
-
-                    let image_index = image_candidate_index(line_index)?;
-                    let image_candidates = load_image_candidates(job, item.alignment_index)?;
-                    let candidate = image_candidates
-                        .get(image_index)
-                        .ok_or_else(|| "Selected EPUB image candidate is stale.".to_string())?;
-                    if candidate.document_href != href.as_str() {
-                        return Err(
-                            "Selected EPUB image candidate changed; choose it again.".into()
-                        );
-                    }
-                    let workspace = worker_bridge::job_workspace(job);
-                    let prepared = prepared_job_sources(job, &workspace)?;
-                    let alignment_path = workspace
-                        .stage_dir(PipelineStage::Align)
-                        .join("alignment.json");
-                    let corpus_path = workspace
-                        .stage_dir(PipelineStage::Analyze)
-                        .join("book-corpus.json");
-                    assign_manual_graphic_readout(
-                        prepared.epub(),
-                        &alignment_path,
-                        &corpus_path,
-                        &worker_bridge::audio_review_path(job),
-                        &worker_bridge::audio_review_draft_path(job),
-                        &item.id,
-                        &candidate.document_href,
-                        &candidate.image_href,
-                        &CancellationToken::default(),
-                    )
-                });
-            match result {
+                            classification: None,
+                            source: AudioReviewDecisionSource::Manual,
+                        },
+                    });
+                }
+                let image_index = image_candidate_index(line_index)?;
+                let image_candidates = load_image_candidates(job, item.alignment_index)?;
+                let candidate = image_candidates
+                    .get(image_index)
+                    .ok_or_else(|| "Selected EPUB image candidate is stale.".to_string())?;
+                if candidate.document_href != href.as_str() {
+                    return Err("Selected EPUB image candidate changed; choose it again.".into());
+                }
+                Ok(ApplicationCommand::AssignGraphic {
+                    id: job.id,
+                    item_id: item.id.clone(),
+                    document_href: candidate.document_href.clone(),
+                    image_href: candidate.image_href.clone(),
+                })
+            })();
+            match command.and_then(|command| queue.borrow_mut().dispatch(command)) {
                 Ok(()) => {
-                    ui.set_status_text(
-                        if is_graphic {
-                            "Image assigned as a Graphic Readout for this audio segment."
-                        } else {
-                            "Text block assigned to audio segment."
-                        }
-                        .into(),
-                    );
-                    select_next_pending(&queue.borrow(), &mut controller);
+                    select_next_pending(queue.borrow().snapshot().queue, &mut controller);
                 }
                 Err(error) => ui.set_status_text(error.into()),
             }
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -253,43 +227,20 @@ pub(crate) fn install_review_ui(
             };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
-            let result = review_job(&queue.borrow())
-                .ok_or_else(|| "No book is waiting for audio review.".to_string())
-                .and_then(|job| {
-                    let report = worker_bridge::load_audio_review_report(job)?;
-                    let item = report
-                        .unmatched
-                        .get(controller.selected_index)
-                        .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
-                    let (anchor_href, placement, classification) =
-                        edge_page_destination(job, item)?;
-                    apply_audio_review_decision(
-                        &worker_bridge::audio_review_path(job),
-                        &worker_bridge::audio_review_draft_path(job),
-                        &item.id,
-                        AudioReviewDecision::Assigned {
-                            destination: AudioReviewDestination {
-                                href: anchor_href,
-                                line_index: None,
-                                image_href: None,
-                                supplemental: Some(placement),
-                            },
-                            classification: Some(classification),
-                            source: AudioReviewDecisionSource::Manual,
-                        },
-                    )
+            let command =
+                selected_review_item(&queue, controller.selected_index).map(|(id, item)| {
+                    ApplicationCommand::PreserveEdge {
+                        id,
+                        item_id: item.id,
+                    }
                 });
-            match result {
+            match command.and_then(|command| queue.borrow_mut().dispatch(command)) {
                 Ok(()) => {
-                    ui.set_status_text(
-                        "Edge narration will be preserved on a supplemental read-aloud page."
-                            .into(),
-                    );
-                    select_next_pending(&queue.borrow(), &mut controller);
+                    select_next_pending(queue.borrow().snapshot().queue, &mut controller);
                 }
                 Err(error) => ui.set_status_text(error.into()),
             }
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -303,33 +254,25 @@ pub(crate) fn install_review_ui(
             };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
-            let result = review_job(&queue.borrow())
-                .ok_or_else(|| "No book is waiting for audio review.".to_string())
-                .and_then(|job| {
-                    let report = worker_bridge::load_audio_review_report(job)?;
-                    let item = report
-                        .unmatched
-                        .get(controller.selected_index)
-                        .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
-                    apply_audio_review_decision(
-                        &worker_bridge::audio_review_path(job),
-                        &worker_bridge::audio_review_draft_path(job),
-                        &item.id,
-                        AudioReviewDecision::Excluded {
+            let command =
+                selected_review_item(&queue, controller.selected_index).map(|(id, item)| {
+                    ApplicationCommand::SaveReviewDecision {
+                        id,
+                        item_id: item.id,
+                        decision: AudioReviewDecision::Excluded {
                             reason: "User excluded this unmatched audio segment during review."
                                 .into(),
                             source: AudioReviewDecisionSource::Manual,
                         },
-                    )
+                    }
                 });
-            match result {
+            match command.and_then(|command| queue.borrow_mut().dispatch(command)) {
                 Ok(()) => {
-                    ui.set_status_text("Audio segment excluded from synchronization.".into());
-                    select_next_pending(&queue.borrow(), &mut controller);
+                    select_next_pending(queue.borrow().snapshot().queue, &mut controller);
                 }
                 Err(error) => ui.set_status_text(error.into()),
             }
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -343,26 +286,19 @@ pub(crate) fn install_review_ui(
             };
             let mut controller = controller.borrow_mut();
             controller.stop_preview();
-            let result = {
-                let queue_ref = queue.borrow();
-                let job = review_job(&queue_ref)
-                    .ok_or_else(|| "No book is waiting for audio review.".to_string());
-                job.and_then(|job| {
-                    let report = worker_bridge::load_audio_review_report(job)?;
-                    if !report.is_complete() {
-                        return Err(format!(
-                            "Resolve all {} pending review segment(s) before continuing.",
-                            report.pending_count()
-                        ));
-                    }
-                    Ok(job.id)
-                })
-            };
-            match result.and_then(|job_id| queue.borrow_mut().resume_after_review(job_id)) {
+            let id = review_job(queue.borrow().snapshot().queue).map(|job| job.id);
+            let result = id
+                .ok_or_else(|| "No book is waiting for audio review.".to_string())
+                .and_then(|id| {
+                    queue
+                        .borrow_mut()
+                        .dispatch(ApplicationCommand::FinishReview(id))
+                });
+            match result {
                 Ok(()) => ui.set_status_text("Audio review complete; continuing.".into()),
                 Err(error) => ui.set_status_text(error.into()),
             }
-            refresh_for_ui(&ui, &queue.borrow(), &mut controller);
+            refresh_for_ui(&ui, queue.borrow().snapshot().queue, &mut controller);
         });
     }
 
@@ -371,13 +307,17 @@ pub(crate) fn install_review_ui(
 
 pub(crate) fn refresh_review_ui(
     ui_weak: &slint::Weak<AppWindow>,
-    queue: &Rc<RefCell<JobQueue>>,
+    queue: &SharedApplication,
     controller: &Rc<RefCell<ReviewUiController>>,
 ) {
     let Some(ui) = ui_weak.upgrade() else {
         return;
     };
-    refresh_for_ui(&ui, &queue.borrow(), &mut controller.borrow_mut());
+    refresh_for_ui(
+        &ui,
+        queue.borrow().snapshot().queue,
+        &mut controller.borrow_mut(),
+    );
 }
 
 fn refresh_for_ui(ui: &AppWindow, queue: &JobQueue, controller: &mut ReviewUiController) {
@@ -490,6 +430,21 @@ fn clear_review_properties(ui: &AppWindow) {
     ui.set_review_complete(false);
 }
 
+fn selected_review_item(
+    app: &SharedApplication,
+    index: usize,
+) -> Result<(JobId, AudioReviewItem), String> {
+    let app = app.borrow();
+    let job = review_job(app.snapshot().queue)
+        .ok_or_else(|| "No book is waiting for audio review.".to_string())?;
+    let report = worker_bridge::load_audio_review_report(job)?;
+    let item = report
+        .unmatched
+        .get(index)
+        .ok_or_else(|| "Selected review segment no longer exists.".to_string())?;
+    Ok((job.id, item.clone()))
+}
+
 fn review_job(queue: &JobQueue) -> Option<&Job> {
     queue
         .active_job()
@@ -511,67 +466,6 @@ fn select_next_pending(queue: &JobQueue, controller: &mut ReviewUiController) {
     {
         controller.selected_index = index;
         controller.seek_ms = 0;
-    }
-}
-
-fn edge_page_destination(
-    job: &Job,
-    item: &AudioReviewItem,
-) -> Result<
-    (
-        String,
-        AudioReviewSupplementalPlacement,
-        AudioReviewClassification,
-    ),
-    String,
-> {
-    let workspace = worker_bridge::job_workspace(job);
-    let alignment_path = workspace
-        .stage_dir(PipelineStage::Align)
-        .join("alignment.json");
-    let data = std::fs::read(&alignment_path).map_err(|error| {
-        format!(
-            "Could not read alignment map {}: {error}",
-            alignment_path.display()
-        )
-    })?;
-    let alignment: AlignmentDocument = serde_json::from_slice(&data).map_err(|error| {
-        format!(
-            "Could not parse alignment map {}: {error}",
-            alignment_path.display()
-        )
-    })?;
-    match item.edge {
-        Some(AudioReviewEdge::Introduction) => {
-            let href = alignment
-                .segments
-                .iter()
-                .find(|segment| segment.status == AlignmentStatus::Matched)
-                .and_then(|segment| segment.book_start.as_ref())
-                .map(|position| position.href.clone())
-                .ok_or_else(|| "Introduction has no matched EPUB anchor.".to_string())?;
-            Ok((
-                href,
-                AudioReviewSupplementalPlacement::BeforeAnchor,
-                AudioReviewClassification::Introduction,
-            ))
-        }
-        Some(AudioReviewEdge::Credits) => {
-            let href = alignment
-                .segments
-                .iter()
-                .rev()
-                .find(|segment| segment.status == AlignmentStatus::Matched)
-                .and_then(|segment| segment.book_end.as_ref())
-                .map(|position| position.href.clone())
-                .ok_or_else(|| "Credits have no matched EPUB anchor.".to_string())?;
-            Ok((
-                href,
-                AudioReviewSupplementalPlacement::AfterAnchor,
-                AudioReviewClassification::Credits,
-            ))
-        }
-        None => Err("Selected segment is not a leading or trailing edge candidate.".into()),
     }
 }
 

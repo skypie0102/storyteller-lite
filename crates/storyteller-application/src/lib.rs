@@ -5,7 +5,10 @@
 
 mod app_paths;
 mod chunked_transcription;
+mod controller;
 mod pipeline_backend;
+mod recovery_state;
+mod review_service;
 mod runtime_setup;
 
 pub use app_paths::{persistent_app_root, recovery_app_root};
@@ -13,7 +16,9 @@ pub use chunked_transcription::{
     transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, ChunkedTranscriptionProgress,
     ChunkedTranscriptionSummary,
 };
+pub use controller::{ApplicationCommand, ApplicationController, ApplicationSnapshot, RuntimeView};
 pub use pipeline_backend::{job_workspace, spawn_job_worker};
+pub use review_service::{audio_review_draft_path, audio_review_path, load_audio_review_report};
 pub use runtime_setup::{
     configure_runtime_environment, detect_runtime, install_missing_dependencies, RuntimeStatus,
 };
