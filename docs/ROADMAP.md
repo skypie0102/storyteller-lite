@@ -2,7 +2,7 @@
 
 # Storyteller Lite roadmap
 
-> **Active rebuild:** [REBUILD.md](REBUILD.md) defines the reliability rebuild and English-only Whistle default. The user authorized optional Whisper Turbo NVIDIA support, implemented in draft PR #31. Real-GPU and full-book acceptance remain pending before a rebuilt release. The milestone tables below record the released reconstruction baseline.
+> **Active rebuild:** [REBUILD.md](REBUILD.md) defines the reliability rebuild and English-only Whistle default. The user authorized optional Whisper Turbo NVIDIA support, merged into main with PR #31 together with dark/light appearance. Real-GPU and full-book acceptance remain pending before a rebuilt release. The milestone tables below record the released reconstruction baseline.
 
 > **Canonical roadmap.** Read `docs/HANDOFF.md` before substantial work. Live Rust + Slint source on `main` is technical truth; this file records current product scope and pending work.
 
