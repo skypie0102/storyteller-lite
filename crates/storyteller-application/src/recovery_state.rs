@@ -1,25 +1,16 @@
-use crate::app_paths::recovery_app_root;
+use crate::recovery_app_root;
 use std::{
     fs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-use storyteller_core::{read_queue_recovery, write_queue_recovery, JobQueue, QueueRecovery};
 
-pub(crate) fn load_queue() -> Result<QueueRecovery, String> {
-    read_queue_recovery(&recovery_path())
-}
-
-pub(crate) fn save_queue(queue: &JobQueue) -> Result<usize, String> {
-    write_queue_recovery(&recovery_path(), queue)
-}
-
-pub(crate) fn quarantine_queue() -> Result<Option<PathBuf>, String> {
-    quarantine_recovery_candidates(&recovery_path())
-}
-
-fn recovery_path() -> PathBuf {
+pub(crate) fn recovery_path() -> PathBuf {
     recovery_app_root().join("queue-recovery.json")
+}
+
+pub(crate) fn quarantine_queue(path: &Path) -> Result<Option<PathBuf>, String> {
+    quarantine_recovery_candidates(path)
 }
 
 fn backup_recovery_path(path: &Path) -> Result<PathBuf, String> {

@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/storyteller-core",
+    "crates/storyteller-application",
     "crates/storyteller-ui",
 ]
 resolver = "2"

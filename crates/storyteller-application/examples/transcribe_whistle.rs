@@ -1,0 +1,57 @@
+//! Runs the same chunked Whistle adapter used by the desktop pipeline.
+use std::{env, fs, path::PathBuf};
+use storyteller_application::{
+    detect_runtime, transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig,
+};
+use storyteller_core::CancellationToken;
+
+fn main() -> Result<(), String> {
+    let args = env::args_os().skip(1).collect::<Vec<_>>();
+    if !(5..=6).contains(&args.len()) {
+        return Err("Usage: transcribe_whistle AUDIO OUTPUT_DIRECTORY FFMPEG NEEDLE WHISTLE_MODEL [WORKERS|auto]".into());
+    }
+    let source = PathBuf::from(&args[0]);
+    let output = PathBuf::from(&args[1]);
+    fs::create_dir_all(&output).map_err(|error| error.to_string())?;
+    let mut config = ChunkedTranscriptionConfig {
+        ffmpeg: PathBuf::from(&args[2]),
+        whistle_cli: PathBuf::from(&args[3]),
+        whistle_model: PathBuf::from(&args[4]),
+        workers: 1,
+    };
+    env::set_var("STORYTELLER_FFMPEG", &config.ffmpeg);
+    env::set_var("STORYTELLER_WHISTLE", &config.whistle_cli);
+    env::set_var("STORYTELLER_WHISTLE_MODEL", &config.whistle_model);
+    let runtime = detect_runtime();
+    if !runtime.ready() {
+        return Err(format!(
+            "The application could not verify the supplied runtime: {}",
+            runtime.summary()
+        ));
+    }
+    eprintln!("{}", runtime.workers.description());
+    config.workers = match args.get(5).map(|value| value.to_string_lossy()) {
+        None => runtime.workers.recommended_workers,
+        Some(value) if value.eq_ignore_ascii_case("auto") => runtime.workers.recommended_workers,
+        Some(value) => value.parse::<usize>().map_err(|error| error.to_string())?,
+    };
+    let summary = transcribe_audiobook_in_chunks(
+        &source,
+        &output,
+        &output.join("transcript.json"),
+        &config,
+        &CancellationToken::default(),
+        &mut |progress| {
+            eprintln!(
+                "{}% — {}/{} chunks",
+                progress.percent, progress.completed_chunks, progress.total_chunks
+            );
+            Ok(())
+        },
+    )?;
+    println!(
+        "Transcribed {} ms in {} chunks with {} workers.",
+        summary.duration_ms, summary.chunks, summary.effective_workers
+    );
+    Ok(())
+}

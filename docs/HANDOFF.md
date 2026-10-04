@@ -1,5 +1,25 @@
 # Agent handoff — Storyteller OneClick Lite recovery
 
+## Active rebuild — 2026-10-04
+
+The user selected reliability and simplicity, retained Rust + Slint, and explicitly requested **Whistle instead of Whisper**. The current development branch is `rebuild/reliability-foundation`. Read [REBUILD.md](REBUILD.md) for architecture, acceptance criteria and outstanding milestones, and [RUNTIME.md](RUNTIME.md) for supported assets. Whistle is required; do not restore Whisper as a fallback or archive-import path.
+
+The user subsequently narrowed transcription to **English only**. Always force `--audio-language en`; do not restore the adapter language option or automatic detection. Keep the pinned shared 16.9 MB model: removing application language options does not shrink its weights. Recovery must preserve explicit foreign requests for a clear worker-preflight failure without invalidating other books, and migrate absent/auto settings to English. The adapter profile changed, so older Analyze and downstream fingerprints must not be reused.
+
+The foundation introduces `storyteller-application` for native runtime and pipeline execution, model-specific word-time normalization, hard-capped 25-second chunk planning, and schema-1 recovery migration. Preserve the established queue/review/publication contracts. Validation status belongs in REBUILD.md; do not infer release readiness from historical passes below.
+
+The application lifecycle scaffold implements `ApplicationController`: it privately owns the queue, worker, recovery and durable review mutations. Slint callbacks dispatch `ApplicationCommand`; rendering reads borrowed snapshots with independent queue/runtime revisions. Do not reintroduce `Rc<RefCell<JobQueue>>` in the desktop shell. Idle polls do not write recovery or reload review reports; model updates replace only changed rows. Dependency scans/downloads run in the application background task. Startup failures continue to the next waiting book on the next poll, while pause-after-current remains authoritative. New books cannot start until the previous thread is joined, and cancellation survives a review handoff. Closing saves interrupted state before cancelling/joining the processing worker. Fourteen original controller regressions cover these rules. Windows checkpoint [37189418973](https://github.com/skypie0102/storyteller-lite/actions/runs/37189418973) passed all 135 tests, strict checks, native Slint build, Whistle smoke and packaged recovery on `24f128886f24cd8bf9cefa83b3a3e8b020c78c3e`. The superseded UI recovery file and temporary workflow were removed after this pass.
+
+R3 now has typed `StageArtifacts`, flushed atomic version-2 manifests with SHA-256/length verification, and cancellable resume preflight. Old path-only manifests are not trusted. Review completion reseals the edited report before starting a new worker. Publication requires an independently created `ValidatedEpub`, verifies the staged bytes, saves a job-owned intent outside disposable stage directories, and uses a same-directory no-overwrite commit. Validate always reruns after relaunch; a matching intent plus matching output bytes permits recovery after commit. Unrelated or modified outputs must never be overwritten. Windows checkpoint [37192046677](https://github.com/skypie0102/storyteller-lite/actions/runs/37192046677) passed strict locked workspace checks, all 154 tests, the native Slint build, Whistle integration and packaged recovery at `9ec8847b16416466b3bbfd83f6081c74ea2351c7`. The real builder/validator/worker regression proves that all seven cached checkpoints cannot bypass output checks: matching output recovers, missing output republishes and changed output fails without overwrite. The temporary R3 workflow was removed after this pass. See REBUILD.md for the full contract and limits.
+
+R4 rebuilds the native UI as New book, Queue and Settings, with output-folder selection, guarded submission, compact processing/review panels and explicit cancellation/exclusion consequences. `ReviewSession` owns cached report/evidence loading with cancellation, request coalescing and job/generation guards; `AudioPreview` owns ffplay on a separate worker. Seeking does not reload evidence, and changing segments or leaving review stops playback. Keep all filesystem/ZIP candidate loading and process waits out of the UI timer. [UI.md](UI.md) describes the behavior and actual compiled Slint fixture harness. Windows checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) passed formatting, strict locked workspace Clippy, all 164 tests, the native build, 39 compact/standard/200% scenes, keyboard/pointer checks and packaged relaunch recovery at `47e74e944fbdcd691c2956050ed26ae4c961f51f`. All 39 scenes were inspected; representative screenshots and hashes are retained in the UI guide. The temporary R4 workflow was removed after the pass, with compiled source unchanged. R0–R4 are validated on the development branch; R5 full-book acceptance remains open and no rebuilt release has been published.
+
+The user's worker follow-up defaults new books to **Automatic**, displays available CPU threads/RAM and a starting recommendation in Settings, and raises manual selection to 1–16. Detection runs with the background runtime scan; unknown CPU or RAM falls back to one. Resolve Automatic before enqueueing, and preserve that concrete count across recovery. The heuristic is not a throughput benchmark; do not imply a GPU transcription backend exists in the pinned CPU runtime. Windows checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed all 171 workspace tests, strict locked checks, native UI build/scenes/input checks and packaged recovery at `e59482318b661621309179f918dc5056ad48c912`. Real Whistle checks verified Automatic and 135-second transcription with six native workers for six chunks, plus timing, coverage, silence and cleanup. The hosted four-thread runner recommended two workers; this is runner evidence, not a profile of the user's computer. The updated six Settings renders were inspected; all other 33 scenes matched the earlier inspected capture. The temporary workflow was removed after the pass, with compiled source unchanged from this worker checkpoint.
+
+The English-only foundation passed Windows checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210): strict workspace checks, all 121 tests, native/application English speech and silence, the Slint build and packaged relaunch recovery with absent-language migration. Superseded Whisper implementations and the temporary checkpoint workflow have been removed. Product source was validated at `df1e49faece11e28a0cb11bb0c79a5a91defea43`; see REBUILD.md for precise evidence and remaining acceptance work.
+
+The following checkpoint history describes the released v0.1.0 baseline and earlier reconstruction. It is retained for provenance; current source and the rebuild contract take precedence where the transcription architecture changed.
+
 Read this file before making substantial changes.
 
 ## Current repository truth
@@ -38,7 +58,7 @@ Use these references in order:
 1. live source on `main` for implementation truth;
 2. `docs/HANDOFF.md` for current implementation handoff;
 3. `docs/ROADMAP.md` for current product/pending-work truth;
-4. `docs/ui-guides/README.md` plus mockups for UI hierarchy;
+4. `docs/UI.md` for the active rebuild UI and `docs/ui-guides/README.md` for historical mockup provenance;
 5. `docs/RUNTIME.md` for owned external runtime behavior;
 6. `docs/recovery/*.md` for recovered historical evidence and test vectors.
 
@@ -46,7 +66,7 @@ Installer archaeology is demand-driven. Do not recover unrelated legacy behavior
 
 ## Product decisions that remain authoritative
 
-Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, a simple Whisper worker count of 1–4 (default 1), Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
+Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, Automatic CPU/RAM recommendations with manual 1–16 workers for newly queued books, Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
 
 Resume must reuse only a validated contiguous checkpoint prefix. Relaunch recovery must never silently continue work: recovered jobs come back in a paused queue and require the existing explicit Resume queue action.
 
@@ -56,7 +76,7 @@ Do not restore manual CPU allocation, word-level synchronization, the old activi
 
 ### Prepare / Analyze / Align
 
-Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–4 independent Whisper processes, divides available logical CPU threads across workers, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
+Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–16 independent Whistle processes, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
 
 P1 Windows validation run: `34732299289`.
 
@@ -211,7 +231,7 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 4. Exercise validated resume plus explicit paused relaunch through developer-test/installed-like launch conditions, including Running/Waiting recovery and NeedsReview rewind. Do not weaken the explicit Resume queue contract.
 5. Preserve the per-user runtime root and the verified `BUILD.json`/SHA-256 developer-test package contract. Do not invent a public installer or auto-update channel without a concrete distribution requirement.
 6. Do not add a distinct Extra Audio renderer unless a real product/output contract emerges, and skip installer archaeology unless a live Lite behavior is genuinely ambiguous.
-7. Keep real 1–4 worker CPU/CUDA benchmarking as later evidence work before changing worker defaults or adding hardware-aware heuristics.
+7. Benchmark the Automatic recommendation and manual 1–16 Whistle workers on representative CPUs. The recommendation is a conservative starting heuristic; the pinned Whistle engine has no GPU backend.
 
 ## Recovered invariants worth preserving
 

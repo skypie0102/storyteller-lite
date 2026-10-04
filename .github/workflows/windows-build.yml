@@ -74,21 +74,10 @@ jobs:
           @'
           StoryTeller Lite — Windows developer-test build
 
-          Local whisper.cpp archive import:
-            Open Settings and choose Import whisper archive…
-            Select a .zip, .tgz, or .tar.gz such as:
-              whisper-cpp-windows-x64-cuda-13.1.0.tar.gz
+          Open Settings and choose Download missing to install FFmpeg and Whistle.
+          Whistle runs locally on CPU. This app supports English transcription only.
 
-            Lite extracts the selected local archive into:
-              %LOCALAPPDATA%\Storyteller OneClick Lite\runtime\whisper\
-
-            The archive is not uploaded. Lite locates whisper-cli.exe or legacy
-            main.exe inside the extracted build, starts it with --help to verify the
-            runtime can load, selects it immediately, and reuses the persistent copy
-            on later launches.
-
-          Automatic downloads remain user-initiated. Verified dependencies are stored
-          per user under:
+          Verified dependencies are stored per user under:
             %LOCALAPPDATA%\Storyteller OneClick Lite\tools\
             %LOCALAPPDATA%\Storyteller OneClick Lite\models\
           so the package/executable directory does not need to be writable.

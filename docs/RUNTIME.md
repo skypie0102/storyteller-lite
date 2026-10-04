@@ -1,113 +1,77 @@
 # Runtime tooling
 
-Storyteller Lite keeps heavyweight media/ML tools outside the Rust UI process. The current Analyze backend expects `ffmpeg`, a whisper.cpp CLI (`whisper-cli` or the legacy `main` executable), and a ggml Whisper model.
+Analyze uses FFmpeg and Whistle through the native Needle 3.1.0 executable. The application has no Python, whisper.cpp, ggml model, CUDA package or Whisper archive import requirement.
 
-## Default Whisper model
+## Owned assets
 
-The current job default is `large-v3-turbo`, so model discovery looks for:
+| Asset | Pinned source | SHA-256 |
+|---|---|---|
+| Whistle model | `Cactus-Compute/whistle`, revision `d3ea19e0fe4f99fa7dfb9afa63070b1c6eacaff1`, `whistle.cact` | `b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb` |
+| Windows x64 engine | `Cactus-Compute/needle3`, revision `f84005f8992caf37f17b0d64a4b5b31a84ce0d2a`, `windows-x86_64/needle.exe` | `c70ca998f6c542c862c06c22352046e303ef5c769384069ee25cef9f4667e4cf` |
+| Linux x64 engine for adapter checks | Same engine revision, `linux-x86_64/needle` | `b197ceaef3b300a0b14c3a4fde92305527e43f9256c53d2a53d2a2fe8fe69678` |
+| FFmpeg Windows archive | Gyan/Codex `9.0.1`, `ffmpeg-9.0.1-essentials_build.zip` | `fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9` |
 
-```text
-ggml-large-v3-turbo.bin
-```
+A moving Hugging Face `main` reference is not used for automatic installation. Model and native engine files are hash-checked during discovery as well as download. Explicit overrides must match these supported assets. A working existing FFmpeg can be reused after its version probe.
 
-A different model name may be supplied by `JobSettings` as model selection is expanded in the Settings UI.
+## Discovery and installation
 
-## Tool discovery
+Settings reports FFmpeg, the Whistle engine and the Whistle model. Re-scan checks configured paths, the managed per-user folders, portable folders and PATH for executables. The model is discovered in configured or managed/portable model folders. Broad historical Whisper directory scanning has been removed.
 
-### ffmpeg
-
-The runtime checks an explicit `STORYTELLER_FFMPEG` override first, then the portable application/tool folders, the managed per-user `tools/` folder under `%LOCALAPPDATA%\Storyteller OneClick Lite`, and `PATH`. Settings probes the resolved executable with `ffmpeg -version` before reporting it ready.
-
-### whisper.cpp CLI and CUDA builds
-
-`STORYTELLER_WHISPER` is an explicit override and wins when it points to a working CLI. Automatic discovery accepts both modern `whisper-cli.exe` and the older `main.exe` naming used by previous whisper.cpp packages.
-
-On Windows, automatic discovery searches:
-
-- the portable StoryTeller application and adjacent `tools/` folders;
-- the managed per-user `%LOCALAPPDATA%\Storyteller OneClick Lite\tools\` folder;
-- `PATH`;
-- bounded persistent-runtime searches under `%LOCALAPPDATA%`, `%APPDATA%`, `%PROGRAMDATA%`, the user's profile, and `.cache`;
-- known StoryTeller/whisper folder names and direct child folders whose names contain StoryTeller, whisper, or historical project/vendor hints.
-
-The persistent search is intentionally bounded (depth and entry count) rather than scanning the entire PC. Candidates must successfully run with `--help` before they are considered usable.
-
-When multiple working auto-discovered whisper.cpp executables exist, a CUDA-capable build is preferred. CUDA capability is recognized from CUDA/cuBLAS path names or neighboring runtime libraries such as `ggml-cuda`, `cublas64`, `cublasLt64`, and `cudart64`.
-
-Previously extracted StoryTeller/whisper runtimes remain valid discovery inputs, including legacy `main.exe` layouts. Automatic **Download missing** does not scan for or silently import archived builds: when no runnable CLI is available it downloads only the pinned, hash-verified StoryTeller-owned whisper.cpp build described below. Existing archives remain supported through the explicit **Import whisper archive…** action.
-
-Immediately before a processing worker starts, StoryTeller Lite re-runs runtime discovery and binds the exact resolved ffmpeg, whisper.cpp, and model paths into the backend environment. Therefore the CUDA/CPU executable shown by Settings is the executable Analyze will launch, unless the user supplied an explicit override.
-
-### Whisper model
-
-`STORYTELLER_WHISPER_MODEL` may point directly to a non-empty model file. Otherwise discovery checks the current StoryTeller model folders and the same bounded historical runtime locations for `ggml-<model>.bin`.
-
-A model is reported ready only when the candidate is a non-empty regular file.
-
-## Settings runtime manager
-
-Opening Settings triggers a runtime scan. The page reports the resolved path for each dependency and exposes **Re-scan**. The whisper row identifies a detected CUDA build explicitly. If anything is missing, **Download missing** offers an explicit, user-initiated per-user install on Windows. Owned downloads do not require the application/EXE directory itself to be writable. Processing never silently starts a multi-gigabyte model download.
-
-### Importing an existing whisper.cpp archive
-
-Settings also exposes **Import whisper archive…** for users who already have a Windows whisper.cpp build. This is the preferred deterministic path when automatic discovery cannot locate an existing runtime.
-
-The picker accepts `.zip`, `.tgz`, and `.tar.gz` files, including the former StoryTeller CUDA package shape:
+Advanced overrides:
 
 ```text
-whisper-cpp-windows-x64-cuda-13.1.0.tar.gz
+STORYTELLER_FFMPEG=<path to ffmpeg.exe>
+STORYTELLER_WHISTLE=<path to the pinned needle.exe>
+STORYTELLER_WHISTLE_MODEL=<path to the pinned whistle.cact>
 ```
 
-The selected archive stays local; StoryTeller Lite does not upload it or redownload whisper.cpp. The archive is extracted into a persistent per-user runtime location:
+**Download missing** remains a user-initiated Windows x64 operation. Assets are stored below `%LOCALAPPDATA%\Storyteller OneClick Lite`:
 
 ```text
-%LOCALAPPDATA%\Storyteller OneClick Lite\runtime\whisper\<archive-name>-<timestamp>\
+tools/ffmpeg.exe
+tools/whistle/needle.exe
+models/whistle.cact
 ```
 
-Lite searches the extracted tree for `whisper-cli.exe`, falling back to legacy `main.exe`. It then launches the discovered CLI with `--help`; the import is rejected and its extracted directory is removed if the executable cannot start, which catches missing/incompatible runtime DLLs before a book is queued.
+Downloads first write a temporary sibling and verify its checksum before promotion. FFmpeg extraction uses a temporary directory and requires exactly one executable. Failure removes temporary downloads/extraction. Processing rechecks supported assets before Analyze. Runtime and recovery share the same per-user root; the executable directory need not be writable.
 
-On successful import, the verified executable is selected immediately for the current app session and a runtime re-scan updates Settings. Future launches rediscover the persistent extracted copy automatically. The original archive is not modified and may be moved or deleted after a successful import.
+Automatic acquisition is Windows x64 only. Core and the transcription adapter can be tested on Linux x64 with the pinned Linux executable supplied explicitly. Other native targets require a separate tested asset pin before support is claimed.
 
-Downloads are performed on a background thread so the Slint UI remains responsive. Missing dependencies are installed into the managed per-user application-data root:
+## Transcription
 
-```text
-%LOCALAPPDATA%\Storyteller OneClick Lite\tools\ffmpeg.exe
-%LOCALAPPDATA%\Storyteller OneClick Lite\tools\whisper-cli.exe
-%LOCALAPPDATA%\Storyteller OneClick Lite\models\ggml-large-v3-turbo.bin
-```
+The adapter creates 16 kHz mono PCM WAVs and invokes the native engine with its Whistle model, audio file, word-timestamp option and `--audio-language en`. English is the only application-supported language; there is no adapter language option or automatic detection. Non-English speech results are rejected by the parser. Engine telemetry is disabled for application-owned invocations.
 
-Portable adjacent `tools/` / `models/` resources remain valid discovery inputs for deliberately self-contained bundles, but automatic downloads no longer mutate the application directory.
+The published model stores shared multilingual weights in one 16.9 MB file. English-only integration removes application language selection and routing, but does not shrink that pinned file or establish a runtime memory/speed improvement. Model and engine checksums remain unchanged.
 
-Current download behavior and integrity checks:
+### CPU workers and automatic recommendation
 
-- ffmpeg: pinned Gyan/Codex FFmpeg `9.0.1` Windows Essentials ZIP (`ffmpeg-9.0.1-essentials_build.zip`), built from FFmpeg source commit `bf1b838f2a`; the downloaded archive must match SHA-256 `fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9` before extraction. Lite does not follow the moving `ffmpeg-release-essentials.zip` URL during automatic install.
-- whisper.cpp: pinned `ggml-org/whisper.cpp` binary build `b5130`, built from commit `927cfce34f31707e17f2bff35c349632fb9e2c3a` (the same target commit as stable `v1.9.4`). CPU uses `whisper-bin-x64.zip` with SHA-256 `f9ec6c52a2e949b62ab51fa21d0d497958f9e41c3010c157c4e42932d5316f3c`; NVIDIA systems use `whisper-cublas-12.4.0-bin-x64.zip` with SHA-256 `af520ddd034d985b55dfeea3e465ed93653ba2aee1a55e865033edc548c272a7`. Lite does not query recent releases during automatic install.
-- `nvidia-smi` selects the pinned CUDA 12.4 archive; otherwise Lite selects the pinned CPU archive. A user who needs a different compatible whisper.cpp build can provide it through explicit runtime discovery/override or **Import whisper archive…**.
-- `large-v3-turbo`: the canonical whisper.cpp model download; the staged file must match the pinned SHA-256 before it is moved into `models/`.
+Whistle's pinned Needle runtime performs transcription on CPU, as described in the [Whistle announcement](https://cactuscompute.com/blog/whistle). It has no supported GPU backend in this app; a GPU does not raise the transcription worker count. Slint may use graphics acceleration to draw the window, which is separate from transcription.
 
-After installation, StoryTeller Lite probes ffmpeg and whisper.cpp again and re-runs dependency detection before displaying the final state. If one dependency succeeds and a later dependency fails, the successful per-user managed file is retained and the next attempt downloads only what is still missing.
+The desktop defaults to **Automatic**. The application scans logical CPU threads available to the process and currently available physical RAM in the background during startup and Check setup. Windows uses `GlobalMemoryStatusEx`; Linux reads `MemAvailable`. Other platforms or failed probes fall back to a one-worker recommendation. No hardware-probing dependency was added.
 
-Automatic installation is currently Windows-focused and uses PowerShell. `%LOCALAPPDATA%` must be available and writable for managed downloads, so an installed EXE may live under a protected directory such as `Program Files` without requiring elevation merely to install StoryTeller-owned runtime dependencies. The current downloader does not expose mid-download cancellation yet.
+The starting recommendation is the smaller of about half the available logical CPU threads and a memory allowance, bounded to 1–16. Reserve one quarter of available RAM, clamped to 512–2048 MiB, then allow 512 MiB per worker from the remainder. This is a conservative planning allowance for engine/conversion working memory, not measured per-worker consumption or a fastest-worker benchmark. A low-memory system still needs enough resources to run one worker.
 
-Missing dependencies still produce explicit Analyze/setup errors if the user chooses not to install them from Settings.
+| Available logical CPU threads | Available RAM | Automatic recommendation |
+|---|---|---|
+| 2 | 4 GiB | 1 |
+| 8 | 8 GiB | 4 |
+| 16 | 8 GiB | 8 |
+| 32 | 16 GiB | 16 |
+| 16 | 1.5 GiB | 2 |
+| CPU or RAM unknown | — | 1 |
 
-## Analyze artifacts
+Manual selection supports 1–16. Sixteen is an application safety ceiling, not a Whistle restriction. Manual settings override the recommendation; more workers may be slower or consume more memory. Automatic is resolved when enqueueing, and recovery schema 2 stores the resulting integer. Older 1–4 records remain valid; changing the scan or preference does not retarget queued or restored books. The adapter reduces the running count when fewer chunks exist, and limits each chunk's FFmpeg decoding/PCM encoding to one thread to reduce nested CPU contention.
 
-Analyze no longer creates a whole-book PCM checkpoint. It plans deterministic bounded transcription chunks, preferring nearby chapter boundaries and refining synthetic cuts around detected silence when useful. Each active worker converts only its current range to temporary 16 kHz mono signed 16-bit PCM, runs whisper.cpp on that bounded WAV, then deletes the temporary PCM after the chunk result is collected.
+The adapter example accepts an explicit worker count or `auto`, with Automatic as the omitted-argument default. Each chunk still launches a fresh native CLI process; persistent loaded models and hardware throughput benchmarks remain future optimization work.
 
-Analyze records these durable stage artifacts:
+Windows checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403), source `e59482318b661621309179f918dc5056ad48c912`, passed all 171 workspace tests and the real native adapter checks. The hosted runner reported four available CPU threads and about 13 GiB available RAM, yielding a two-worker recommendation. Short Automatic input used one effective worker because it contained one chunk; explicit eight-worker selection on 135 seconds used six workers for six chunks. Native speech/silence, English enforcement, global timestamps, contiguous 30-second-capped coverage, silent-book rejection and temporary PCM cleanup also passed. These fixtures do not measure the fastest worker count or full-book recognition accuracy.
 
-- `book-corpus.json` — extracted EPUB reading-order corpus
-- `transcription-plan.json` — audiobook duration and deterministic chunk boundaries
-- `transcript.json` — normalized merged Whisper transcript with global audiobook timestamps
+Default chunk target is 25 seconds. Chapter and silence adjustments must keep every chunk at or below 30 seconds. Every source interval appears exactly once in the validated contiguous plan. Workers use separate processes; cancellation stops owned subprocesses and cleanup removes temporary WAVs. Full-book transcript timestamps are restored using chunk offsets.
 
-The worker count is an execution-only setting (1–4 simultaneous chunks, default 1). Available logical CPU threads are divided across the workers that are actually active. Changing worker count does not invalidate semantic stage checkpoints.
+The current inputs do not overlap. If no suitable silence exists, a planned cut can split speech. Context overlap and boundary-word reconciliation remain full-book hardening work; continuous source coverage alone does not establish recognition accuracy at cuts. The final audio is encoded from the full source, not concatenated transcription chunks.
 
-Both ffmpeg and whisper.cpp identities participate in the Analyze backend fingerprint because ffmpeg is part of chunk planning/conversion as well as Whisper input preparation.
-## Progress policy
+The normalized transcript contains phrase-level millisecond intervals. Native attention words may overlap and are grouped rather than discarded. Speech without complete usable timestamps is an error; silence is an empty chunk. An entirely silent input fails Analyze.
 
-The Analyze progress percentage comes from whisper.cpp's own progress callback output. StoryTeller Lite does not estimate a transcription percentage from wall-clock time. Backend/model labels are shown only when the backend has actually started, and a GPU backend label is only adopted when whisper.cpp reports one.
+Analyze resume identity contains the engine/model contents and the English adapter semantics. Older automatic/multilingual Analyze checkpoints cannot be reused under the new adapter profile. Schema-1 recovered Whisper jobs restart from Analyze with Whistle. Absent/auto language settings migrate to English. Explicit foreign-language requests remain in the recovered paused queue with only Prepare eligible for reuse; worker preflight rejects them clearly before processing and allows the queue's existing failure handling to continue to other books. Recovery remains paused until the user resumes.
 
-## Cancellation
-
-External processing commands are launched with stdin disabled and stdout/stderr drained on dedicated reader threads. The worker polls its cancellation token; cancellation kills and waits for the child process before the stage returns as cancelled. This prevents a cancelled job from leaving ffmpeg or whisper-cli running behind the UI.
+See [REBUILD.md](REBUILD.md) for acceptance checks and remaining rebuild work. The released v0.1.0 runtime is historical and is documented in Git history.

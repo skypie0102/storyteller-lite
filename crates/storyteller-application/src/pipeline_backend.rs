@@ -1,7 +1,4 @@
-#[path = "chunked_transcription.rs"]
-mod chunked_transcription;
-
-use chunked_transcription::{
+use crate::chunked_transcription::{
     transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, ChunkedTranscriptionProgress,
 };
 use std::{
@@ -16,16 +13,17 @@ use storyteller_core::{
     materialize_reviewed_alignment, prepare_job_sources, prepared_job_sources,
     publish_validated_epub, read_audio_review_report, run_cancellable_command,
     set_audio_review_silence_evidence, spawn_pipeline_worker_with_preflight,
-    validate_readaloud_epub, write_validation_report, AudioCodec, AudioReviewEdge,
-    AudioReviewPolicy, AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace, LiveMetrics,
-    PipelineBackend, PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest,
-    ResourceScheduler, RuntimeCoordinator, StagePlan, StageRunContext, StageRunError,
-    StageRunOutput,
+    write_validation_report, AudioCodec, AudioReviewEdge, AudioReviewPolicy,
+    AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
+    PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
+    RuntimeCoordinator, StageArtifacts, StagePlan, StageRunContext, StageRunError, StageRunOutput,
+    ValidatedEpub,
 };
 
 pub(crate) struct LitePipelineBackend {
     attempt_started: Instant,
     cpu_threads: usize,
+    validated_candidate: Option<ValidatedEpub>,
 }
 
 impl LitePipelineBackend {
@@ -33,6 +31,7 @@ impl LitePipelineBackend {
         Self {
             attempt_started: Instant::now(),
             cpu_threads: cpu_threads.max(1),
+            validated_candidate: None,
         }
     }
 
@@ -67,7 +66,15 @@ impl LitePipelineBackend {
             .set_stage_percent(100, completed_at)
             .map_err(|error| StageRunError::failed(error, completed_at))?;
         Ok(StageRunOutput::new(
-            prepared.relative_artifacts(),
+            StageArtifacts::Prepare {
+                epub: PathBuf::from(prepared.epub().file_name().expect("prepared EPUB filename")),
+                audiobook: PathBuf::from(
+                    prepared
+                        .audiobook()
+                        .file_name()
+                        .expect("prepared audio filename"),
+                ),
+            },
             stage_started.elapsed().as_secs(),
             completed_at,
         ))
@@ -99,18 +106,16 @@ impl LitePipelineBackend {
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         }
 
-        let workers = context.job().settings.whisper_workers;
+        let workers = context.job().settings.transcription_workers;
         let transcript_path = stage_dir.join("transcript.json");
         let config = ChunkedTranscriptionConfig {
             ffmpeg: runtime.ffmpeg.clone(),
-            whisper_cli: runtime.whisper_cli.clone(),
-            whisper_model: runtime.whisper_model.clone(),
-            language: runtime.language.clone(),
+            whistle_cli: runtime.whistle_cli.clone(),
+            whistle_model: runtime.whistle_model.clone(),
             workers,
-            total_cpu_threads: self.cpu_threads,
         };
         let mut metrics = LiveMetrics {
-            backend: Some("whisper.cpp CLI / chunk workers".into()),
+            backend: Some("Whistle / native CPU".into()),
             model: Some(runtime.model_name.clone()),
             ..LiveMetrics::default()
         };
@@ -118,7 +123,7 @@ impl LitePipelineBackend {
         context
             .set_activity(
                 format!(
-                    "Planning and transcribing audiobook with {workers} Whisper worker{}",
+                    "Planning and transcribing audiobook with {workers} Transcription worker{}",
                     if workers == 1 { "" } else { "s" }
                 ),
                 self.elapsed_millis(),
@@ -148,7 +153,7 @@ impl LitePipelineBackend {
             }
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         };
-        validate_nonempty_file(&transcript_path, "Merged Whisper transcript")
+        validate_nonempty_file(&transcript_path, "Merged Whistle transcript")
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         validate_nonempty_file(
             &stage_dir.join("transcription-plan.json"),
@@ -160,21 +165,11 @@ impl LitePipelineBackend {
         metrics.total_items = Some(summary.chunks as u64);
         metrics.total_audio_seconds = Some(summary.duration_ms as f64 / 1000.0);
         context.set_metrics(metrics, self.elapsed_millis());
-        let effective_workers = workers.min(summary.chunks).max(1);
         context
             .set_activity(
                 format!(
-                    "Transcribed {} chunk{} with {} worker{} × {} CPU thread{}",
-                    summary.chunks,
-                    if summary.chunks == 1 { "" } else { "s" },
-                    effective_workers,
-                    if effective_workers == 1 { "" } else { "s" },
-                    summary.per_worker_threads,
-                    if summary.per_worker_threads == 1 {
-                        ""
-                    } else {
-                        "s"
-                    }
+                    "Transcribed {} chunks with {} Whistle worker(s)",
+                    summary.chunks, summary.effective_workers
                 ),
                 self.elapsed_millis(),
             )
@@ -184,11 +179,11 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![
-                PathBuf::from("book-corpus.json"),
-                PathBuf::from("transcription-plan.json"),
-                PathBuf::from("transcript.json"),
-            ],
+            StageArtifacts::Analyze {
+                corpus: PathBuf::from("book-corpus.json"),
+                plan: PathBuf::from("transcription-plan.json"),
+                transcript: PathBuf::from("transcript.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -255,7 +250,9 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![PathBuf::from("alignment.json")],
+            StageArtifacts::Align {
+                alignment: PathBuf::from("alignment.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -381,7 +378,9 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         let output = StageRunOutput::new(
-            vec![PathBuf::from("review.json")],
+            StageArtifacts::ReviewAudio {
+                report: PathBuf::from("review.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         );
@@ -484,7 +483,10 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            encoded.relative_artifacts,
+            StageArtifacts::Encode {
+                audio: PathBuf::from(encoded.descriptor.file_name),
+                descriptor: PathBuf::from("encoded-audio.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -559,10 +561,10 @@ impl LitePipelineBackend {
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
         Ok(StageRunOutput::new(
-            vec![
-                PathBuf::from("effective-alignment.json"),
-                PathBuf::from("readaloud.epub"),
-            ],
+            StageArtifacts::BuildEpub {
+                effective_alignment: PathBuf::from("effective-alignment.json"),
+                candidate: PathBuf::from("readaloud.epub"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -573,6 +575,7 @@ impl LitePipelineBackend {
         context: &mut StageRunContext<'_>,
     ) -> Result<StageRunOutput, StageRunError> {
         let stage_started = Instant::now();
+        self.validated_candidate = None;
         let candidate = context
             .workspace()
             .stage_dir(PipelineStage::BuildEpub)
@@ -596,14 +599,15 @@ impl LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        let summary = validate_readaloud_epub(&candidate, &cancellation);
-        let summary = match summary {
-            Ok(summary) => summary,
+        let validated = ValidatedEpub::validate(&candidate, &cancellation);
+        let validated = match validated {
+            Ok(validated) => validated,
             Err(error) if cancellation.is_requested() => {
                 return Err(StageRunError::cancelled(error, self.elapsed_millis()));
             }
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         };
+        let summary = validated.summary();
         write_validation_report(&report_path, summary)
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         context.set_metrics(
@@ -622,8 +626,11 @@ impl LitePipelineBackend {
             .set_stage_percent(100, self.elapsed_millis())
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
 
+        self.validated_candidate = Some(validated);
         Ok(StageRunOutput::new(
-            vec![PathBuf::from("validation.json")],
+            StageArtifacts::Validate {
+                report: PathBuf::from("validation.json"),
+            },
             stage_started.elapsed().as_secs(),
             self.elapsed_millis(),
         ))
@@ -700,11 +707,14 @@ impl PipelineBackend for LitePipelineBackend {
             return Ok(());
         }
 
-        let candidate = context
-            .workspace()
-            .stage_dir(PipelineStage::BuildEpub)
-            .join("readaloud.epub");
+        let candidate = self.validated_candidate.take().ok_or_else(|| {
+            StageRunError::failed(
+                "Publication requires this attempt's validated EPUB candidate.",
+                self.elapsed_millis(),
+            )
+        })?;
         let output_path = context.job().inputs.output_path.clone();
+        let intent_path = context.workspace().root().join("publication.json");
         let cancellation = context.cancellation_token();
         context
             .set_activity(
@@ -712,7 +722,7 @@ impl PipelineBackend for LitePipelineBackend {
                 self.elapsed_millis(),
             )
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
-        match publish_validated_epub(&candidate, &output_path, &cancellation) {
+        match publish_validated_epub(&candidate, &output_path, &intent_path, &cancellation) {
             Ok(()) => Ok(()),
             Err(error) if cancellation.is_requested() => {
                 Err(StageRunError::cancelled(error, self.elapsed_millis()))
@@ -725,29 +735,42 @@ impl PipelineBackend for LitePipelineBackend {
 #[derive(Debug, Clone)]
 struct AnalyzeRuntime {
     ffmpeg: PathBuf,
-    whisper_cli: PathBuf,
-    whisper_model: PathBuf,
+    whistle_cli: PathBuf,
+    whistle_model: PathBuf,
     model_name: String,
-    language: String,
 }
 
 impl AnalyzeRuntime {
     fn discover(job: &Job) -> Result<Self, String> {
-        let model_name = job.settings.whisper_model.trim().to_string();
-        if model_name.is_empty() {
-            return Err("Whisper model name cannot be blank.".into());
-        }
+        storyteller_core::validate_whistle_language(
+            job.settings
+                .language
+                .as_deref()
+                .unwrap_or(storyteller_core::WHISTLE_LANGUAGE),
+        )?;
+        let runtime = crate::detect_runtime();
         Ok(Self {
-            ffmpeg: resolve_executable("STORYTELLER_FFMPEG", "ffmpeg"),
-            whisper_cli: resolve_executable("STORYTELLER_WHISPER", "whisper-cli"),
-            whisper_model: resolve_whisper_model(&model_name)?,
-            model_name,
-            language: effective_language(job),
+            ffmpeg: runtime
+                .ffmpeg
+                .ok_or("FFmpeg is missing. Open Settings and download dependencies.")?,
+            whistle_cli: runtime
+                .whistle_cli
+                .ok_or("Whistle engine is missing. Open Settings and download dependencies.")?,
+            whistle_model: runtime
+                .whistle_model
+                .ok_or("Whistle model is missing. Open Settings and download dependencies.")?,
+            model_name: "Whistle".into(),
         })
     }
 }
 
-pub(crate) fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
+pub fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
+    storyteller_core::validate_whistle_language(
+        job.settings
+            .language
+            .as_deref()
+            .unwrap_or(storyteller_core::WHISTLE_LANGUAGE),
+    )?;
     let logical_cpu_threads = std::thread::available_parallelism()
         .map(|threads| threads.get())
         .unwrap_or(1);
@@ -771,20 +794,20 @@ pub(crate) fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String>
     )
 }
 
-pub(crate) fn job_workspace(job: &Job) -> JobWorkspace {
+pub fn job_workspace(job: &Job) -> JobWorkspace {
     JobWorkspace::for_job(workspace_base(), job.id)
 }
 
 fn pipeline_environment(job: &Job) -> PipelineEnvironment {
-    let whisper_cli = resolve_executable("STORYTELLER_WHISPER", "whisper-cli");
+    let whistle_cli = resolve_executable("STORYTELLER_WHISTLE", "needle");
     let ffmpeg = resolve_executable("STORYTELLER_FFMPEG", "ffmpeg");
     let tesseract = resolve_optional_executable("STORYTELLER_TESSERACT", "tesseract");
-    let model_name = job.settings.whisper_model.trim();
-    let effective_whisper_model = if model_name.is_empty() {
+    let model_name = job.settings.transcription_model.trim();
+    let effective_transcription_model = if model_name.is_empty() {
         String::new()
     } else {
-        match resolve_whisper_model(model_name) {
-            Ok(path) => file_identity("whisper-model", &path),
+        match resolve_whistle_model() {
+            Ok(path) => content_identity("whistle-model", &path),
             Err(_) => format!("requested:{model_name}"),
         }
     };
@@ -793,7 +816,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         AudioCodec::Opus | AudioCodec::Aac => file_identity("ffmpeg", &ffmpeg),
     };
     let ffmpeg_identity = file_identity("ffmpeg-analyze", &ffmpeg);
-    let whisper_identity = file_identity("whisper.cpp-cli", &whisper_cli);
+    let whistle_identity = content_identity("whistle-cli", &whistle_cli);
     let ocr_backend = match tesseract {
         Some(path) => format!(
             "storyteller:image-evidence-v1|{}",
@@ -803,15 +826,15 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     };
 
     PipelineEnvironment {
-        whisper_backend: format!(
-            "storyteller:chunked-whisper-v1|{ffmpeg_identity}|{whisper_identity}"
+        transcription_backend: format!(
+            "storyteller:chunked-whistle-v2-english-25s-phrases|{ffmpeg_identity}|{whistle_identity}"
         ),
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
         ocr_backend,
         epub_backend: "storyteller:epub-media-overlay-v2-supplemental-edge".into(),
-        effective_language: effective_language(job),
-        effective_whisper_model,
+        effective_language: storyteller_core::WHISTLE_LANGUAGE.into(),
+        effective_transcription_model,
     }
 }
 
@@ -905,16 +928,6 @@ fn format_seconds(milliseconds: u64) -> String {
     format!("{}.{:03}", milliseconds / 1000, milliseconds % 1000)
 }
 
-fn effective_language(job: &Job) -> String {
-    job.settings
-        .language
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("auto")
-        .to_string()
-}
-
 fn resolve_executable(environment_variable: &str, base_name: &str) -> PathBuf {
     if let Some(value) = env::var_os(environment_variable).filter(|value| !value.is_empty()) {
         return PathBuf::from(value);
@@ -963,40 +976,18 @@ fn resolve_optional_executable(environment_variable: &str, base_name: &str) -> O
     None
 }
 
-fn resolve_whisper_model(model_name: &str) -> Result<PathBuf, String> {
-    if let Some(value) = env::var_os("STORYTELLER_WHISPER_MODEL").filter(|value| !value.is_empty())
-    {
-        let path = PathBuf::from(value);
-        validate_nonempty_file(&path, "Configured Whisper model")?;
-        return Ok(path);
-    }
+fn resolve_whistle_model() -> Result<PathBuf, String> {
+    crate::detect_runtime()
+        .whistle_model
+        .ok_or_else(|| "Whistle model is unavailable.".into())
+}
 
-    let file_name = format!("ggml-{model_name}.bin");
-    let mut candidates = Vec::new();
-    if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
-        candidates.push(
-            PathBuf::from(local_app_data)
-                .join("Storyteller OneClick Lite")
-                .join("models")
-                .join(&file_name),
-        );
+fn content_identity(label: &str, path: &Path) -> String {
+    let cancellation = storyteller_core::CancellationToken::default();
+    match storyteller_core::fingerprint_source_file(path, &cancellation, label) {
+        Ok(fingerprint) => format!("{label}:{fingerprint}"),
+        Err(_) => format!("{label}:unavailable:{}", path.display()),
     }
-    if let Some(executable_dir) = current_executable_dir() {
-        candidates.push(executable_dir.join("models").join(&file_name));
-        candidates.push(executable_dir.join("tools").join("models").join(&file_name));
-    }
-    if let Ok(current_dir) = env::current_dir() {
-        candidates.push(current_dir.join("models").join(&file_name));
-    }
-
-    if let Some(path) = candidates.into_iter().find(|candidate| candidate.is_file()) {
-        validate_nonempty_file(&path, "Whisper model")?;
-        return Ok(path);
-    }
-
-    Err(format!(
-        "Whisper model {file_name} was not found. Place it in the app models folder or set STORYTELLER_WHISPER_MODEL."
-    ))
 }
 
 fn current_executable_dir() -> Option<PathBuf> {
@@ -1061,9 +1052,34 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
 }
 
 fn workspace_base() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Storyteller OneClick Lite")
-        .join("jobs")
+    crate::recovery_app_root().join("jobs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovered_foreign_job_fails_before_runtime_or_worker_start() {
+        let mut job = Job::new(
+            storyteller_core::JobInputs {
+                title: "Recovered foreign request".into(),
+                epub_path: "missing.epub".into(),
+                audiobook_path: "missing.m4b".into(),
+                output_path: "output.epub".into(),
+            },
+            storyteller_core::JobSettings::default(),
+        )
+        .unwrap();
+        // Recovery retains the original request rather than silently changing it.
+        job.settings.language = Some("fr".into());
+        assert!(AnalyzeRuntime::discover(&job)
+            .unwrap_err()
+            .contains("English-only"));
+        let error = spawn_job_worker(job)
+            .err()
+            .expect("foreign request must fail");
+        assert!(error.contains("English-only"));
+        assert!(error.contains("fr"));
+    }
 }

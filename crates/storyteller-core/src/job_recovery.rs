@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const QUEUE_RECOVERY_VERSION: u32 = 1;
+const QUEUE_RECOVERY_VERSION: u32 = 2;
 
 #[derive(Debug)]
 pub struct QueueRecovery {
@@ -34,9 +34,11 @@ struct JobRecoveryRecord {
     audio_codec: String,
     audio_bitrate_kbps: Option<u16>,
     language: Option<String>,
-    whisper_model: String,
+    #[serde(alias = "whisper_model")]
+    transcription_model: String,
     audio_review_policy: AudioReviewPolicy,
-    whisper_workers: usize,
+    #[serde(alias = "whisper_workers")]
+    transcription_workers: usize,
     previous_status: RecoveryStatus,
     checkpoints: Vec<CheckpointRecord>,
 }
@@ -183,7 +185,7 @@ pub fn read_queue_recovery(path: &Path) -> Result<QueueRecovery, String> {
     })?;
     let file: QueueRecoveryFile = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Queue recovery file is invalid: {error}"))?;
-    if file.version != QUEUE_RECOVERY_VERSION {
+    if !matches!(file.version, 1 | QUEUE_RECOVERY_VERSION) {
         return Err(format!(
             "Queue recovery file version {} is unsupported; expected {}.",
             file.version, QUEUE_RECOVERY_VERSION
@@ -193,7 +195,7 @@ pub fn read_queue_recovery(path: &Path) -> Result<QueueRecovery, String> {
     let mut ids = HashSet::new();
     let mut queue = JobQueue::default();
     for record in file.jobs {
-        let job = record.into_job()?;
+        let job = record.into_job(file.version == 1)?;
         if !ids.insert(job.id) {
             return Err(format!(
                 "Queue recovery file contains duplicate job id {}.",
@@ -229,9 +231,9 @@ impl JobRecoveryRecord {
             audio_codec: codec_name(job.settings.audio.codec).into(),
             audio_bitrate_kbps: job.settings.audio.bitrate.map(AudioBitrate::kbps),
             language: job.settings.language.clone(),
-            whisper_model: job.settings.whisper_model.clone(),
+            transcription_model: job.settings.transcription_model.clone(),
             audio_review_policy: job.settings.audio_review_policy,
-            whisper_workers: job.settings.whisper_workers,
+            transcription_workers: job.settings.transcription_workers,
             previous_status,
             checkpoints: job
                 .checkpoints
@@ -244,7 +246,7 @@ impl JobRecoveryRecord {
         })
     }
 
-    fn into_job(self) -> Result<Job, String> {
+    fn into_job(self, legacy_whisper: bool) -> Result<Job, String> {
         let id = self
             .id
             .parse()
@@ -252,12 +254,24 @@ impl JobRecoveryRecord {
         let codec = parse_codec(&self.audio_codec)?;
         let bitrate = self.audio_bitrate_kbps.map(parse_bitrate).transpose()?;
         let audio = AudioEncoding::new(codec, bitrate)?;
+        let requested_language = self
+            .language
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
+            .unwrap_or(crate::WHISTLE_LANGUAGE)
+            .to_ascii_lowercase();
+        let unsupported_language = crate::validate_whistle_language(&requested_language).is_err();
         let settings = JobSettings {
             audio,
-            language: self.language,
-            whisper_model: self.whisper_model,
+            language: Some(crate::WHISTLE_LANGUAGE.into()),
+            transcription_model: if legacy_whisper {
+                "whistle".into()
+            } else {
+                self.transcription_model
+            },
             audio_review_policy: self.audio_review_policy,
-            whisper_workers: self.whisper_workers,
+            transcription_workers: self.transcription_workers,
         };
         let mut job = Job::new(
             JobInputs {
@@ -268,6 +282,11 @@ impl JobRecoveryRecord {
             },
             settings,
         )?;
+        // Preserve explicit foreign requests for the worker preflight to reject.
+        // One older foreign-language job must not quarantine an otherwise valid queue.
+        if unsupported_language {
+            job.settings.language = Some(requested_language);
+        }
         job.id = id;
         job.status = JobStatus::Waiting;
         job.progress = PipelineProgress::default();
@@ -291,6 +310,9 @@ impl JobRecoveryRecord {
                 }
             }
             last_index = Some(stage.index());
+            if (legacy_whisper || unsupported_language) && stage != PipelineStage::Prepare {
+                continue;
+            }
             if self.previous_status == RecoveryStatus::NeedsReview && stage.index() >= review_index
             {
                 continue;
@@ -407,13 +429,13 @@ mod tests {
         ResumeContext {
             epub_source: "epub:one".into(),
             audiobook_source: "audio:one".into(),
-            whisper_backend: "whisper:one".into(),
+            transcription_backend: "whistle:one".into(),
             alignment_backend: "align:one".into(),
             audio_backend: "audio:one".into(),
             ocr_backend: "ocr:one".into(),
             epub_backend: "epub:one".into(),
-            effective_language: "auto".into(),
-            effective_whisper_model: "model:one".into(),
+            effective_language: crate::WHISTLE_LANGUAGE.into(),
+            effective_transcription_model: "model:one".into(),
             settings: settings.clone(),
         }
     }
@@ -429,6 +451,40 @@ mod tests {
             "storyteller-queue-recovery-{}.json",
             Uuid::new_v4()
         ))
+    }
+
+    #[test]
+    fn mixed_language_recovery_preserves_queue_and_foreign_request() {
+        let path = recovery_path();
+        let settings = JobSettings::default();
+        let context = context(&settings);
+        let mut queue = JobQueue::default();
+        for title in ["english", "older-foreign"] {
+            let mut job = Job::new(inputs(title), settings.clone()).unwrap();
+            job.start().unwrap();
+            complete_checkpoint(&mut job, PipelineStage::Prepare, &context);
+            complete_checkpoint(&mut job, PipelineStage::Analyze, &context);
+            queue.enqueue(job);
+        }
+        write_queue_recovery(&path, &queue).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["jobs"][0]["language"] = serde_json::json!("auto");
+        value["jobs"][1]["language"] = serde_json::json!("de");
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let recovered = read_queue_recovery(&path).unwrap();
+        assert_eq!(recovered.recovered_jobs, 2);
+        assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
+        let english = &recovered.queue.jobs()[0];
+        assert_eq!(english.settings.language.as_deref(), Some("en"));
+        assert_eq!(english.checkpoints.len(), 2);
+        let foreign = &recovered.queue.jobs()[1];
+        assert_eq!(foreign.status, JobStatus::Waiting);
+        assert_eq!(foreign.settings.language.as_deref(), Some("de"));
+        assert_eq!(foreign.checkpoints.len(), 1);
+        assert_eq!(foreign.checkpoints[0].stage, PipelineStage::Prepare);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -527,6 +583,75 @@ mod tests {
                 PipelineStage::Analyze,
                 PipelineStage::Align,
             ]
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn legacy_whisper_jobs_restart_analysis_with_whistle_and_remain_paused() {
+        let path = recovery_path();
+        let settings = JobSettings::default();
+        let context = context(&settings);
+        let mut job = Job::new(inputs("legacy"), settings).unwrap();
+        job.start().unwrap();
+        for stage in [
+            PipelineStage::Prepare,
+            PipelineStage::Analyze,
+            PipelineStage::Align,
+        ] {
+            complete_checkpoint(&mut job, stage, &context);
+        }
+        let mut queue = JobQueue::default();
+        queue.enqueue(job);
+        write_queue_recovery(&path, &queue).unwrap();
+        let mut legacy: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        legacy["version"] = serde_json::json!(1);
+        let record = legacy["jobs"][0].as_object_mut().unwrap();
+        record.remove("transcription_model");
+        record.insert("whisper_model".into(), serde_json::json!("large-v3-turbo"));
+        let workers = record.remove("transcription_workers").unwrap();
+        record.insert("whisper_workers".into(), workers);
+        fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let recovered = read_queue_recovery(&path).unwrap();
+        let restored = &recovered.queue.jobs()[0];
+        assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
+        assert_eq!(restored.status, JobStatus::Waiting);
+        assert_eq!(restored.settings.transcription_model, "whistle");
+        assert_eq!(restored.checkpoints.len(), 1);
+        assert_eq!(restored.checkpoints[0].stage, PipelineStage::Prepare);
+        write_queue_recovery(&path, &recovered.queue).unwrap();
+        let migrated: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(migrated["version"], 2);
+        assert!(migrated["jobs"][0].get("whisper_model").is_none());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn concrete_worker_counts_above_four_and_older_choices_survive_paused_recovery() {
+        let path = recovery_path();
+        let mut queue = JobQueue::default();
+        for count in [1, 4, 8, 16] {
+            let settings = JobSettings {
+                transcription_workers: count,
+                ..JobSettings::default()
+            };
+            queue.enqueue(Job::new(inputs(&format!("workers-{count}")), settings).unwrap());
+        }
+        write_queue_recovery(&path, &queue).unwrap();
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["version"], 2);
+        let recovered = read_queue_recovery(&path).unwrap();
+        assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
+        assert_eq!(
+            recovered
+                .queue
+                .jobs()
+                .iter()
+                .map(|job| job.settings.transcription_workers)
+                .collect::<Vec<_>>(),
+            [1, 4, 8, 16]
         );
         let _ = fs::remove_file(path);
     }

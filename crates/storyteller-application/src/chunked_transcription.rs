@@ -8,25 +8,25 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    merge_chunk_transcripts, plan_transcription_chunks, read_whisper_transcript_chunk,
-    run_cancellable_command, validate_chunk_plan, write_whisper_transcript, CancellationToken,
-    CommandOutput, CommandRunError, CommandStream, TranscriptionChunk, WhisperTranscript,
+    merge_chunk_transcripts, parse_whistle_transcript, plan_transcription_chunks,
+    run_cancellable_command, validate_chunk_plan, write_transcript, CancellationToken,
+    CommandOutput, CommandRunError, Transcript, TranscriptionChunk,
     DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
 };
 
-const SILENCE_SEARCH_RADIUS_MS: u64 = 60_000;
+const SILENCE_SEARCH_RADIUS_MS: u64 = 2_500;
 const SILENCE_MIN_DURATION_SECONDS: f64 = 0.35;
 const SILENCE_NOISE_DB: i32 = -40;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChunkedTranscriptionSummary {
+pub struct ChunkedTranscriptionSummary {
     pub duration_ms: u64,
     pub chunks: usize,
-    pub per_worker_threads: usize,
+    pub effective_workers: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChunkedTranscriptionProgress {
+pub struct ChunkedTranscriptionProgress {
     pub completed_chunks: usize,
     pub total_chunks: usize,
     pub percent: u8,
@@ -34,30 +34,23 @@ pub(crate) struct ChunkedTranscriptionProgress {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ChunkedTranscriptionConfig {
+pub struct ChunkedTranscriptionConfig {
     pub ffmpeg: PathBuf,
-    pub whisper_cli: PathBuf,
-    pub whisper_model: PathBuf,
-    pub language: String,
+    pub whistle_cli: PathBuf,
+    pub whistle_model: PathBuf,
     pub workers: usize,
-    pub total_cpu_threads: usize,
 }
 
 #[derive(Debug)]
 enum WorkerEvent {
-    Progress {
-        chunk_index: usize,
-        percent: u8,
-        backend: Option<String>,
-    },
     Completed {
         chunk: TranscriptionChunk,
-        transcript: WhisperTranscript,
+        transcript: Transcript,
     },
     Failed(String),
 }
 
-pub(crate) fn transcribe_audiobook_in_chunks(
+pub fn transcribe_audiobook_in_chunks(
     source: &Path,
     stage_dir: &Path,
     transcript_path: &Path,
@@ -65,11 +58,14 @@ pub(crate) fn transcribe_audiobook_in_chunks(
     cancellation: &CancellationToken,
     observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
 ) -> Result<ChunkedTranscriptionSummary, String> {
-    if config.workers == 0 {
-        return Err("Whisper worker count must be positive.".into());
+    if !(1..=storyteller_core::MAX_TRANSCRIPTION_WORKERS).contains(&config.workers) {
+        return Err(format!(
+            "Transcription worker count must be between 1 and {}.",
+            storyteller_core::MAX_TRANSCRIPTION_WORKERS
+        ));
     }
-    if config.total_cpu_threads == 0 {
-        return Err("Available CPU thread count must be positive.".into());
+    if cancellation.is_requested() {
+        return Err("Transcription was cancelled.".into());
     }
 
     let metadata = probe_audio_metadata(source, &config.ffmpeg, cancellation)?;
@@ -94,7 +90,6 @@ pub(crate) fn transcribe_audiobook_in_chunks(
     )?;
 
     let effective_workers = config.workers.min(chunks.len()).max(1);
-    let per_worker_threads = (config.total_cpu_threads / effective_workers).max(1);
     let temporary_dir = stage_dir.join("transcription-chunks.tmp");
     if temporary_dir.exists() {
         fs::remove_dir_all(&temporary_dir).map_err(|error| {
@@ -117,13 +112,12 @@ pub(crate) fn transcribe_audiobook_in_chunks(
         &chunks,
         config,
         effective_workers,
-        per_worker_threads,
         cancellation,
         observer,
     )
     .and_then(|parts| {
         let merged = merge_chunk_transcripts(metadata.duration_ms, &parts)?;
-        write_whisper_transcript(transcript_path, &merged)
+        write_transcript(transcript_path, &merged)
     });
 
     let cleanup = fs::remove_dir_all(&temporary_dir);
@@ -141,7 +135,7 @@ pub(crate) fn transcribe_audiobook_in_chunks(
     Ok(ChunkedTranscriptionSummary {
         duration_ms: metadata.duration_ms,
         chunks: chunks.len(),
-        per_worker_threads,
+        effective_workers,
     })
 }
 
@@ -152,10 +146,9 @@ fn run_chunk_workers(
     chunks: &[TranscriptionChunk],
     config: &ChunkedTranscriptionConfig,
     effective_workers: usize,
-    per_worker_threads: usize,
     cancellation: &CancellationToken,
     observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
-) -> Result<Vec<(TranscriptionChunk, WhisperTranscript)>, String> {
+) -> Result<Vec<(TranscriptionChunk, Transcript)>, String> {
     let queue = Arc::new(Mutex::new(VecDeque::from(chunks.to_vec())));
     let worker_cancellation = CancellationToken::default();
     let (sender, receiver) = mpsc::channel::<WorkerEvent>();
@@ -190,9 +183,7 @@ fn run_chunk_workers(
                 &temporary_dir,
                 chunk,
                 &config,
-                per_worker_threads,
                 &worker_cancellation,
-                &sender,
             ) {
                 Ok(transcript) => {
                     if sender
@@ -212,12 +203,18 @@ fn run_chunk_workers(
     }
     drop(sender);
 
-    let mut progress = vec![0u8; chunks.len()];
+    let total_audio_ms = chunks.iter().map(|chunk| chunk.duration_ms()).sum::<u64>();
+    let mut completed_audio_ms = 0u64;
     let mut completed = 0usize;
-    let mut parts = vec![None::<(TranscriptionChunk, WhisperTranscript)>; chunks.len()];
+    let mut parts = vec![None::<(TranscriptionChunk, Transcript)>; chunks.len()];
     let mut first_error = None::<String>;
 
     while completed < chunks.len() && first_error.is_none() {
+        if cancellation.is_requested() {
+            worker_cancellation.request();
+            first_error = Some("Transcription was cancelled.".into());
+            break;
+        }
         let event = match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(event) => event,
             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -233,37 +230,16 @@ fn run_chunk_workers(
             }
         };
         match event {
-            WorkerEvent::Progress {
-                chunk_index,
-                percent,
-                backend,
-            } => {
-                if let Some(slot) = progress.get_mut(chunk_index) {
-                    *slot = percent.min(100);
-                }
-                let overall = progress.iter().map(|value| *value as usize).sum::<usize>()
-                    / progress.len().max(1);
-                if let Err(error) = observer(ChunkedTranscriptionProgress {
-                    completed_chunks: completed,
-                    total_chunks: chunks.len(),
-                    percent: overall.min(100) as u8,
-                    backend,
-                }) {
-                    worker_cancellation.request();
-                    first_error = Some(error);
-                }
-            }
             WorkerEvent::Completed { chunk, transcript } => {
-                progress[chunk.index] = 100;
+                completed_audio_ms += chunk.duration_ms();
                 parts[chunk.index] = Some((chunk, transcript));
                 completed += 1;
-                let overall = progress.iter().map(|value| *value as usize).sum::<usize>()
-                    / progress.len().max(1);
+                let overall = (completed_audio_ms as u128 * 100 / total_audio_ms as u128) as u8;
                 if let Err(error) = observer(ChunkedTranscriptionProgress {
                     completed_chunks: completed,
                     total_chunks: chunks.len(),
-                    percent: overall.min(100) as u8,
-                    backend: None,
+                    percent: overall.min(100),
+                    backend: Some("Whistle / native CPU".into()),
                 }) {
                     worker_cancellation.request();
                     first_error = Some(error);
@@ -304,13 +280,9 @@ fn transcribe_one_chunk(
     temporary_dir: &Path,
     chunk: TranscriptionChunk,
     config: &ChunkedTranscriptionConfig,
-    per_worker_threads: usize,
     cancellation: &CancellationToken,
-    sender: &mpsc::Sender<WorkerEvent>,
-) -> Result<WhisperTranscript, String> {
+) -> Result<Transcript, String> {
     let wav_path = temporary_dir.join(format!("chunk-{:05}.wav", chunk.index));
-    let output_prefix = temporary_dir.join(format!("chunk-{:05}", chunk.index));
-    let raw_transcript = output_prefix.with_extension("json");
 
     let start_seconds = chunk.start_ms as f64 / 1000.0;
     let duration_seconds = chunk.duration_ms() as f64 / 1000.0;
@@ -321,6 +293,7 @@ fn transcribe_one_chunk(
         .arg("-y")
         .arg("-ss")
         .arg(format!("{start_seconds:.3}"))
+        .args(["-threads", "1"])
         .arg("-i")
         .arg(source)
         .arg("-t")
@@ -334,6 +307,7 @@ fn transcribe_one_chunk(
         .arg("1")
         .arg("-c:a")
         .arg("pcm_s16le")
+        .args(["-threads", "1"])
         .arg(&wav_path);
     match run_cancellable_command(&mut ffmpeg, cancellation, |_, _| {}) {
         Ok(output) if output.success => {}
@@ -348,44 +322,22 @@ fn transcribe_one_chunk(
     }
     validate_nonempty_file(&wav_path, "Converted transcription chunk")?;
 
-    let mut whisper = Command::new(&config.whisper_cli);
-    whisper
-        .arg("-m")
-        .arg(&config.whisper_model)
-        .arg("-f")
-        .arg(&wav_path)
-        .arg("-l")
-        .arg(&config.language)
-        .arg("-ojf")
-        .arg("-of")
-        .arg(&output_prefix)
-        .arg("-pp")
-        .arg("-t")
-        .arg(per_worker_threads.to_string());
-
-    match run_cancellable_command(&mut whisper, cancellation, |stream, line| {
-        if stream != CommandStream::Stderr {
-            return;
-        }
-        let percent = parse_whisper_progress(line);
-        let backend = parse_whisper_backend(line);
-        if percent.is_some() || backend.is_some() {
-            let _ = sender.send(WorkerEvent::Progress {
-                chunk_index: chunk.index,
-                percent: percent.unwrap_or(0),
-                backend,
-            });
-        }
-    }) {
-        Ok(output) if output.success => {}
-        Ok(output) => return Err(command_failure("whisper.cpp transcription chunk", &output)),
+    if cancellation.is_requested() {
+        return Err("Transcription was cancelled.".into());
+    }
+    let mut whistle = crate::runtime_setup::whistle_command(
+        &config.whistle_cli,
+        &config.whistle_model,
+        &wav_path,
+    );
+    let output = match run_cancellable_command(&mut whistle, cancellation, |_, _| {}) {
+        Ok(output) if output.success => output,
+        Ok(output) => return Err(command_failure("Whistle transcription chunk", &output)),
         Err(CommandRunError::Cancelled) => return Err("Transcription was cancelled.".into()),
         Err(error) => return Err(format!("Could not transcribe audio chunk: {error}")),
-    }
-    validate_nonempty_file(&raw_transcript, "Whisper chunk transcript")?;
-    let transcript = read_whisper_transcript_chunk(&raw_transcript)?;
+    };
+    let transcript = parse_whistle_transcript(&output.stdout, chunk.duration_ms())?;
     let _ = fs::remove_file(&wav_path);
-    let _ = fs::remove_file(&raw_transcript);
     Ok(transcript)
 }
 
@@ -463,7 +415,11 @@ fn refine_synthetic_boundaries(
         {
             let previous = if index == 0 { 0 } else { boundaries[index - 1] };
             let next = boundaries[index + 1];
-            if refined > previous && refined < next {
+            if refined > previous
+                && refined < next
+                && refined - previous <= storyteller_core::WHISTLE_MAX_CHUNK_MS
+                && next - refined <= storyteller_core::WHISTLE_MAX_CHUNK_MS
+            {
                 boundaries[index] = refined;
             }
         }
@@ -676,27 +632,6 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
         ));
     }
     Ok(())
-}
-
-fn parse_whisper_progress(line: &str) -> Option<u8> {
-    let (_, remainder) = line.split_once("progress =")?;
-    let (percent, _) = remainder.split_once('%')?;
-    percent
-        .trim()
-        .parse::<u8>()
-        .ok()
-        .filter(|value| *value <= 100)
-}
-
-fn parse_whisper_backend(line: &str) -> Option<String> {
-    let marker = "backend_init_gpu: using ";
-    let (_, backend) = line.split_once(marker)?;
-    let backend = backend.trim();
-    if backend.is_empty() {
-        None
-    } else {
-        Some(format!("whisper.cpp / {backend}"))
-    }
 }
 
 fn command_failure(label: &str, output: &CommandOutput) -> String {

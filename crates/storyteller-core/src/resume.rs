@@ -5,13 +5,13 @@ use sha2::{Digest, Sha256};
 pub struct ResumeContext {
     pub epub_source: String,
     pub audiobook_source: String,
-    pub whisper_backend: String,
+    pub transcription_backend: String,
     pub alignment_backend: String,
     pub audio_backend: String,
     pub ocr_backend: String,
     pub epub_backend: String,
     pub effective_language: String,
-    pub effective_whisper_model: String,
+    pub effective_transcription_model: String,
     pub settings: JobSettings,
 }
 
@@ -23,15 +23,15 @@ impl ResumeContext {
                 "Audiobook source fingerprint",
                 self.audiobook_source.as_str(),
             ),
-            ("Whisper backend", self.whisper_backend.as_str()),
+            ("Transcription backend", self.transcription_backend.as_str()),
             ("Alignment backend", self.alignment_backend.as_str()),
             ("Audio backend", self.audio_backend.as_str()),
             ("OCR backend", self.ocr_backend.as_str()),
             ("EPUB backend", self.epub_backend.as_str()),
             ("Effective language", self.effective_language.as_str()),
             (
-                "Effective Whisper model",
-                self.effective_whisper_model.as_str(),
+                "Effective transcription model",
+                self.effective_transcription_model.as_str(),
             ),
         ] {
             if value.trim().is_empty() {
@@ -49,22 +49,22 @@ impl ResumeContext {
         match stage {
             PipelineStage::Prepare => {}
             PipelineStage::Analyze => {
-                hasher.update(self.whisper_backend.as_bytes());
+                hasher.update(self.transcription_backend.as_bytes());
                 hasher.update(self.effective_language.as_bytes());
-                hasher.update(self.effective_whisper_model.as_bytes());
+                hasher.update(self.effective_transcription_model.as_bytes());
             }
             PipelineStage::Align => {
-                hasher.update(self.whisper_backend.as_bytes());
+                hasher.update(self.transcription_backend.as_bytes());
                 hasher.update(self.alignment_backend.as_bytes());
                 hasher.update(self.effective_language.as_bytes());
-                hasher.update(self.effective_whisper_model.as_bytes());
+                hasher.update(self.effective_transcription_model.as_bytes());
             }
             PipelineStage::ReviewAudio => {
-                hasher.update(self.whisper_backend.as_bytes());
+                hasher.update(self.transcription_backend.as_bytes());
                 hasher.update(self.alignment_backend.as_bytes());
                 hasher.update(self.ocr_backend.as_bytes());
                 hasher.update(self.effective_language.as_bytes());
-                hasher.update(self.effective_whisper_model.as_bytes());
+                hasher.update(self.effective_transcription_model.as_bytes());
                 hasher.update(format!(
                     "review-policy:{:?}\n",
                     self.settings.audio_review_policy
@@ -139,19 +139,19 @@ impl ValidatedResumePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{AudioBitrate, AudioCodec, AudioEncoding, MAX_WHISPER_WORKERS};
+    use crate::{AudioBitrate, AudioCodec, AudioEncoding, MAX_TRANSCRIPTION_WORKERS};
 
     fn context(settings: JobSettings) -> ResumeContext {
         ResumeContext {
             epub_source: "epub:one".into(),
             audiobook_source: "audio:one".into(),
-            whisper_backend: "whisper:one".into(),
+            transcription_backend: "whistle:one".into(),
             alignment_backend: "align:one".into(),
             audio_backend: "ffmpeg:one".into(),
             ocr_backend: "ocr:one".into(),
             epub_backend: "epub-builder:one".into(),
             effective_language: "auto".into(),
-            effective_whisper_model: "model:one".into(),
+            effective_transcription_model: "model:one".into(),
             settings,
         }
     }
@@ -160,7 +160,7 @@ mod tests {
     fn worker_count_is_execution_only_for_stage_fingerprints() {
         let first = context(JobSettings::default());
         let changed = JobSettings {
-            whisper_workers: MAX_WHISPER_WORKERS,
+            transcription_workers: MAX_TRANSCRIPTION_WORKERS,
             ..JobSettings::default()
         };
         let second = context(changed);

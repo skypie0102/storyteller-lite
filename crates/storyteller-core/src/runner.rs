@@ -1,8 +1,7 @@
 use crate::{
     CancellationToken, Job, JobOutcome, JobStatus, JobWorkspace, LiveMetrics, PipelineStage,
-    ResourceRequest, ResumeContext, RuntimeCoordinator, StageStatus,
+    ResourceRequest, ResumeContext, RuntimeCoordinator, StageArtifacts, StageStatus,
 };
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineRunState {
@@ -36,14 +35,14 @@ impl StagePlan {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageRunOutput {
-    artifacts: Vec<PathBuf>,
+    artifacts: StageArtifacts,
     elapsed_seconds: u64,
     completed_at_millis: u64,
     requires_review: bool,
 }
 
 impl StageRunOutput {
-    pub fn new(artifacts: Vec<PathBuf>, elapsed_seconds: u64, completed_at_millis: u64) -> Self {
+    pub fn new(artifacts: StageArtifacts, elapsed_seconds: u64, completed_at_millis: u64) -> Self {
         Self {
             artifacts,
             elapsed_seconds,
@@ -236,21 +235,29 @@ pub fn run_pipeline<B: PipelineBackend>(
         };
         let _ = output.completed_at_millis.max(plan.planned_at_millis);
 
-        if let Err(error) = context
-            .workspace
-            .capture_stage_artifacts(stage, &output.artifacts)
+        if output.artifacts.stage() != stage
+            || (output.requires_review && stage != PipelineStage::ReviewAudio)
         {
-            context.job.progress.mark_failed(stage)?;
+            return finish_stage_error(
+                &mut context,
+                StageRunError::failed("Backend returned outputs for the wrong pipeline stage.", 0),
+                cancellation,
+            );
+        }
+
+        if let Err(error) =
             context
-                .job
-                .progress
-                .set_activity(format!("{} artifact finalization failed", stage.label()))?;
-            context.job.finish(
-                JobOutcome::Failed(error.clone()),
-                elapsed_seconds(context.job),
-            )?;
-            context.observer.observe(context.job);
-            return Ok(PipelineRunState::Failed(error));
+                .workspace
+                .capture_stage_artifacts(stage, &output.artifacts, cancellation)
+        {
+            return finish_stage_error(&mut context, StageRunError::failed(error, 0), cancellation);
+        }
+        if cancellation.is_requested() {
+            return finish_stage_error(
+                &mut context,
+                StageRunError::cancelled("Stage finalization was cancelled.", 0),
+                cancellation,
+            );
         }
 
         if let Err(error) = backend.finalize_stage(&mut context, &output) {

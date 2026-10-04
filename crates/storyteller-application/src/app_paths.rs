@@ -6,11 +6,11 @@ use std::{
 
 const APP_DATA_DIR_NAME: &str = "Storyteller OneClick Lite";
 
-pub(crate) fn persistent_app_root() -> Option<PathBuf> {
+pub fn persistent_app_root() -> Option<PathBuf> {
     root_from_local_app_data(env::var_os("LOCALAPPDATA"))
 }
 
-pub(crate) fn recovery_app_root() -> PathBuf {
+pub fn recovery_app_root() -> PathBuf {
     persistent_app_root().unwrap_or_else(|| app_root_from(&env::temp_dir()))
 }
 

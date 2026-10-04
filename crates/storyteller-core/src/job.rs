@@ -7,8 +7,9 @@ use uuid::Uuid;
 
 pub type JobId = Uuid;
 
-pub const MIN_WHISPER_WORKERS: usize = 1;
-pub const MAX_WHISPER_WORKERS: usize = 4;
+pub const MIN_TRANSCRIPTION_WORKERS: usize = 1;
+// Application safety ceiling for manual parallelism, not a Whistle model limit.
+pub const MAX_TRANSCRIPTION_WORKERS: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioCodec {
@@ -62,12 +63,12 @@ impl AudioEncoding {
 pub struct JobSettings {
     pub audio: AudioEncoding,
     pub language: Option<String>,
-    pub whisper_model: String,
+    pub transcription_model: String,
     /// Controls whether safe unmatched-audio cases may be resolved automatically or all are surfaced.
     pub audio_review_policy: AudioReviewPolicy,
     /// Maximum number of independent transcription chunks that may run concurrently.
-    /// This is intentionally separate from whisper.cpp's internal processor count.
-    pub whisper_workers: usize,
+    /// Each worker owns an isolated native engine process.
+    pub transcription_workers: usize,
 }
 
 impl Default for JobSettings {
@@ -77,10 +78,10 @@ impl Default for JobSettings {
                 codec: AudioCodec::Opus,
                 bitrate: Some(AudioBitrate::Kbps64),
             },
-            language: None,
-            whisper_model: "large-v3-turbo".into(),
+            language: Some(crate::WHISTLE_LANGUAGE.into()),
+            transcription_model: "whistle".into(),
             audio_review_policy: AudioReviewPolicy::Smart,
-            whisper_workers: MIN_WHISPER_WORKERS,
+            transcription_workers: MIN_TRANSCRIPTION_WORKERS,
         }
     }
 }
@@ -139,7 +140,7 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn new(inputs: JobInputs, settings: JobSettings) -> Result<Self, String> {
+    pub fn new(inputs: JobInputs, mut settings: JobSettings) -> Result<Self, String> {
         if inputs.title.trim().is_empty() {
             return Err("Book title cannot be blank.".into());
         }
@@ -152,9 +153,24 @@ impl Job {
         if inputs.output_path == inputs.epub_path {
             return Err("Output path must not replace the source EPUB.".into());
         }
-        if !(MIN_WHISPER_WORKERS..=MAX_WHISPER_WORKERS).contains(&settings.whisper_workers) {
+        if settings.transcription_model != "whistle" {
+            return Err("This rebuild uses the Whistle model.".into());
+        }
+        // Older callers and recovery records used an absent/auto language. Their
+        // default now means English; an explicit foreign language is never retargeted.
+        let language = settings
+            .language
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
+            .unwrap_or(crate::WHISTLE_LANGUAGE);
+        crate::validate_whistle_language(language)?;
+        settings.language = Some(crate::WHISTLE_LANGUAGE.into());
+        if !(MIN_TRANSCRIPTION_WORKERS..=MAX_TRANSCRIPTION_WORKERS)
+            .contains(&settings.transcription_workers)
+        {
             return Err(format!(
-                "Whisper workers must be between {MIN_WHISPER_WORKERS} and {MAX_WHISPER_WORKERS}."
+                "Transcription workers must be between {MIN_TRANSCRIPTION_WORKERS} and {MAX_TRANSCRIPTION_WORKERS}."
             ));
         }
         Ok(Self {
@@ -326,30 +342,60 @@ mod tests {
         ResumeContext {
             epub_source: "epub:one".into(),
             audiobook_source: "audio:one".into(),
-            whisper_backend: "whisper:one".into(),
+            transcription_backend: "whistle:one".into(),
             alignment_backend: "align:one".into(),
             audio_backend: "audio:one".into(),
             ocr_backend: "ocr:one".into(),
             epub_backend: "epub:one".into(),
-            effective_language: "auto".into(),
-            effective_whisper_model: "model:one".into(),
+            effective_language: crate::WHISTLE_LANGUAGE.into(),
+            effective_transcription_model: "model:one".into(),
             settings: JobSettings::default(),
         }
     }
 
     #[test]
-    fn whisper_worker_count_is_bounded_for_queued_jobs() {
+    fn legacy_default_language_is_normalized_to_english() {
+        for language in [None, Some(""), Some(" auto "), Some(" EN ")] {
+            let settings = JobSettings {
+                language: language.map(str::to_string),
+                ..JobSettings::default()
+            };
+            let job = Job::new(inputs(), settings).unwrap();
+            assert_eq!(job.settings.language.as_deref(), Some("en"));
+        }
+    }
+
+    #[test]
+    fn explicit_foreign_languages_are_rejected() {
+        for language in ["de", "fr", "es", "it", "nl", "pl"] {
+            let settings = JobSettings {
+                language: Some(language.into()),
+                ..JobSettings::default()
+            };
+            assert!(Job::new(inputs(), settings)
+                .unwrap_err()
+                .contains("English-only"));
+        }
+    }
+
+    #[test]
+    fn transcription_worker_count_is_bounded_for_queued_jobs() {
         let settings = JobSettings {
-            whisper_workers: MAX_WHISPER_WORKERS,
+            transcription_workers: MAX_TRANSCRIPTION_WORKERS,
             ..JobSettings::default()
         };
         assert!(Job::new(inputs(), settings).is_ok());
 
         let invalid = JobSettings {
-            whisper_workers: MAX_WHISPER_WORKERS + 1,
+            transcription_workers: MAX_TRANSCRIPTION_WORKERS + 1,
             ..JobSettings::default()
         };
         assert!(Job::new(inputs(), invalid).is_err());
+        let automatic_sentinel = JobSettings {
+            transcription_workers: 0,
+            ..JobSettings::default()
+        };
+        assert!(Job::new(inputs(), automatic_sentinel).is_err());
     }
 
     #[test]

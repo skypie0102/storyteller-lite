@@ -1,39 +1,41 @@
-mod app_paths;
 mod review_ui;
-mod runtime_import;
 mod worker_bridge;
 
 use rfd::FileDialog;
-use slint::{ComponentHandle, TimerMode, VecModel};
+use slint::{ComponentHandle, Model, TimerMode, VecModel};
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
     rc::Rc,
     time::Duration,
 };
+use storyteller_application::{ApplicationCommand, ApplicationController};
 use storyteller_core::{
-    AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobOutcome,
-    JobQueue, JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
+    AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobQueue,
+    JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
 };
-use worker_bridge::{accept_audio_review_exclusion, load_audio_review_report, WorkerBridge};
+use worker_bridge::ViewBridge;
 
 slint::include_modules!();
+
+pub(crate) type SharedApplication = Rc<RefCell<ApplicationController>>;
 
 #[derive(Debug, Default)]
 struct PendingSources {
     epub: Option<PathBuf>,
     audiobook: Option<PathBuf>,
+    output_directory: Option<PathBuf>,
 }
 
 fn main() -> Result<(), slint::PlatformError> {
     let ui = AppWindow::new()?;
     let pending = Rc::new(RefCell::new(PendingSources::default()));
-    let queue = Rc::new(RefCell::new(JobQueue::default()));
+    let app = Rc::new(RefCell::new(ApplicationController::new()));
     let queue_rows = Rc::new(VecModel::<QueueRow>::default());
     let stage_rows = Rc::new(VecModel::<StageRow>::default());
     let detail_stage_rows = Rc::new(VecModel::<StageDetailRow>::default());
-    let worker_bridge = Rc::new(RefCell::new(WorkerBridge::default()));
-    let review_ui_controller = review_ui::install_review_ui(&ui, Rc::clone(&queue));
+    let view_bridge = Rc::new(RefCell::new(ViewBridge::default()));
+    let review_ui_controller = review_ui::install_review_ui(&ui, Rc::clone(&app));
     ui.set_queue_rows(queue_rows.clone().into());
     ui.set_active_stages(stage_rows.clone().into());
     ui.set_active_stage_details(detail_stage_rows.clone().into());
@@ -53,11 +55,11 @@ fn main() -> Result<(), slint::PlatformError> {
             pending.borrow_mut().epub = Some(path);
             if let Some(ui) = ui_weak.upgrade() {
                 ui.set_epub_source_name(label.into());
+                update_output_preview(&ui, &pending.borrow());
                 ui.set_status_text("EPUB selected".into());
             }
         });
     }
-
     {
         let pending = Rc::clone(&pending);
         let ui_weak = ui.as_weak();
@@ -80,420 +82,243 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-
-    {
-        let ui_weak = ui.as_weak();
-        ui.on_import_whisper_archive(move || {
-            let Some(path) = FileDialog::new()
-                .set_title("Import whisper.cpp archive")
-                .add_filter("whisper.cpp archive", &["zip", "tgz", "gz"])
-                .pick_file()
-            else {
-                return;
-            };
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            ui.set_runtime_busy(true);
-            ui.set_runtime_install_status_text(
-                format!("Importing and verifying {}…", display_name(&path)).into(),
-            );
-            match runtime_import::import_whisper_archive(&path) {
-                Ok(cli) => {
-                    std::env::set_var("STORYTELLER_WHISPER", &cli);
-                    ui.set_runtime_install_status_text(
-                        format!("Imported and verified whisper.cpp at {}", cli.display()).into(),
-                    );
-                    ui.set_runtime_refresh_requested(true);
-                }
-                Err(error) => {
-                    ui.set_runtime_install_status_text(format!("Import failed: {error}").into());
-                }
-            }
-            ui.set_runtime_busy(false);
-        });
-    }
-
     {
         let pending = Rc::clone(&pending);
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let ui_weak = ui.as_weak();
+        ui.on_browse_output(move || {
+            let initial = pending.borrow().output_directory.clone().or_else(|| {
+                pending
+                    .borrow()
+                    .epub
+                    .as_ref()
+                    .and_then(|path| path.parent().map(Path::to_path_buf))
+            });
+            let mut dialog = FileDialog::new().set_title("Choose output folder");
+            if let Some(initial) = initial {
+                dialog = dialog.set_directory(initial);
+            }
+            if let Some(directory) = dialog.pick_folder() {
+                pending.borrow_mut().output_directory = Some(directory);
+                if let Some(ui) = ui_weak.upgrade() {
+                    update_output_preview(&ui, &pending.borrow());
+                }
+            }
+        });
+    }
+    {
+        let pending = Rc::clone(&pending);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_queue_book(move || {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
-
-            let (epub_path, audiobook_path) = {
-                let pending = pending.borrow();
-                let Some(epub_path) = pending.epub.clone() else {
-                    ui.set_status_text("Choose an EPUB first".into());
-                    return;
-                };
-                let Some(audiobook_path) = pending.audiobook.clone() else {
-                    ui.set_status_text("Choose an audiobook first".into());
-                    return;
-                };
-                (epub_path, audiobook_path)
-            };
-
-            let codec = ui.get_codec_text().to_string();
-            let bitrate = ui.get_bitrate_text().to_string();
-            let audio = match audio_encoding(&codec, &bitrate) {
-                Ok(audio) => audio,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
+            let result = (|| {
+                if !ui.get_runtime_ready() || ui.get_runtime_busy() {
+                    return Err("Finish local setup in Settings before starting a book.".into());
                 }
-            };
-            let workers_text = ui.get_whisper_workers_text().to_string();
-            let whisper_workers = match parse_whisper_workers(&workers_text) {
-                Ok(workers) => workers,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let audio_review_policy =
-                match parse_audio_review_policy(ui.get_unmatched_audio_policy_text().as_str()) {
-                    Ok(policy) => policy,
-                    Err(error) => {
-                        ui.set_status_text(error.into());
-                        return;
-                    }
-                };
-            let title = book_title(&epub_path);
-            let output_path = output_path(&epub_path, &title);
-            let settings = JobSettings {
-                audio,
-                audio_review_policy,
-                whisper_workers,
-                ..JobSettings::default()
-            };
-            let job = match Job::new(
-                JobInputs {
-                    title: title.clone(),
+                let sources = pending.borrow();
+                let epub_path = sources.epub.clone().ok_or("Choose an EPUB first")?;
+                let audiobook_path = sources
+                    .audiobook
+                    .clone()
+                    .ok_or("Choose an audiobook first")?;
+                let title = book_title(&epub_path);
+                let inputs = JobInputs {
+                    output_path: selected_output_path(&sources, &epub_path, &title),
+                    title,
                     epub_path,
                     audiobook_path,
-                    output_path,
-                },
-                settings,
-            ) {
-                Ok(job) => job,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
+                };
+                if inputs.output_path.exists() {
+                    return Err(format!("An output already exists at {}. Choose another output folder or move that file before starting.", inputs.output_path.display()));
                 }
-            };
-
-            let start_result = {
-                let mut queue = queue.borrow_mut();
-                queue.enqueue(job);
-                queue.start_next()
-            };
-            if let Err(error) = start_result {
-                ui.set_status_text(error.into());
-                return;
+                let settings = JobSettings {
+                    audio: audio_encoding(
+                        ui.get_codec_text().as_str(),
+                        ui.get_bitrate_text().as_str(),
+                    )?,
+                    transcription_workers: app.borrow().snapshot().runtime.status.as_ref()
+                        .ok_or("Wait for the local setup and system scan to finish.")?
+                        .workers.resolve_selection(ui.get_transcription_worker_selection())?,
+                    audio_review_policy: parse_audio_review_policy(
+                        ui.get_unmatched_audio_policy_text().as_str(),
+                    )?,
+                    ..JobSettings::default()
+                };
+                Ok::<_, String>(ApplicationCommand::Enqueue { inputs, settings })
+            })();
+            match result {
+                Ok(command) => {
+                    if dispatch_command(&ui, &app, command) {
+                        ui.set_epub_source_name("".into());
+                        ui.set_audio_source_name("".into());
+                        *pending.borrow_mut() = PendingSources::default();
+                        update_output_preview(&ui, &pending.borrow());
+                        ui.set_workspace_page(1);
+                    }
+                }
+                Err(error) => ui.set_status_text(error.into()),
             }
-
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            ui.set_epub_source_name("".into());
-            ui.set_audio_source_name("".into());
-            *pending.borrow_mut() = PendingSources::default();
         });
     }
 
-    {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
-        let ui_weak = ui.as_weak();
-        ui.on_pause_after_book(move || {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            queue.borrow_mut().request_pause_after_current();
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-        });
+    macro_rules! bind_command {
+        ($callback:ident, $command:expr) => {{
+            let app = Rc::clone(&app);
+            let ui_weak = ui.as_weak();
+            ui.$callback(move || {
+                if let Some(ui) = ui_weak.upgrade() {
+                    dispatch_command(&ui, &app, $command);
+                }
+            });
+        }};
     }
-
+    bind_command!(on_pause_after_book, ApplicationCommand::PauseAfterCurrent);
     {
-        let worker_bridge = Rc::clone(&worker_bridge);
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
-        let ui_weak = ui.as_weak();
+        let app = Rc::clone(&app);
+        let weak = ui.as_weak();
         ui.on_cancel_current(move || {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            if worker_bridge.borrow().request_cancellation() {
-                ui.set_status_text("Cancellation requested".into());
-                return;
+            if let Some(ui) = weak.upgrade() {
+                dispatch_job_command(
+                    &ui,
+                    &app,
+                    ui.get_active_job_id().as_str(),
+                    ApplicationCommand::CancelJob,
+                );
             }
-
-            let review_job = {
-                queue
-                    .borrow()
-                    .active_job()
-                    .filter(|job| job.status == JobStatus::NeedsReview)
-                    .map(|job| (job.id, elapsed_stage_seconds(job)))
-            };
-            let Some((job_id, runtime_seconds)) = review_job else {
-                ui.set_status_text("Active worker is not ready to cancel".into());
+        });
+    }
+    bind_command!(on_resume_queue, ApplicationCommand::ResumeQueue);
+    {
+        let app = Rc::clone(&app);
+        let weak = ui.as_weak();
+        ui.on_open_output(move |id| {
+            let Some(ui) = weak.upgrade() else {
                 return;
             };
-            let result = {
-                let mut queue = queue.borrow_mut();
-                queue
-                    .finish(job_id, JobOutcome::Cancelled, runtime_seconds)
-                    .and_then(|()| queue.start_next().map(|_| ()))
-            };
+            let result = parse_job_id(id.as_str()).and_then(|id| {
+                let app = app.borrow();
+                let snapshot = app.snapshot();
+                let job = snapshot.queue.job(id)?;
+                if job.status != JobStatus::Completed {
+                    return Err("This book has not finished yet.".into());
+                }
+                open_output_folder(&job.inputs.output_path)
+            });
             if let Err(error) = result {
                 ui.set_status_text(error.into());
-                return;
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            ui.set_status_text("Cancelled".into());
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_continue_after_review(move || {
             let Some(ui) = ui_weak.upgrade() else {
                 return;
             };
-            let review_job = {
-                queue
-                    .borrow()
-                    .active_job()
-                    .filter(|job| job.status == JobStatus::NeedsReview)
-                    .cloned()
-            };
-            let Some(job) = review_job else {
+            let id = app.borrow().snapshot().review.job_id;
+            if let Some(id) = id {
+                dispatch_command(&ui, &app, ApplicationCommand::ContinueWithoutUnmatched(id));
+            } else {
                 ui.set_status_text("No book is waiting for audio review".into());
-                return;
-            };
-            if let Err(error) = accept_audio_review_exclusion(&job) {
-                ui.set_status_text(error.into());
-                return;
-            }
-            if let Err(error) = queue.borrow_mut().resume_after_review(job.id) {
-                ui.set_status_text(error.into());
-                return;
-            }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            ui.set_status_text("Review accepted; continuing".into());
-        });
-    }
-
-    {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
-        let ui_weak = ui.as_weak();
-        ui.on_resume_queue(move || {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let start_result = {
-                let mut queue = queue.borrow_mut();
-                queue.resume();
-                queue.start_next()
-            };
-            if let Err(error) = start_result {
-                ui.set_status_text(error.into());
-                return;
-            }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
-            if queue.borrow().active_job().is_none() {
-                ui.set_status_text("Queue resumed".into());
             }
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_move_waiting(move |id, up| {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let id = match parse_job_id(id.as_str()) {
-                Ok(id) => id,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let direction = if up { QueueMove::Up } else { QueueMove::Down };
-            if let Err(error) = queue.borrow_mut().move_waiting(id, direction) {
-                ui.set_status_text(error.into());
-                return;
+            if let Some(ui) = ui_weak.upgrade() {
+                dispatch_job_command(&ui, &app, id.as_str(), |id| {
+                    ApplicationCommand::MoveWaiting {
+                        id,
+                        direction: if up { QueueMove::Up } else { QueueMove::Down },
+                    }
+                });
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_remove_job(move |id| {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let id = match parse_job_id(id.as_str()) {
-                Ok(id) => id,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            if let Err(error) = queue.borrow_mut().remove(id) {
-                ui.set_status_text(error.into());
-                return;
+            if let Some(ui) = ui_weak.upgrade() {
+                dispatch_job_command(&ui, &app, id.as_str(), ApplicationCommand::Remove);
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
         });
     }
-
     {
-        let queue = Rc::clone(&queue);
-        let queue_rows = Rc::clone(&queue_rows);
-        let stage_rows = Rc::clone(&stage_rows);
-        let detail_stage_rows = Rc::clone(&detail_stage_rows);
+        let app = Rc::clone(&app);
         let ui_weak = ui.as_weak();
         ui.on_retry_from_start(move |id| {
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            let id = match parse_job_id(id.as_str()) {
-                Ok(id) => id,
-                Err(error) => {
-                    ui.set_status_text(error.into());
-                    return;
-                }
-            };
-            let retry_result = {
-                let mut queue = queue.borrow_mut();
-                queue
-                    .retry_from_scratch(id)
-                    .and_then(|()| queue.start_next().map(|_| ()))
-            };
-            if let Err(error) = retry_result {
-                ui.set_status_text(error.into());
-                return;
+            if let Some(ui) = ui_weak.upgrade() {
+                dispatch_job_command(&ui, &app, id.as_str(), ApplicationCommand::RetryFromScratch);
             }
-            refresh_main_view(
-                &ui,
-                &queue.borrow(),
-                &queue_rows,
-                &stage_rows,
-                &detail_stage_rows,
-            );
         });
     }
-
-    ui.on_open_settings(|| {
-        println!("Settings requested");
-    });
 
     let poll_timer = slint::Timer::default();
     {
-        let worker_bridge = Rc::clone(&worker_bridge);
-        let queue = Rc::clone(&queue);
+        let app = Rc::clone(&app);
+        let view_bridge = Rc::clone(&view_bridge);
         let queue_rows = Rc::clone(&queue_rows);
         let stage_rows = Rc::clone(&stage_rows);
         let detail_stage_rows = Rc::clone(&detail_stage_rows);
         let review_ui_controller = Rc::clone(&review_ui_controller);
         let ui_weak = ui.as_weak();
         poll_timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
-            worker_bridge.borrow_mut().poll(
+            view_bridge.borrow_mut().poll(
                 &ui_weak,
-                &queue,
+                &app,
                 &queue_rows,
                 &stage_rows,
                 &detail_stage_rows,
             );
-            review_ui::refresh_review_ui(&ui_weak, &queue, &review_ui_controller);
+            review_ui::refresh_review_ui(&ui_weak, &app, &review_ui_controller);
         });
     }
-
-    refresh_main_view(
-        &ui,
-        &queue.borrow(),
-        &queue_rows,
-        &stage_rows,
-        &detail_stage_rows,
-    );
-    review_ui::refresh_review_ui(&ui.as_weak(), &queue, &review_ui_controller);
+    if !app.borrow().snapshot().queue.jobs().is_empty() {
+        ui.set_workspace_page(1);
+    }
+    dispatch_command(&ui, &app, ApplicationCommand::ScanRuntime);
+    view_bridge
+        .borrow_mut()
+        .render(&ui, &app, &queue_rows, &stage_rows, &detail_stage_rows);
+    review_ui::refresh_review_ui(&ui.as_weak(), &app, &review_ui_controller);
     let result = ui.run();
     poll_timer.stop();
+    app.borrow_mut().shutdown();
     result
 }
 
-fn display_name(path: &Path) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.to_string_lossy().into_owned())
+pub(crate) fn dispatch_command(
+    ui: &AppWindow,
+    app: &SharedApplication,
+    command: ApplicationCommand,
+) -> bool {
+    match app.borrow_mut().dispatch(command) {
+        Ok(()) => true,
+        Err(error) => {
+            ui.set_status_text(error.into());
+            false
+        }
+    }
+}
+
+fn dispatch_job_command(
+    ui: &AppWindow,
+    app: &SharedApplication,
+    id: &str,
+    command: impl FnOnce(JobId) -> ApplicationCommand,
+) {
+    match parse_job_id(id) {
+        Ok(id) => {
+            dispatch_command(ui, app, command(id));
+        }
+        Err(error) => ui.set_status_text(error.into()),
+    }
 }
 
 fn book_title(epub_path: &Path) -> String {
@@ -506,6 +331,56 @@ fn book_title(epub_path: &Path) -> String {
 
 fn output_path(epub_path: &Path, title: &str) -> PathBuf {
     epub_path.with_file_name(format!("{title} (readaloud).epub"))
+}
+
+fn selected_output_path(sources: &PendingSources, epub_path: &Path, title: &str) -> PathBuf {
+    let default = output_path(epub_path, title);
+    sources.output_directory.as_ref().map_or_else(
+        || default.clone(),
+        |directory| directory.join(default.file_name().unwrap()),
+    )
+}
+fn update_output_preview(ui: &AppWindow, sources: &PendingSources) {
+    if let Some(epub) = &sources.epub {
+        let output = selected_output_path(sources, epub, &book_title(epub));
+        ui.set_output_name(display_name(&output).into());
+        ui.set_output_directory(
+            output
+                .parent()
+                .map_or_else(String::new, |path| path.display().to_string())
+                .into(),
+        );
+    } else {
+        ui.set_output_name("Choose an EPUB to see the output filename".into());
+        ui.set_output_directory("Saved beside your source EPUB".into());
+    }
+}
+fn open_output_folder(output: &Path) -> Result<(), String> {
+    if !output.is_file() {
+        return Err(format!(
+            "The output has moved or is missing: {}",
+            output.display()
+        ));
+    }
+    let directory = output.parent().ok_or("The output folder is unavailable.")?;
+    let program = if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(directory)
+        .spawn()
+        .map_err(|error| format!("Could not open the output folder: {error}"))?;
+    Ok(())
+}
+
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 fn parse_job_id(value: &str) -> Result<JobId, String> {
@@ -538,17 +413,6 @@ fn parse_audio_review_policy(value: &str) -> Result<AudioReviewPolicy, String> {
     }
 }
 
-fn parse_whisper_workers(value: &str) -> Result<usize, String> {
-    let workers = value
-        .trim()
-        .parse::<usize>()
-        .map_err(|_| format!("Invalid Whisper worker count: {value}"))?;
-    if !(1..=4).contains(&workers) {
-        return Err("Whisper workers must be between 1 and 4.".into());
-    }
-    Ok(workers)
-}
-
 pub(crate) fn refresh_main_view(
     ui: &AppWindow,
     queue: &JobQueue,
@@ -556,12 +420,15 @@ pub(crate) fn refresh_main_view(
     stage_rows: &VecModel<StageRow>,
     detail_stage_rows: &VecModel<StageDetailRow>,
 ) {
-    queue_rows.set_vec(build_queue_rows(queue));
+    update_model(queue_rows, build_queue_rows(queue));
     ui.set_queue_paused(queue.state() == QueueState::Paused);
 
     let Some(job) = queue.active_job() else {
-        stage_rows.set_vec(Vec::new());
-        detail_stage_rows.set_vec(Vec::new());
+        ui.set_active_job_id("".into());
+        ui.set_cancel_confirmation(false);
+        ui.set_exclude_confirmation(false);
+        update_model(stage_rows, Vec::new());
+        update_model(detail_stage_rows, Vec::new());
         ui.set_has_active_job(false);
         ui.set_active_title("".into());
         ui.set_active_overall_progress(0.0);
@@ -577,8 +444,15 @@ pub(crate) fn refresh_main_view(
         return;
     };
 
-    stage_rows.set_vec(build_stage_rows(job));
-    detail_stage_rows.set_vec(build_stage_detail_rows(job));
+    let id = job.id.to_string();
+    if ui.get_active_job_id().as_str() != id {
+        ui.set_cancel_confirmation(false);
+        ui.set_exclude_confirmation(false);
+        ui.set_active_job_id(id.into());
+    }
+
+    update_model(stage_rows, build_stage_rows(job));
+    update_model(detail_stage_rows, build_stage_detail_rows(job));
     ui.set_has_active_job(true);
     ui.set_active_title(job.inputs.title.clone().into());
     ui.set_active_overall_progress(job.progress.overall_percent() as f32 / 100.0);
@@ -597,12 +471,11 @@ pub(crate) fn refresh_main_view(
     );
 
     let needs_review = job.status == JobStatus::NeedsReview;
+    if needs_review && !ui.get_needs_review() {
+        ui.set_workspace_page(1);
+    }
     ui.set_needs_review(needs_review);
-    if needs_review {
-        let (summary, preview) = review_text(job);
-        ui.set_review_summary_text(summary.into());
-        ui.set_review_preview_text(preview.into());
-    } else {
+    if !needs_review {
         ui.set_review_summary_text("".into());
         ui.set_review_preview_text("".into());
     }
@@ -615,37 +488,15 @@ pub(crate) fn refresh_main_view(
     );
 }
 
-fn review_text(job: &Job) -> (String, String) {
-    match load_audio_review_report(job) {
-        Ok(report) => {
-            let count = report.unmatched.len();
-            let summary = format!(
-                "{count} unmatched audio segment{} will be excluded from synchronization if you continue. Match {:.1}%.",
-                if count == 1 { "" } else { "s" },
-                report.match_percent
-            );
-            let mut previews = report
-                .unmatched
-                .iter()
-                .take(4)
-                .map(|item| {
-                    format!(
-                        "{}–{}  {}",
-                        format_millis(item.audio_start_ms),
-                        format_millis(item.audio_end_ms),
-                        item.transcript_text
-                    )
-                })
-                .collect::<Vec<_>>();
-            if count > previews.len() {
-                previews.push(format!("…and {} more", count - previews.len()));
-            }
-            (summary, previews.join("\n"))
+fn update_model<T: Clone + PartialEq + 'static>(model: &VecModel<T>, rows: Vec<T>) {
+    if model.row_count() != rows.len() {
+        model.set_vec(rows);
+        return;
+    }
+    for (index, row) in rows.into_iter().enumerate() {
+        if model.row_data(index).as_ref() != Some(&row) {
+            model.set_row_data(index, row);
         }
-        Err(error) => (
-            format!("Review data could not be loaded: {error}"),
-            String::new(),
-        ),
     }
 }
 
@@ -871,7 +722,7 @@ fn format_millis(total_millis: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use storyteller_core::{LiveMetrics, PipelineStage};
+    use storyteller_core::{JobOutcome, LiveMetrics, PipelineStage};
 
     fn sample_job(title: &str) -> Job {
         Job::new(
@@ -900,14 +751,6 @@ mod tests {
     }
 
     #[test]
-    fn whisper_worker_values_are_bounded() {
-        assert_eq!(parse_whisper_workers("1").unwrap(), 1);
-        assert_eq!(parse_whisper_workers("4").unwrap(), 4);
-        assert!(parse_whisper_workers("0").is_err());
-        assert!(parse_whisper_workers("5").is_err());
-    }
-
-    #[test]
     fn output_stays_next_to_source_without_replacing_it() {
         let source = Path::new("books/The Example Novel.epub");
         let output = output_path(source, &book_title(source));
@@ -916,6 +759,22 @@ mod tests {
             PathBuf::from("books/The Example Novel (readaloud).epub")
         );
         assert_ne!(source, output);
+    }
+
+    #[test]
+    fn custom_output_folder_keeps_the_filename_and_source_paths() {
+        let epub = PathBuf::from("books/Example.epub");
+        let sources = PendingSources {
+            epub: Some(epub.clone()),
+            audiobook: Some("audio/Example.m4b".into()),
+            output_directory: Some("finished".into()),
+        };
+        assert_eq!(
+            selected_output_path(&sources, &epub, "Example"),
+            PathBuf::from("finished/Example (readaloud).epub")
+        );
+        assert_eq!(sources.epub, Some(epub));
+        assert_eq!(sources.audiobook, Some(PathBuf::from("audio/Example.m4b")));
     }
 
     #[test]
@@ -940,8 +799,8 @@ mod tests {
             speed_factor: Some(22.4),
             eta_seconds: Some(410),
             match_percent: Some(98.4),
-            backend: Some("CUDA".into()),
-            model: Some("large-v3-turbo".into()),
+            backend: Some("Whistle / native CPU".into()),
+            model: Some("Whistle".into()),
         });
 
         assert_eq!(
@@ -954,7 +813,7 @@ mod tests {
         );
         assert_eq!(
             active_metrics(&job),
-            "Backend CUDA  •  Model large-v3-turbo  •  Match 98.4%"
+            "Backend Whistle / native CPU  •  Model Whistle  •  Match 98.4%"
         );
     }
 

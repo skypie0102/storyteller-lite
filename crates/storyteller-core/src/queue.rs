@@ -153,7 +153,8 @@ impl JobQueue {
         candidate.retry()?;
         candidate.invalidate_stale_cache(context)?;
         let fingerprint_plan = candidate.resume_plan(context)?;
-        let validated = workspace.validate_resume_plan(&fingerprint_plan);
+        let validated = workspace
+            .validate_resume_plan(&fingerprint_plan, &crate::CancellationToken::default())?;
         candidate.apply_validated_resume_plan(&validated)?;
 
         if let Some(invalid) = validated.invalid() {
