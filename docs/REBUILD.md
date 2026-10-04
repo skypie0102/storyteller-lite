@@ -24,7 +24,7 @@ The application controller now owns queue transitions, processing workers and re
 - Dependency scans and downloads run on an application-owned background thread, keeping model hashing and probing for Settings off the UI thread.
 - Borrowed snapshots have separate queue and runtime revisions. Unchanged polls do not rebuild the main view or re-read review reports. Queue/stage models update changed rows; progress no longer resets the whole queue model. Queue buttons require both source selections.
 
-Fourteen controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. Native Windows validation is pending for this scaffold; the earlier Whistle checkpoint below predates it.
+Fourteen controller regressions exercise lifecycle, failure continuation, paused recovery, malformed-state preservation, durable review gates, real core worker handoff/cancellation and asynchronous runtime-result handling. The controller and connected Slint shell passed the native Windows checkpoint below. The superseded UI recovery module was removed only after its replacement regressions passed in the application crate.
 
 ## Whistle contract
 
@@ -45,7 +45,7 @@ English-only mode removes application language options and detection routing. Th
 |---|---|---|
 | R0 — Preserve contracts and establish application boundary | Validated on Windows | Existing queue, review, recovery and EPUB regressions pass; Slint compiles |
 | R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
-| R2 — Own lifecycle in the application | Implemented; Windows validation pending | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
+| R2 — Own lifecycle in the application | Validated on Windows | One command/snapshot interface owns start, pause, cancel, review and resume; UI has no mutable queue handle |
 | R3 — Make stage artifacts and publication explicit | Planned | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
 | R4 — Reduce UI and review coupling | In progress | Snapshot rendering and durable decisions moved; remaining preview/evidence migration, layout/usability optimization and 820×620 visual acceptance |
 | R5 — Validate complete books and release | Planned | Representative long English audiobooks, difficult speech cuts, accuracy/timing review, reader interoperability and full Windows packaging |
@@ -54,17 +54,20 @@ Native smoke tests establish integration correctness, not a quality or speed adv
 
 ## Validation
 
-The English-only Windows checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed on product-source commit `df1e49faece11e28a0cb11bb0c79a5a91defea43`:
+The application controller and first UI optimization checkpoint [37189418973](https://github.com/skypie0102/storyteller-lite/actions/runs/37189418973) passed on product-source commit `24f128886f24cd8bf9cefa83b3a3e8b020c78c3e`:
 
 - Formatting and strict workspace Clippy with all targets and the committed lockfile.
-- All 121 workspace tests, including rejection of non-English requests/results, mixed-language saved-queue recovery, legacy recovery migration and Whistle timing through EPUB validation.
+- All 135 workspace tests, including 14 controller lifecycle/recovery/review/background-task regressions, rejection of non-English requests/results, mixed-language recovery and Whistle timing through EPUB validation.
+- Deterministic held-thread regressions prove that enqueue/resume cannot start a new book before the previous worker is joined, and cancellation is retained when a worker yields review before exiting.
 - Native Slint build and packaged Running/NeedsReview relaunch recovery, including absent-language migration to English.
 - Hash-verified model, Windows native engine and FFmpeg acquisition.
 - Actual English speech with 14 native timed words and empty native silence, both explicitly requesting English.
 - Application runtime discovery/verification, English-only 6.44-second speech, and 55-second audio merged from three windows with two isolated workers.
 - Global timestamp ordering/source bounds, complete hard-capped chunk coverage, entirely silent book rejection and temporary PCM cleanup.
 
-The earlier foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`, before English-only support. The temporary branch-only checkpoint workflow was removed after the latest pass. Subsequent evidence/cleanup edits do not change tested product source. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+The first controller checkpoint [37189026768](https://github.com/skypie0102/storyteller-lite/actions/runs/37189026768) passed 133 tests on `e7a87f9fc1b4fb6e2f89e0b429e7e4dfa2f2f9c7`; the final checkpoint adds the worker-handoff guard and two race regressions. The English-only checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed 121 tests on `df1e49faece11e28a0cb11bb0c79a5a91defea43`, and the initial foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`.
+
+The temporary branch-only checkpoint workflow was removed after the latest pass. Subsequent evidence/cleanup edits remove an unreferenced legacy UI recovery file and record results; compiled product source is unchanged. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
 
 Full-book English recognition accuracy, difficult speech boundaries and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 
