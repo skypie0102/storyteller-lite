@@ -1,7 +1,4 @@
-#[path = "chunked_transcription.rs"]
-mod chunked_transcription;
-
-use chunked_transcription::{
+use crate::chunked_transcription::{
     transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, ChunkedTranscriptionProgress,
 };
 use std::{
@@ -103,14 +100,13 @@ impl LitePipelineBackend {
         let transcript_path = stage_dir.join("transcript.json");
         let config = ChunkedTranscriptionConfig {
             ffmpeg: runtime.ffmpeg.clone(),
-            whisper_cli: runtime.whisper_cli.clone(),
-            transcription_model: runtime.transcription_model.clone(),
+            whistle_cli: runtime.whistle_cli.clone(),
+            whistle_model: runtime.whistle_model.clone(),
             language: runtime.language.clone(),
             workers,
-            total_cpu_threads: self.cpu_threads,
         };
         let mut metrics = LiveMetrics {
-            backend: Some("whisper.cpp CLI / chunk workers".into()),
+            backend: Some("Whistle / native CPU".into()),
             model: Some(runtime.model_name.clone()),
             ..LiveMetrics::default()
         };
@@ -148,7 +144,7 @@ impl LitePipelineBackend {
             }
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         };
-        validate_nonempty_file(&transcript_path, "Merged Whisper transcript")
+        validate_nonempty_file(&transcript_path, "Merged Whistle transcript")
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         validate_nonempty_file(
             &stage_dir.join("transcription-plan.json"),
@@ -160,21 +156,11 @@ impl LitePipelineBackend {
         metrics.total_items = Some(summary.chunks as u64);
         metrics.total_audio_seconds = Some(summary.duration_ms as f64 / 1000.0);
         context.set_metrics(metrics, self.elapsed_millis());
-        let effective_workers = workers.min(summary.chunks).max(1);
         context
             .set_activity(
                 format!(
-                    "Transcribed {} chunk{} with {} worker{} × {} CPU thread{}",
-                    summary.chunks,
-                    if summary.chunks == 1 { "" } else { "s" },
-                    effective_workers,
-                    if effective_workers == 1 { "" } else { "s" },
-                    summary.per_worker_threads,
-                    if summary.per_worker_threads == 1 {
-                        ""
-                    } else {
-                        "s"
-                    }
+                    "Transcribed {} chunks with {} Whistle worker(s)",
+                    summary.chunks, summary.effective_workers
                 ),
                 self.elapsed_millis(),
             )
@@ -725,29 +711,34 @@ impl PipelineBackend for LitePipelineBackend {
 #[derive(Debug, Clone)]
 struct AnalyzeRuntime {
     ffmpeg: PathBuf,
-    whisper_cli: PathBuf,
-    transcription_model: PathBuf,
+    whistle_cli: PathBuf,
+    whistle_model: PathBuf,
     model_name: String,
     language: String,
 }
 
 impl AnalyzeRuntime {
     fn discover(job: &Job) -> Result<Self, String> {
-        let model_name = job.settings.transcription_model.trim().to_string();
-        if model_name.is_empty() {
-            return Err("Whisper model name cannot be blank.".into());
-        }
+        let runtime = crate::detect_runtime();
+        let language = effective_language(job);
+        storyteller_core::validate_whistle_language(&language)?;
         Ok(Self {
-            ffmpeg: resolve_executable("STORYTELLER_FFMPEG", "ffmpeg"),
-            whisper_cli: resolve_executable("STORYTELLER_WHISPER", "whisper-cli"),
-            transcription_model: resolve_transcription_model(&model_name)?,
-            model_name,
-            language: effective_language(job),
+            ffmpeg: runtime
+                .ffmpeg
+                .ok_or("FFmpeg is missing. Open Settings and download dependencies.")?,
+            whistle_cli: runtime
+                .whistle_cli
+                .ok_or("Whistle engine is missing. Open Settings and download dependencies.")?,
+            whistle_model: runtime
+                .whistle_model
+                .ok_or("Whistle model is missing. Open Settings and download dependencies.")?,
+            model_name: "Whistle".into(),
+            language,
         })
     }
 }
 
-pub(crate) fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
+pub fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
     let logical_cpu_threads = std::thread::available_parallelism()
         .map(|threads| threads.get())
         .unwrap_or(1);
@@ -771,20 +762,20 @@ pub(crate) fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String>
     )
 }
 
-pub(crate) fn job_workspace(job: &Job) -> JobWorkspace {
+pub fn job_workspace(job: &Job) -> JobWorkspace {
     JobWorkspace::for_job(workspace_base(), job.id)
 }
 
 fn pipeline_environment(job: &Job) -> PipelineEnvironment {
-    let whisper_cli = resolve_executable("STORYTELLER_WHISPER", "whisper-cli");
+    let whistle_cli = resolve_executable("STORYTELLER_WHISTLE", "needle");
     let ffmpeg = resolve_executable("STORYTELLER_FFMPEG", "ffmpeg");
     let tesseract = resolve_optional_executable("STORYTELLER_TESSERACT", "tesseract");
     let model_name = job.settings.transcription_model.trim();
     let effective_transcription_model = if model_name.is_empty() {
         String::new()
     } else {
-        match resolve_transcription_model(model_name) {
-            Ok(path) => file_identity("whisper-model", &path),
+        match resolve_whistle_model() {
+            Ok(path) => content_identity("whistle-model", &path),
             Err(_) => format!("requested:{model_name}"),
         }
     };
@@ -793,7 +784,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
         AudioCodec::Opus | AudioCodec::Aac => file_identity("ffmpeg", &ffmpeg),
     };
     let ffmpeg_identity = file_identity("ffmpeg-analyze", &ffmpeg);
-    let whisper_identity = file_identity("whisper.cpp-cli", &whisper_cli);
+    let whistle_identity = content_identity("whistle-cli", &whistle_cli);
     let ocr_backend = match tesseract {
         Some(path) => format!(
             "storyteller:image-evidence-v1|{}",
@@ -804,7 +795,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
 
     PipelineEnvironment {
         transcription_backend: format!(
-            "storyteller:chunked-whisper-v1|{ffmpeg_identity}|{whisper_identity}"
+            "storyteller:chunked-whistle-v1-25s-phrases|{ffmpeg_identity}|{whistle_identity}"
         ),
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
@@ -963,40 +954,18 @@ fn resolve_optional_executable(environment_variable: &str, base_name: &str) -> O
     None
 }
 
-fn resolve_transcription_model(model_name: &str) -> Result<PathBuf, String> {
-    if let Some(value) = env::var_os("STORYTELLER_WHISPER_MODEL").filter(|value| !value.is_empty())
-    {
-        let path = PathBuf::from(value);
-        validate_nonempty_file(&path, "Configured Whisper model")?;
-        return Ok(path);
-    }
+fn resolve_whistle_model() -> Result<PathBuf, String> {
+    crate::detect_runtime()
+        .whistle_model
+        .ok_or_else(|| "Whistle model is unavailable.".into())
+}
 
-    let file_name = format!("ggml-{model_name}.bin");
-    let mut candidates = Vec::new();
-    if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
-        candidates.push(
-            PathBuf::from(local_app_data)
-                .join("Storyteller OneClick Lite")
-                .join("models")
-                .join(&file_name),
-        );
+fn content_identity(label: &str, path: &Path) -> String {
+    let cancellation = storyteller_core::CancellationToken::default();
+    match storyteller_core::fingerprint_source_file(path, &cancellation, label) {
+        Ok(fingerprint) => format!("{label}:{fingerprint}"),
+        Err(_) => format!("{label}:unavailable:{}", path.display()),
     }
-    if let Some(executable_dir) = current_executable_dir() {
-        candidates.push(executable_dir.join("models").join(&file_name));
-        candidates.push(executable_dir.join("tools").join("models").join(&file_name));
-    }
-    if let Ok(current_dir) = env::current_dir() {
-        candidates.push(current_dir.join("models").join(&file_name));
-    }
-
-    if let Some(path) = candidates.into_iter().find(|candidate| candidate.is_file()) {
-        validate_nonempty_file(&path, "Whisper model")?;
-        return Ok(path);
-    }
-
-    Err(format!(
-        "Whisper model {file_name} was not found. Place it in the app models folder or set STORYTELLER_WHISPER_MODEL."
-    ))
 }
 
 fn current_executable_dir() -> Option<PathBuf> {
@@ -1061,9 +1030,5 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
 }
 
 fn workspace_base() -> PathBuf {
-    env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(env::temp_dir)
-        .join("Storyteller OneClick Lite")
-        .join("jobs")
+    crate::recovery_app_root().join("jobs")
 }

@@ -1,14 +1,8 @@
-#[path = "pipeline_backend.rs"]
-mod pipeline_backend;
+use storyteller_application as pipeline_backend;
 #[path = "recovery_state.rs"]
 mod recovery_state;
-#[path = "runtime_setup.rs"]
-mod runtime_setup;
 
 use crate::{refresh_main_view, AppWindow, QueueRow, StageDetailRow, StageRow};
-use runtime_setup::{
-    configure_runtime_environment, detect_runtime, install_missing_dependencies, RuntimeStatus,
-};
 use slint::VecModel;
 use std::{
     cell::RefCell,
@@ -16,6 +10,9 @@ use std::{
     sync::mpsc::{self, Receiver, TryRecvError},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
+};
+use storyteller_application::{
+    configure_runtime_environment, detect_runtime, install_missing_dependencies, RuntimeStatus,
 };
 use storyteller_core::{
     accept_unmatched_audio_exclusion_with_draft, read_audio_review_report, AudioReviewReport, Job,
@@ -377,7 +374,7 @@ impl WorkerBridge {
 fn apply_runtime_status(ui: &AppWindow, status: &RuntimeStatus) {
     ui.set_runtime_summary_text(status.summary().into());
     ui.set_runtime_ffmpeg_text(status.ffmpeg_text().into());
-    ui.set_runtime_whisper_text(status.whisper_text().into());
+    ui.set_runtime_transcription_text(status.transcription_text().into());
     ui.set_runtime_model_text(status.model_text().into());
     ui.set_runtime_ready(status.ready());
 }

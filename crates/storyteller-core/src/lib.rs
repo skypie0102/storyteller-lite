@@ -27,7 +27,8 @@ mod runner;
 mod scheduler;
 mod source_fingerprint;
 mod source_prepare;
-mod whisper_transcript;
+mod transcript;
+mod whistle;
 mod worker;
 mod workspace;
 
@@ -58,7 +59,7 @@ pub use epub_validate::{
 };
 pub use job::{
     AudioBitrate, AudioCodec, AudioEncoding, Job, JobId, JobInputs, JobOutcome, JobSettings,
-    JobStatus, MAX_WHISPER_WORKERS, MIN_WHISPER_WORKERS,
+    JobStatus, MAX_TRANSCRIPTION_WORKERS, MIN_TRANSCRIPTION_WORKERS,
 };
 pub use job_recovery::{read_queue_recovery, write_queue_recovery, QueueRecovery};
 pub use progress::{LiveMetrics, PipelineProgress, PipelineStage, StageProgress, StageStatus};
@@ -92,14 +93,17 @@ pub use source_fingerprint::{
 pub use source_prepare::{
     copy_file_cancellable, prepare_job_sources, prepared_job_sources, PreparedSources,
 };
-pub use whisper_transcript::{
-    merge_chunk_transcripts, plan_transcription_chunks, read_whisper_transcript,
-    read_whisper_transcript_chunk, validate_chunk_plan, write_whisper_transcript,
-    TranscriptSegment, TranscriptionChunk, WhisperTranscript, CHAPTER_BOUNDARY_TOLERANCE_MS,
-    DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
+pub use transcript::{
+    merge_chunk_transcripts, plan_transcription_chunks, read_transcript, validate_chunk_plan,
+    write_transcript, Transcript, TranscriptSegment, TranscriptionChunk,
+    CHAPTER_BOUNDARY_TOLERANCE_MS, DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
 };
 pub use worker::{
     spawn_pipeline_worker, spawn_pipeline_worker_with_preflight, PipelineEnvironment,
     PipelineWorkerHandle, WorkerResult,
 };
 pub use workspace::JobWorkspace;
+
+pub use whistle::{
+    parse_whistle_transcript, validate_whistle_language, WHISTLE_LANGUAGES, WHISTLE_MAX_CHUNK_MS,
+};

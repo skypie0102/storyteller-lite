@@ -18,7 +18,7 @@ $reviewJobId = '22222222-2222-4222-8222-222222222222'
 New-Item -ItemType Directory -Force $appData | Out-Null
 
 $seed = [ordered]@{
-    version = 1
+    version = 2
     jobs = @(
         [ordered]@{
             id = $runningJobId
@@ -29,9 +29,9 @@ $seed = [ordered]@{
             audio_codec = 'opus'
             audio_bitrate_kbps = 64
             language = $null
-            whisper_model = 'large-v3-turbo'
+            transcription_model = 'whistle'
             audio_review_policy = 'smart'
-            whisper_workers = 1
+            transcription_workers = 1
             previous_status = 'running'
             checkpoints = @()
         },
@@ -44,9 +44,9 @@ $seed = [ordered]@{
             audio_codec = 'opus'
             audio_bitrate_kbps = 64
             language = $null
-            whisper_model = 'large-v3-turbo'
+            transcription_model = 'whistle'
             audio_review_policy = 'smart'
-            whisper_workers = 1
+            transcription_workers = 1
             previous_status = 'needs_review'
             checkpoints = @(
                 [ordered]@{ stage = 'prepare'; fingerprint = 'prepare-smoke' },
@@ -88,7 +88,7 @@ try {
 
     $restored = Get-Content -LiteralPath $recoveryPath -Raw | ConvertFrom-Json
     $jobs = @($restored.jobs)
-    if ($restored.version -ne 1) {
+    if ($restored.version -ne 2) {
         throw "Unexpected queue recovery version after packaged launch: $($restored.version)."
     }
     if ($jobs.Count -ne 2) {

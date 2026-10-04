@@ -8,7 +8,7 @@ Storyteller Lite intentionally minimizes use of GitHub-hosted runners.
 - Ordinary pull requests do **not** start permanent hosted CI.
 - Validation runs only when a maintainer explicitly starts a manual workflow or creates a narrowly scoped temporary validation workflow/PR for a meaningful checkpoint.
 - Temporary validation workflows are removed after their checkpoint; they are not a standing PR tax.
-- Use `core` for routine validation. It runs only rustfmt, `storyteller-core` Clippy, and `storyteller-core` tests on Ubuntu.
+- Use `core` for routine validation. It runs only rustfmt, core/application Clippy and tests on Ubuntu.
 - Use `full-windows` only at meaningful checkpoints where the native Slint shell or Windows-specific behavior must be validated.
 - The workflow cancels an older validation for the same ref when a replacement is started.
 - Jobs have hard time limits so a stuck build cannot consume a runner indefinitely.
@@ -20,8 +20,8 @@ Run these locally whenever a Rust toolchain is available:
 
 ```text
 cargo fmt --all -- --check
-cargo clippy -p storyteller-core --all-targets -- -D warnings
-cargo test -p storyteller-core
+cargo clippy -p storyteller-core -p storyteller-application --all-targets -- -D warnings
+cargo test --locked -p storyteller-core -p storyteller-application
 ```
 
 Before a release or a substantial UI/integration checkpoint, run the full checks locally on Windows when possible:

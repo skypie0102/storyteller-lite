@@ -86,13 +86,13 @@ fn resume_context(settings: JobSettings) -> ResumeContext {
     ResumeContext {
         epub_source: "sha256:epub".into(),
         audiobook_source: "sha256:audio".into(),
-        whisper_backend: "test:whisper".into(),
+        transcription_backend: "test:whisper".into(),
         alignment_backend: "test:align".into(),
         audio_backend: "test:audio".into(),
         ocr_backend: "test:ocr".into(),
         epub_backend: "test:epub".into(),
         effective_language: "en".into(),
-        effective_whisper_model: "test:model".into(),
+        effective_transcription_model: "test:model".into(),
         settings,
     }
 }

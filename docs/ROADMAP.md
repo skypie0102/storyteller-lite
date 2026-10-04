@@ -1,5 +1,7 @@
 # Storyteller Lite roadmap
 
+> **Active rebuild:** [REBUILD.md](REBUILD.md) defines the reliability rebuild and Whistle replacement. The milestone tables below record the released reconstruction baseline. Whistle is the only planned transcription engine; remaining rebuild milestones must be completed and validated before a new release.
+
 > **Canonical roadmap.** Read `docs/HANDOFF.md` before substantial work. Live Rust + Slint source on `main` is technical truth; this file records current product scope and pending work.
 
 Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The legacy app is a behavioral reference where useful, but Lite is intentionally smaller and is not a line-for-line port.
@@ -8,7 +10,7 @@ Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The lega
 
 - Queue-first workflow with one foreground book pipeline at a time.
 - Fixed seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate.
-- Analyze may internally run bounded Whisper chunks concurrently.
+- Analyze may internally run bounded Whistle chunks concurrently.
 - Failed books remain Failed/retryable and the queue continues unless explicitly paused.
 - Long-running work never runs on the Slint UI thread.
 - Exactly one weighted overall progress bar, backed only by real structured measurements.
@@ -24,7 +26,7 @@ Storyteller Lite is the Rust + Slint successor to Storyteller OneClick. The lega
 
 ## Scope kept in Lite
 
-Keep queue-first processing, native Rust + Slint, automatic CPU-thread selection, one simple Whisper worker count (1–4, default 1), Smart/ReviewAll unmatched-audio policy, conservative edge handling, bounded/lazy OCR, reduced manual allocation, and only the destination/classification types that materially change output behavior.
+Keep queue-first processing, native Rust + Slint, automatic CPU-thread selection, one simple transcription worker count (1–4, default 1), Smart/ReviewAll unmatched-audio policy, conservative edge handling, bounded/lazy OCR, reduced manual allocation, and only the destination/classification types that materially change output behavior.
 
 Do not restore manual CPU allocation, word-level synchronization, the old activity-console-first UX, Runtime Health, process-now, broad runtime-path controls, EPUB standardization/CSS editor toggles, permanent OCR controls, or the legacy general-purpose split/merge/trim/rules allocator.
 

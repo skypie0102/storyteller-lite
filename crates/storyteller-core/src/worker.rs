@@ -7,27 +7,27 @@ use std::{sync::mpsc, thread};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PipelineEnvironment {
-    pub whisper_backend: String,
+    pub transcription_backend: String,
     pub alignment_backend: String,
     pub audio_backend: String,
     pub ocr_backend: String,
     pub epub_backend: String,
     pub effective_language: String,
-    pub effective_whisper_model: String,
+    pub effective_transcription_model: String,
 }
 
 impl PipelineEnvironment {
     pub fn validate(&self) -> Result<(), String> {
         for (label, value) in [
-            ("Whisper backend", self.whisper_backend.as_str()),
+            ("Transcription backend", self.transcription_backend.as_str()),
             ("Alignment backend", self.alignment_backend.as_str()),
             ("Audio backend", self.audio_backend.as_str()),
             ("OCR backend", self.ocr_backend.as_str()),
             ("EPUB backend", self.epub_backend.as_str()),
             ("Effective language", self.effective_language.as_str()),
             (
-                "Effective Whisper model",
-                self.effective_whisper_model.as_str(),
+                "Effective transcription model",
+                self.effective_transcription_model.as_str(),
             ),
         ] {
             if value.trim().is_empty() {
@@ -46,13 +46,13 @@ impl PipelineEnvironment {
         let context = ResumeContext {
             epub_source: sources.epub_source().into(),
             audiobook_source: sources.audiobook_source().into(),
-            whisper_backend: self.whisper_backend.clone(),
+            transcription_backend: self.transcription_backend.clone(),
             alignment_backend: self.alignment_backend.clone(),
             audio_backend: self.audio_backend.clone(),
             ocr_backend: self.ocr_backend.clone(),
             epub_backend: self.epub_backend.clone(),
             effective_language: self.effective_language.clone(),
-            effective_whisper_model: self.effective_whisper_model.clone(),
+            effective_transcription_model: self.effective_transcription_model.clone(),
             settings: job.settings.clone(),
         };
         context.validate()?;
@@ -275,13 +275,13 @@ mod tests {
         ResumeContext {
             epub_source: "epub:one".into(),
             audiobook_source: "audio:one".into(),
-            whisper_backend: "whisper:one".into(),
+            transcription_backend: "whistle:one".into(),
             alignment_backend: "align:one".into(),
             audio_backend: "audio:one".into(),
             ocr_backend: "ocr:one".into(),
             epub_backend: "epub:one".into(),
             effective_language: "auto".into(),
-            effective_whisper_model: "model:one".into(),
+            effective_transcription_model: "model:one".into(),
             settings: job.settings.clone(),
         }
     }
@@ -351,7 +351,7 @@ mod tests {
         capture_artifact(&workspace, PipelineStage::Analyze, "transcript.json");
 
         let mut changed = context.clone();
-        changed.whisper_backend = "whisper:two".into();
+        changed.transcription_backend = "whistle:two".into();
         let validated = apply_validated_resume(&mut job, &workspace, &changed).unwrap();
 
         assert_eq!(validated.reusable(), &[PipelineStage::Prepare]);

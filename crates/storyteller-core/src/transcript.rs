@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::{fs, path::Path};
 
-pub const DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS: u64 = 60 * 60 * 1000;
-pub const CHAPTER_BOUNDARY_TOLERANCE_MS: u64 = 10 * 60 * 1000;
+// Leave headroom for silence-aware boundary refinement under Whistle's 30 s cap.
+pub const DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS: u64 = 25_000;
+pub const CHAPTER_BOUNDARY_TOLERANCE_MS: u64 = 2_500;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transcript {
@@ -46,38 +46,15 @@ impl TranscriptionChunk {
 }
 
 pub fn read_transcript(path: &Path) -> Result<Transcript, String> {
-    read_transcript(path, true)
-}
-
-pub fn read_transcript_chunk(path: &Path) -> Result<Transcript, String> {
-    read_transcript(path, false)
-}
-
-fn read_transcript(path: &Path, require_nonempty: bool) -> Result<Transcript, String> {
-    let data = fs::read(path).map_err(|error| {
+    let data = fs::read(path)
+        .map_err(|error| format!("Could not read transcript {}: {error}", path.display()))?;
+    let transcript = serde_json::from_slice(&data).map_err(|error| {
         format!(
-            "Could not read Whisper transcript {}: {error}",
+            "Could not parse normalized transcript {}: {error}",
             path.display()
         )
     })?;
-    let root: Value = serde_json::from_slice(&data).map_err(|error| {
-        format!(
-            "Could not parse Whisper transcript {}: {error}",
-            path.display()
-        )
-    })?;
-
-    let transcript = if root.get("segments").is_some() {
-        serde_json::from_value::<Transcript>(root).map_err(|error| {
-            format!(
-                "Could not parse normalized Whisper transcript {}: {error}",
-                path.display()
-            )
-        })?
-    } else {
-        parse_whisper_json_full(&root)?
-    };
-    validate_transcript(&transcript, require_nonempty)?;
+    validate_transcript(&transcript, true)?;
     Ok(transcript)
 }
 
@@ -92,10 +69,10 @@ pub fn write_transcript(path: &Path, transcript: &Transcript) -> Result<(), Stri
         })?;
     }
     let json = serde_json::to_vec_pretty(transcript)
-        .map_err(|error| format!("Could not serialize merged Whisper transcript: {error}"))?;
+        .map_err(|error| format!("Could not serialize merged transcript: {error}"))?;
     fs::write(path, json).map_err(|error| {
         format!(
-            "Could not write merged Whisper transcript {}: {error}",
+            "Could not write merged transcript {}: {error}",
             path.display()
         )
     })
@@ -109,8 +86,8 @@ pub fn plan_transcription_chunks(
     if duration_ms == 0 {
         return Err("Audiobook duration must be positive before transcription chunking.".into());
     }
-    if max_chunk_ms == 0 {
-        return Err("Maximum transcription chunk duration must be positive.".into());
+    if max_chunk_ms == 0 || max_chunk_ms > crate::WHISTLE_MAX_CHUNK_MS {
+        return Err("Transcription chunks must be between 1 ms and 30 seconds.".into());
     }
 
     let tolerance_ms = CHAPTER_BOUNDARY_TOLERANCE_MS.min(max_chunk_ms / 2);
@@ -126,13 +103,12 @@ pub fn plan_transcription_chunks(
     let mut start_ms = 0u64;
     while start_ms < duration_ms {
         let remaining = duration_ms - start_ms;
-        let soft_max = max_chunk_ms.saturating_add(tolerance_ms);
-        let end_ms = if remaining <= soft_max {
+        let end_ms = if remaining <= max_chunk_ms {
             duration_ms
         } else {
             let target = start_ms.saturating_add(max_chunk_ms).min(duration_ms);
             let lower = target.saturating_sub(tolerance_ms).max(start_ms + 1);
-            let upper = target.saturating_add(tolerance_ms).min(duration_ms - 1);
+            let upper = target.min(duration_ms - 1);
             chapters
                 .iter()
                 .copied()
@@ -171,6 +147,9 @@ pub fn validate_chunk_plan(duration_ms: u64, chunks: &[TranscriptionChunk]) -> R
         if chunk.start_ms != previous_end || chunk.end_ms <= chunk.start_ms {
             return Err("Transcription chunks must form one continuous positive timeline.".into());
         }
+        if chunk.duration_ms() > crate::WHISTLE_MAX_CHUNK_MS {
+            return Err("Transcription chunk exceeds Whistle's hard 30-second input limit.".into());
+        }
         if chunk.end_ms > duration_ms {
             return Err("Transcription chunk extends beyond the audiobook duration.".into());
         }
@@ -201,7 +180,7 @@ pub fn merge_chunk_transcripts(
         for segment in &transcript.segments {
             if segment.end_ms > chunk_duration {
                 return Err(format!(
-                    "Whisper chunk {} contains a segment ending at {} ms beyond its {} ms duration.",
+                    "chunk {} contains a segment ending at {} ms beyond its {} ms duration.",
                     chunk.index + 1,
                     segment.end_ms,
                     chunk_duration
@@ -210,14 +189,14 @@ pub fn merge_chunk_transcripts(
             let start_ms = chunk
                 .start_ms
                 .checked_add(segment.start_ms)
-                .ok_or("Merged Whisper segment start overflowed.")?;
+                .ok_or("Merged segment start overflowed.")?;
             let end_ms = chunk
                 .start_ms
                 .checked_add(segment.end_ms)
-                .ok_or("Merged Whisper segment end overflowed.")?;
+                .ok_or("Merged segment end overflowed.")?;
             if !segments.is_empty() && start_ms < previous_end_ms {
                 return Err(format!(
-                    "Merged Whisper chunk {} overlaps the previous transcript at {} ms.",
+                    "Merged chunk {} overlaps the previous transcript at {} ms.",
                     chunk.index + 1,
                     start_ms
                 ));
@@ -236,59 +215,19 @@ pub fn merge_chunk_transcripts(
     Ok(merged)
 }
 
-fn parse_whisper_json_full(root: &Value) -> Result<Transcript, String> {
-    let language = root
-        .get("result")
-        .and_then(|result| result.get("language"))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-
-    let entries = root
-        .get("transcription")
-        .and_then(Value::as_array)
-        .ok_or("Whisper JSON-full output is missing the transcription array.")?;
-    let mut segments = Vec::new();
-    for (index, entry) in entries.iter().enumerate() {
-        let text = entry
-            .get("text")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .unwrap_or_default();
-        if text.is_empty() {
-            continue;
-        }
-        let offsets = entry
-            .get("offsets")
-            .ok_or_else(|| format!("Whisper segment {} is missing offsets.", index + 1))?;
-        let start_ms = offsets
-            .get("from")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| format!("Whisper segment {} has no start offset.", index + 1))?;
-        let end_ms = offsets
-            .get("to")
-            .and_then(Value::as_u64)
-            .ok_or_else(|| format!("Whisper segment {} has no end offset.", index + 1))?;
-        segments.push(TranscriptSegment {
-            start_ms,
-            end_ms,
-            text: text.to_string(),
-        });
-    }
-    Ok(Transcript { language, segments })
-}
-
-fn validate_transcript(transcript: &Transcript, require_nonempty: bool) -> Result<(), String> {
+pub(crate) fn validate_transcript(
+    transcript: &Transcript,
+    require_nonempty: bool,
+) -> Result<(), String> {
     let mut previous_end_ms = 0u64;
     let mut seen = 0usize;
     for (index, segment) in transcript.segments.iter().enumerate() {
         if segment.text.trim().is_empty() {
-            return Err(format!("Whisper segment {} has blank text.", index + 1));
+            return Err(format!("segment {} has blank text.", index + 1));
         }
         if segment.end_ms <= segment.start_ms {
             return Err(format!(
-                "Whisper segment {} has a non-positive duration ({}..{} ms).",
+                "segment {} has a non-positive duration ({}..{} ms).",
                 index + 1,
                 segment.start_ms,
                 segment.end_ms
@@ -296,7 +235,7 @@ fn validate_transcript(transcript: &Transcript, require_nonempty: bool) -> Resul
         }
         if seen > 0 && segment.start_ms < previous_end_ms {
             return Err(format!(
-                "Whisper segment {} overlaps or moves backward in time ({} ms starts before the previous end at {} ms).",
+                "segment {} overlaps or moves backward in time ({} ms starts before the previous end at {} ms).",
                 index + 1,
                 segment.start_ms,
                 previous_end_ms
@@ -306,7 +245,7 @@ fn validate_transcript(transcript: &Transcript, require_nonempty: bool) -> Resul
         seen += 1;
     }
     if require_nonempty && seen == 0 {
-        return Err("Whisper transcript contains no timed text segments.".into());
+        return Err("transcript contains no timed text segments.".into());
     }
     Ok(())
 }
@@ -314,40 +253,6 @@ fn validate_transcript(transcript: &Transcript, require_nonempty: bool) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn parses_json_full_segment_offsets_as_milliseconds() {
-        let value = json!({
-            "result": { "language": "en" },
-            "transcription": [
-                {
-                    "timestamps": { "from": "00:00:00,000", "to": "00:00:02,340" },
-                    "offsets": { "from": 0, "to": 2340 },
-                    "text": " Hello world."
-                },
-                {
-                    "offsets": { "from": 2340, "to": 5170 },
-                    "text": " Next sentence."
-                }
-            ]
-        });
-        let transcript = parse_whisper_json_full(&value).unwrap();
-        validate_transcript(&transcript, true).unwrap();
-        assert_eq!(transcript.language.as_deref(), Some("en"));
-        assert_eq!(transcript.segment_count(), 2);
-        assert_eq!(transcript.duration_ms(), 5170);
-        assert_eq!(transcript.segments[0].text, "Hello world.");
-    }
-
-    #[test]
-    fn rejects_missing_segment_timing() {
-        let value = json!({
-            "transcription": [{ "text": "Missing offsets" }]
-        });
-        assert!(parse_whisper_json_full(&value).is_err());
-    }
-
     #[test]
     fn rejects_zero_duration_and_overlapping_segments() {
         let zero = Transcript {
@@ -379,19 +284,28 @@ mod tests {
     }
 
     #[test]
-    fn plans_chunks_near_chapter_boundaries_and_avoids_tiny_tail() {
-        let hour = 60 * 60 * 1000;
-        let duration = 125 * 60 * 1000;
-        let chapters = vec![58 * 60 * 1000, 119 * 60 * 1000];
-        let chunks = plan_transcription_chunks(duration, &chapters, hour).unwrap();
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0].end_ms, 58 * 60 * 1000);
-        assert_eq!(chunks[1].end_ms, duration);
+    fn chapter_preference_never_exceeds_the_model_limit() {
+        let chunks = plan_transcription_chunks(60_001, &[28_000, 30_001, 58_000], 30_000).unwrap();
+        assert_eq!(chunks[0].end_ms, 28_000);
+        assert_eq!(chunks[1].end_ms, 58_000);
+        assert_eq!(chunks.last().unwrap().end_ms, 60_001);
+        assert!(chunks.iter().all(|chunk| chunk.duration_ms() <= 30_000));
+    }
+
+    #[test]
+    fn covers_a_long_book_including_the_final_millisecond() {
+        for duration in [1, 29_999, 30_000, 30_001, 36_000_001] {
+            let chunks = plan_transcription_chunks(duration, &[], 30_000).unwrap();
+            validate_chunk_plan(duration, &chunks).unwrap();
+            assert_eq!(chunks.last().unwrap().end_ms, duration);
+            assert!(chunks.iter().all(|chunk| chunk.duration_ms() <= 30_000));
+        }
+        assert!(plan_transcription_chunks(40_000, &[], 30_001).is_err());
     }
 
     #[test]
     fn merges_local_chunk_timestamps_into_global_timeline() {
-        let chunks = plan_transcription_chunks(120_000, &[], 60_000).unwrap();
+        let chunks = plan_transcription_chunks(60_000, &[], 30_000).unwrap();
         let parts = vec![
             (
                 chunks[0],
@@ -416,15 +330,15 @@ mod tests {
                 },
             ),
         ];
-        let merged = merge_chunk_transcripts(120_000, &parts).unwrap();
+        let merged = merge_chunk_transcripts(60_000, &parts).unwrap();
         assert_eq!(merged.segments[0].start_ms, 1_000);
-        assert_eq!(merged.segments[1].start_ms, 62_000);
-        assert_eq!(merged.segments[1].end_ms, 68_000);
+        assert_eq!(merged.segments[1].start_ms, 32_000);
+        assert_eq!(merged.segments[1].end_ms, 38_000);
     }
 
     #[test]
     fn merge_allows_a_silent_chunk_but_not_an_empty_final_transcript() {
-        let chunks = plan_transcription_chunks(120_000, &[], 60_000).unwrap();
+        let chunks = plan_transcription_chunks(60_000, &[], 30_000).unwrap();
         let parts = vec![
             (
                 chunks[0],
@@ -445,7 +359,7 @@ mod tests {
                 },
             ),
         ];
-        assert!(merge_chunk_transcripts(120_000, &parts).is_ok());
+        assert!(merge_chunk_transcripts(60_000, &parts).is_ok());
 
         let all_silent = vec![
             (
@@ -463,6 +377,6 @@ mod tests {
                 },
             ),
         ];
-        assert!(merge_chunk_transcripts(120_000, &all_silent).is_err());
+        assert!(merge_chunk_transcripts(60_000, &all_silent).is_err());
     }
 }

@@ -1,6 +1,4 @@
-use crate::{
-    read_epub_corpus, read_whisper_transcript, CancellationToken, EpubCorpus, WhisperTranscript,
-};
+use crate::{read_epub_corpus, read_transcript, CancellationToken, EpubCorpus, Transcript};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
@@ -71,7 +69,7 @@ pub fn align_transcript_to_corpus(
     observer: &mut dyn FnMut(AlignmentProgress) -> Result<(), String>,
 ) -> Result<AlignmentSummary, String> {
     let corpus = read_epub_corpus(corpus_path)?;
-    let transcript = read_whisper_transcript(transcript_path)?;
+    let transcript = read_transcript(transcript_path)?;
     let document = align_loaded(&corpus, &transcript, cancellation, observer)?;
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -98,7 +96,7 @@ pub fn align_transcript_to_corpus(
 
 fn align_loaded(
     corpus: &EpubCorpus,
-    transcript: &WhisperTranscript,
+    transcript: &Transcript,
     cancellation: &CancellationToken,
     observer: &mut dyn FnMut(AlignmentProgress) -> Result<(), String>,
 ) -> Result<AlignmentDocument, String> {
@@ -580,8 +578,8 @@ mod tests {
         }
     }
 
-    fn transcript(segments: &[&str]) -> WhisperTranscript {
-        WhisperTranscript {
+    fn transcript(segments: &[&str]) -> Transcript {
+        Transcript {
             language: Some("en".into()),
             segments: segments
                 .iter()

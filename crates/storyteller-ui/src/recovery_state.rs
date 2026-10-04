@@ -1,9 +1,9 @@
-use crate::app_paths::recovery_app_root;
 use std::{
     fs,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+use storyteller_application::recovery_app_root;
 use storyteller_core::{read_queue_recovery, write_queue_recovery, JobQueue, QueueRecovery};
 
 pub(crate) fn load_queue() -> Result<QueueRecovery, String> {

@@ -1,0 +1,9 @@
+[package]
+name = "storyteller-application"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+storyteller-core = { path = "../storyteller-core" }

@@ -48,6 +48,106 @@ fn write_source_epub(path: &Path) {
 }
 
 #[test]
+fn whistle_word_times_survive_chunk_merge_alignment_and_epub_validation() {
+    use storyteller_core::{
+        align_transcript_to_corpus, create_audio_review_report, extract_epub_corpus,
+        merge_chunk_transcripts, parse_whistle_transcript, write_transcript, TranscriptionChunk,
+    };
+    let root = temp_root();
+    fs::create_dir_all(&root).unwrap();
+    let source = root.join("source.epub");
+    write_source_epub(&source);
+    let cancellation = CancellationToken::default();
+    let corpus_path = root.join("corpus.json");
+    extract_epub_corpus(&source, &corpus_path, &cancellation).unwrap();
+    let first = parse_whistle_transcript(
+        r#"{"text":"One line.","language":"en","words":[
+        {"word":"One","start":0.1,"end":0.5,"probability":0.9},
+        {"word":"line.","start":0.5,"end":1.2,"probability":0.9}] }"#,
+        25_000,
+    )
+    .unwrap();
+    let second = parse_whistle_transcript(
+        r#"{"text":"Second line.","language":"en","words":[
+        {"word":"Second","start":0.2,"end":0.8,"probability":0.9},
+        {"word":"line.","start":0.8,"end":1.7,"probability":0.9}] }"#,
+        25_000,
+    )
+    .unwrap();
+    let transcript = merge_chunk_transcripts(
+        50_000,
+        &[
+            (
+                TranscriptionChunk {
+                    index: 0,
+                    start_ms: 0,
+                    end_ms: 25_000,
+                },
+                first,
+            ),
+            (
+                TranscriptionChunk {
+                    index: 1,
+                    start_ms: 25_000,
+                    end_ms: 50_000,
+                },
+                second,
+            ),
+        ],
+    )
+    .unwrap();
+    assert_eq!(transcript.segments[1].start_ms, 25_200);
+    assert_eq!(transcript.segments[1].end_ms, 26_700);
+    let transcript_path = root.join("transcript.json");
+    write_transcript(&transcript_path, &transcript).unwrap();
+    let alignment_path = root.join("alignment.json");
+    let aligned = align_transcript_to_corpus(
+        &corpus_path,
+        &transcript_path,
+        &alignment_path,
+        &cancellation,
+        &mut |_| Ok(()),
+    )
+    .unwrap();
+    assert_eq!(aligned.matched_segments, 2);
+    let review_path = root.join("review.json");
+    create_audio_review_report(&alignment_path, &review_path).unwrap();
+    let encode_dir = root.join("encode");
+    fs::create_dir_all(&encode_dir).unwrap();
+    // This regression validates EPUB structure and timing, not audio decoding.
+    fs::write(encode_dir.join("audio.mp3"), b"fixture-audio").unwrap();
+    let descriptor_path = encode_dir.join("encoded-audio.json");
+    fs::write(
+        &descriptor_path,
+        serde_json::to_vec(&EncodedAudioDescriptor {
+            file_name: "audio.mp3".into(),
+            media_type: "audio/mpeg".into(),
+            codec: "copy".into(),
+            bitrate_kbps: None,
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    let candidate = root.join("candidate.epub");
+    let build = build_readaloud_epub(
+        &source,
+        &corpus_path,
+        &alignment_path,
+        &review_path,
+        &descriptor_path,
+        &encode_dir,
+        &candidate,
+        &cancellation,
+    )
+    .unwrap();
+    assert_eq!(build.synchronized_segments, 2);
+    let validated = validate_readaloud_epub(&candidate, &cancellation).unwrap();
+    assert_eq!(validated.synchronized_segments, 2);
+    assert_eq!(validated.media_duration_ms, 26_700);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn build_validate_and_publish_media_overlay_epub() {
     let root = temp_root();
     fs::create_dir_all(&root).unwrap();

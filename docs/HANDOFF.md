@@ -1,5 +1,13 @@
 # Agent handoff — Storyteller OneClick Lite recovery
 
+## Active rebuild — 2026-10-04
+
+The user selected reliability and simplicity, retained Rust + Slint, and explicitly requested **Whistle instead of Whisper**. The current development branch is `rebuild/reliability-foundation`. Read [REBUILD.md](REBUILD.md) for architecture, acceptance criteria and outstanding milestones, and [RUNTIME.md](RUNTIME.md) for supported assets. Whistle is required; do not restore Whisper as a fallback or archive-import path.
+
+The first milestone introduces `storyteller-application` for native runtime and pipeline execution, model-specific word-time normalization, hard-capped 25-second chunk planning, and schema-1 recovery migration. Preserve the established queue/review/publication contracts while completing the remaining application lifecycle and UI separation. Validation status belongs in REBUILD.md; do not infer release readiness from historical passes below.
+
+The following checkpoint history describes the released v0.1.0 baseline and earlier reconstruction. It is retained for provenance; current source and the rebuild contract take precedence where the transcription architecture changed.
+
 Read this file before making substantial changes.
 
 ## Current repository truth
@@ -46,7 +54,7 @@ Installer archaeology is demand-driven. Do not recover unrelated legacy behavior
 
 ## Product decisions that remain authoritative
 
-Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, a simple Whisper worker count of 1–4 (default 1), Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
+Keep the queue-first seven-stage flow: Prepare → Analyze → Align → Review Audio → Encode → Build EPUB → Validate. Keep one real overall progress bar, automatic CPU allocation, a simple transcription worker count of 1–4 (default 1), Smart/ReviewAll unmatched-audio policy, conservative automatic review, bounded/lazy OCR, and a reduced allocator for unresolved audio. Failed books remain failed/retryable but do not stall the queue unless explicitly paused.
 
 Resume must reuse only a validated contiguous checkpoint prefix. Relaunch recovery must never silently continue work: recovered jobs come back in a paused queue and require the existing explicit Resume queue action.
 
@@ -56,7 +64,7 @@ Do not restore manual CPU allocation, word-level synchronization, the old activi
 
 ### Prepare / Analyze / Align
 
-Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–4 independent Whisper processes, divides available logical CPU threads across workers, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
+Prepare fingerprints and stages sources. Analyze transcribes deterministic bounded chunks, prefers chapter/silence-aware boundaries, runs at most the selected 1–4 independent Whistle processes, and merges chunk-local timestamps into one validated global transcript. Temporary PCM chunks are removed after Analyze. Alignment uses the conservative monotonic block-safe engine and leaves weak evidence unmatched rather than forcing a book position.
 
 P1 Windows validation run: `34732299289`.
 

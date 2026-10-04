@@ -1,6 +1,4 @@
-mod app_paths;
 mod review_ui;
-mod runtime_import;
 mod worker_bridge;
 
 use rfd::FileDialog;
@@ -82,39 +80,6 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     {
-        let ui_weak = ui.as_weak();
-        ui.on_import_whisper_archive(move || {
-            let Some(path) = FileDialog::new()
-                .set_title("Import whisper.cpp archive")
-                .add_filter("whisper.cpp archive", &["zip", "tgz", "gz"])
-                .pick_file()
-            else {
-                return;
-            };
-            let Some(ui) = ui_weak.upgrade() else {
-                return;
-            };
-            ui.set_runtime_busy(true);
-            ui.set_runtime_install_status_text(
-                format!("Importing and verifying {}…", display_name(&path)).into(),
-            );
-            match runtime_import::import_whisper_archive(&path) {
-                Ok(cli) => {
-                    std::env::set_var("STORYTELLER_WHISPER", &cli);
-                    ui.set_runtime_install_status_text(
-                        format!("Imported and verified whisper.cpp at {}", cli.display()).into(),
-                    );
-                    ui.set_runtime_refresh_requested(true);
-                }
-                Err(error) => {
-                    ui.set_runtime_install_status_text(format!("Import failed: {error}").into());
-                }
-            }
-            ui.set_runtime_busy(false);
-        });
-    }
-
-    {
         let pending = Rc::clone(&pending);
         let queue = Rc::clone(&queue);
         let queue_rows = Rc::clone(&queue_rows);
@@ -148,8 +113,8 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
             };
-            let workers_text = ui.get_whisper_workers_text().to_string();
-            let whisper_workers = match parse_whisper_workers(&workers_text) {
+            let workers_text = ui.get_transcription_workers_text().to_string();
+            let transcription_workers = match parse_transcription_workers(&workers_text) {
                 Ok(workers) => workers,
                 Err(error) => {
                     ui.set_status_text(error.into());
@@ -169,7 +134,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let settings = JobSettings {
                 audio,
                 audio_review_policy,
-                whisper_workers,
+                transcription_workers,
                 ..JobSettings::default()
             };
             let job = match Job::new(
@@ -538,13 +503,13 @@ fn parse_audio_review_policy(value: &str) -> Result<AudioReviewPolicy, String> {
     }
 }
 
-fn parse_whisper_workers(value: &str) -> Result<usize, String> {
+fn parse_transcription_workers(value: &str) -> Result<usize, String> {
     let workers = value
         .trim()
         .parse::<usize>()
-        .map_err(|_| format!("Invalid Whisper worker count: {value}"))?;
+        .map_err(|_| format!("Invalid Transcription worker count: {value}"))?;
     if !(1..=4).contains(&workers) {
-        return Err("Whisper workers must be between 1 and 4.".into());
+        return Err("Transcription workers must be between 1 and 4.".into());
     }
     Ok(workers)
 }
@@ -900,11 +865,11 @@ mod tests {
     }
 
     #[test]
-    fn whisper_worker_values_are_bounded() {
-        assert_eq!(parse_whisper_workers("1").unwrap(), 1);
-        assert_eq!(parse_whisper_workers("4").unwrap(), 4);
-        assert!(parse_whisper_workers("0").is_err());
-        assert!(parse_whisper_workers("5").is_err());
+    fn transcription_worker_values_are_bounded() {
+        assert_eq!(parse_transcription_workers("1").unwrap(), 1);
+        assert_eq!(parse_transcription_workers("4").unwrap(), 4);
+        assert!(parse_transcription_workers("0").is_err());
+        assert!(parse_transcription_workers("5").is_err());
     }
 
     #[test]
@@ -941,7 +906,7 @@ mod tests {
             eta_seconds: Some(410),
             match_percent: Some(98.4),
             backend: Some("CUDA".into()),
-            model: Some("large-v3-turbo".into()),
+            model: Some("Whistle".into()),
         });
 
         assert_eq!(
