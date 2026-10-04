@@ -6,6 +6,8 @@ The user selected reliability and simplicity, retained Rust + Slint, and explici
 
 The first milestone introduces `storyteller-application` for native runtime and pipeline execution, model-specific word-time normalization, hard-capped 25-second chunk planning, and schema-1 recovery migration. Preserve the established queue/review/publication contracts while completing the remaining application lifecycle and UI separation. Validation status belongs in REBUILD.md; do not infer release readiness from historical passes below.
 
+The foundation passed Windows checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467): strict workspace checks, all 116 tests, native/application Whistle speech and silence, the Slint build and packaged relaunch recovery. Superseded Whisper implementations and the temporary checkpoint workflow have been removed. Product source was validated at `57e85e85a019e821d374ca63159a75fa6e648b5b`; see REBUILD.md for precise evidence and remaining acceptance work.
+
 The following checkpoint history describes the released v0.1.0 baseline and earlier reconstruction. It is retained for provenance; current source and the rebuild contract take precedence where the transcription architecture changed.
 
 Read this file before making substantial changes.

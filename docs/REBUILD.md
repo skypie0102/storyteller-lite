@@ -27,8 +27,8 @@ The first milestone moves the existing pipeline implementation behind the applic
 
 | Milestone | State | Acceptance |
 |---|---|---|
-| R0 — Preserve contracts and establish application boundary | Implemented; validation checkpoint pending | Existing queue, review, recovery and EPUB regressions pass; Slint compiles |
-| R1 — Replace Whisper with Whistle | Implemented; native checkpoint pending | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
+| R0 — Preserve contracts and establish application boundary | Validated on Windows | Existing queue, review, recovery and EPUB regressions pass; Slint compiles |
+| R1 — Replace Whisper with Whistle | Validated on Windows | Verified runtime/model acquisition; native short and multi-window speech; silence rejection; timing survives EPUB construction |
 | R2 — Own lifecycle in the application | Planned | One command/event interface owns start, pause, cancel, review and resume; UI cannot bypass transition rules |
 | R3 — Make stage artifacts and publication explicit | Planned | Typed stage outputs, atomic candidate promotion, crash tests across validation/publication boundaries |
 | R4 — Reduce UI and review coupling | Planned | UI consumes snapshots, application owns durable decisions and lazy evidence; 820×620 behavior preserved |
@@ -37,6 +37,20 @@ The first milestone moves the existing pipeline implementation behind the applic
 Native smoke tests establish integration correctness, not a quality or speed advantage over the released large-v3-turbo implementation. Cactus’s published M4 Pro comparison against Whisper base is not a Windows audiobook benchmark. R5 must measure representative books before release.
 
 ## Validation
+
+The Windows checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed on product-source commit `57e85e85a019e821d374ca63159a75fa6e648b5b`:
+
+- Formatting and strict workspace Clippy with all targets and the committed lockfile.
+- All 116 workspace tests, including legacy recovery migration and Whistle timing through EPUB validation.
+- Native Slint build and packaged Running/NeedsReview relaunch recovery.
+- Hash-verified model, Windows native engine and FFmpeg acquisition.
+- Actual English speech with native word timestamps and empty native silence.
+- Application runtime discovery/verification, 6.44-second speech, and 55-second audio merged from three windows with two isolated workers.
+- Global timestamp ordering/source bounds, complete hard-capped chunk coverage, entirely silent book rejection and temporary PCM cleanup.
+
+The temporary branch-only checkpoint workflow was removed after this pass. Subsequent edits record this evidence and remove validation scaffolding; they do not change tested product source. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+
+Full-book recognition accuracy, difficult speech boundaries, multilingual timing and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 
 ```text
 cargo fmt --all -- --check
