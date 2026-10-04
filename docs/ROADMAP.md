@@ -1,6 +1,6 @@
 # Storyteller Lite roadmap
 
-> **Active rebuild:** [REBUILD.md](REBUILD.md) defines the reliability rebuild and Whistle replacement. The milestone tables below record the released reconstruction baseline. Whistle is the only planned transcription engine; remaining rebuild milestones must be completed and validated before a new release.
+> **Active rebuild:** [REBUILD.md](REBUILD.md) defines the reliability rebuild and English-only Whistle replacement. The milestone tables below record the released reconstruction baseline. Whistle is the only planned transcription engine; remaining rebuild milestones must be completed and validated before a new release.
 
 > **Canonical roadmap.** Read `docs/HANDOFF.md` before substantial work. Live Rust + Slint source on `main` is technical truth; this file records current product scope and pending work.
 

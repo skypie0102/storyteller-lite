@@ -39,12 +39,14 @@ Automatic acquisition is Windows x64 only. Core and the transcription adapter ca
 
 ## Transcription
 
-The adapter creates 16 kHz mono PCM WAVs and invokes the native engine with its Whistle model, audio file and word-timestamp option. Explicit language selection is limited to `en`, `de`, `fr`, `es`, `it`, `nl`, `pl`; otherwise Whistle detects language. Engine telemetry is disabled for application-owned invocations.
+The adapter creates 16 kHz mono PCM WAVs and invokes the native engine with its Whistle model, audio file, word-timestamp option and `--audio-language en`. English is the only application-supported language; there is no adapter language option or automatic detection. Non-English speech results are rejected by the parser. Engine telemetry is disabled for application-owned invocations.
+
+The published model stores shared multilingual weights in one 16.9 MB file. English-only integration removes application language selection and routing, but does not shrink that pinned file or establish a runtime memory/speed improvement. Model and engine checksums remain unchanged.
 
 Default chunk target is 25 seconds. Chapter and silence adjustments must keep every chunk at or below 30 seconds. Every source interval appears exactly once in the validated contiguous plan. Workers use separate processes; cancellation stops owned subprocesses and cleanup removes temporary WAVs. Full-book transcript timestamps are restored using chunk offsets.
 
 The normalized transcript contains phrase-level millisecond intervals. Native attention words may overlap and are grouped rather than discarded. Speech without complete usable timestamps is an error; silence is an empty chunk. An entirely silent input fails Analyze.
 
-Analyze resume identity contains the engine/model contents and adapter semantics. Schema-1 recovered Whisper jobs restart from Analyze with Whistle; downstream checkpoints cannot be reused across the replacement. Recovery remains paused until the user resumes.
+Analyze resume identity contains the engine/model contents and the English adapter semantics. Older automatic/multilingual Analyze checkpoints cannot be reused under the new adapter profile. Schema-1 recovered Whisper jobs restart from Analyze with Whistle. Absent/auto language settings migrate to English. Explicit foreign-language requests remain in the recovered paused queue with only Prepare eligible for reuse; worker preflight rejects them clearly before processing and allows the queue's existing failure handling to continue to other books. Recovery remains paused until the user resumes.
 
 See [REBUILD.md](REBUILD.md) for acceptance checks and remaining rebuild work. The released v0.1.0 runtime is historical and is documented in Git history.

@@ -77,7 +77,7 @@ impl Default for JobSettings {
                 codec: AudioCodec::Opus,
                 bitrate: Some(AudioBitrate::Kbps64),
             },
-            language: None,
+            language: Some(crate::WHISTLE_LANGUAGE.into()),
             transcription_model: "whistle".into(),
             audio_review_policy: AudioReviewPolicy::Smart,
             transcription_workers: MIN_TRANSCRIPTION_WORKERS,
@@ -139,7 +139,7 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn new(inputs: JobInputs, settings: JobSettings) -> Result<Self, String> {
+    pub fn new(inputs: JobInputs, mut settings: JobSettings) -> Result<Self, String> {
         if inputs.title.trim().is_empty() {
             return Err("Book title cannot be blank.".into());
         }
@@ -155,7 +155,16 @@ impl Job {
         if settings.transcription_model != "whistle" {
             return Err("This rebuild uses the Whistle model.".into());
         }
-        crate::validate_whistle_language(settings.language.as_deref().unwrap_or("auto"))?;
+        // Older callers and recovery records used an absent/auto language. Their
+        // default now means English; an explicit foreign language is never retargeted.
+        let language = settings
+            .language
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
+            .unwrap_or(crate::WHISTLE_LANGUAGE);
+        crate::validate_whistle_language(language)?;
+        settings.language = Some(crate::WHISTLE_LANGUAGE.into());
         if !(MIN_TRANSCRIPTION_WORKERS..=MAX_TRANSCRIPTION_WORKERS)
             .contains(&settings.transcription_workers)
         {
@@ -337,9 +346,34 @@ mod tests {
             audio_backend: "audio:one".into(),
             ocr_backend: "ocr:one".into(),
             epub_backend: "epub:one".into(),
-            effective_language: "auto".into(),
+            effective_language: crate::WHISTLE_LANGUAGE.into(),
             effective_transcription_model: "model:one".into(),
             settings: JobSettings::default(),
+        }
+    }
+
+    #[test]
+    fn legacy_default_language_is_normalized_to_english() {
+        for language in [None, Some(""), Some(" auto "), Some(" EN ")] {
+            let settings = JobSettings {
+                language: language.map(str::to_string),
+                ..JobSettings::default()
+            };
+            let job = Job::new(inputs(), settings).unwrap();
+            assert_eq!(job.settings.language.as_deref(), Some("en"));
+        }
+    }
+
+    #[test]
+    fn explicit_foreign_languages_are_rejected() {
+        for language in ["de", "fr", "es", "it", "nl", "pl"] {
+            let settings = JobSettings {
+                language: Some(language.into()),
+                ..JobSettings::default()
+            };
+            assert!(Job::new(inputs(), settings)
+                .unwrap_err()
+                .contains("English-only"));
         }
     }
 

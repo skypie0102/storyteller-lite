@@ -75,8 +75,7 @@ jobs:
           StoryTeller Lite — Windows developer-test build
 
           Open Settings and choose Download missing to install FFmpeg and Whistle.
-          Whistle runs locally on CPU and supports English, German, French, Spanish,
-          Italian, Dutch and Polish. Automatic language detection is the default.
+          Whistle runs locally on CPU. This app supports English transcription only.
 
           Verified dependencies are stored per user under:
             %LOCALAPPDATA%\Storyteller OneClick Lite\tools\

@@ -7,8 +7,8 @@ use storyteller_core::CancellationToken;
 
 fn main() -> Result<(), String> {
     let args = env::args_os().skip(1).collect::<Vec<_>>();
-    if !(5..=7).contains(&args.len()) {
-        return Err("Usage: transcribe_whistle AUDIO OUTPUT_DIRECTORY FFMPEG NEEDLE WHISTLE_MODEL [WORKERS] [LANGUAGE]".into());
+    if !(5..=6).contains(&args.len()) {
+        return Err("Usage: transcribe_whistle AUDIO OUTPUT_DIRECTORY FFMPEG NEEDLE WHISTLE_MODEL [WORKERS]".into());
     }
     let source = PathBuf::from(&args[0]);
     let output = PathBuf::from(&args[1]);
@@ -23,10 +23,6 @@ fn main() -> Result<(), String> {
             .transpose()
             .map_err(|error| error.to_string())?
             .unwrap_or(1),
-        language: args
-            .get(6)
-            .map(|value| value.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "auto".into()),
     };
     env::set_var("STORYTELLER_FFMPEG", &config.ffmpeg);
     env::set_var("STORYTELLER_WHISTLE", &config.whistle_cli);

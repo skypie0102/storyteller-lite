@@ -102,7 +102,6 @@ impl LitePipelineBackend {
             ffmpeg: runtime.ffmpeg.clone(),
             whistle_cli: runtime.whistle_cli.clone(),
             whistle_model: runtime.whistle_model.clone(),
-            language: runtime.language.clone(),
             workers,
         };
         let mut metrics = LiveMetrics {
@@ -714,14 +713,17 @@ struct AnalyzeRuntime {
     whistle_cli: PathBuf,
     whistle_model: PathBuf,
     model_name: String,
-    language: String,
 }
 
 impl AnalyzeRuntime {
     fn discover(job: &Job) -> Result<Self, String> {
+        storyteller_core::validate_whistle_language(
+            job.settings
+                .language
+                .as_deref()
+                .unwrap_or(storyteller_core::WHISTLE_LANGUAGE),
+        )?;
         let runtime = crate::detect_runtime();
-        let language = effective_language(job);
-        storyteller_core::validate_whistle_language(&language)?;
         Ok(Self {
             ffmpeg: runtime
                 .ffmpeg
@@ -733,12 +735,17 @@ impl AnalyzeRuntime {
                 .whistle_model
                 .ok_or("Whistle model is missing. Open Settings and download dependencies.")?,
             model_name: "Whistle".into(),
-            language,
         })
     }
 }
 
 pub fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
+    storyteller_core::validate_whistle_language(
+        job.settings
+            .language
+            .as_deref()
+            .unwrap_or(storyteller_core::WHISTLE_LANGUAGE),
+    )?;
     let logical_cpu_threads = std::thread::available_parallelism()
         .map(|threads| threads.get())
         .unwrap_or(1);
@@ -795,13 +802,13 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
 
     PipelineEnvironment {
         transcription_backend: format!(
-            "storyteller:chunked-whistle-v1-25s-phrases|{ffmpeg_identity}|{whistle_identity}"
+            "storyteller:chunked-whistle-v2-english-25s-phrases|{ffmpeg_identity}|{whistle_identity}"
         ),
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
         ocr_backend,
         epub_backend: "storyteller:epub-media-overlay-v2-supplemental-edge".into(),
-        effective_language: effective_language(job),
+        effective_language: storyteller_core::WHISTLE_LANGUAGE.into(),
         effective_transcription_model,
     }
 }
@@ -894,16 +901,6 @@ fn value_after_marker<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
 
 fn format_seconds(milliseconds: u64) -> String {
     format!("{}.{:03}", milliseconds / 1000, milliseconds % 1000)
-}
-
-fn effective_language(job: &Job) -> String {
-    job.settings
-        .language
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("auto")
-        .to_string()
 }
 
 fn resolve_executable(environment_variable: &str, base_name: &str) -> PathBuf {
@@ -1031,4 +1028,33 @@ fn validate_nonempty_file(path: &Path, label: &str) -> Result<(), String> {
 
 fn workspace_base() -> PathBuf {
     crate::recovery_app_root().join("jobs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovered_foreign_job_fails_before_runtime_or_worker_start() {
+        let mut job = Job::new(
+            storyteller_core::JobInputs {
+                title: "Recovered foreign request".into(),
+                epub_path: "missing.epub".into(),
+                audiobook_path: "missing.m4b".into(),
+                output_path: "output.epub".into(),
+            },
+            storyteller_core::JobSettings::default(),
+        )
+        .unwrap();
+        // Recovery retains the original request rather than silently changing it.
+        job.settings.language = Some("fr".into());
+        assert!(AnalyzeRuntime::discover(&job)
+            .unwrap_err()
+            .contains("English-only"));
+        let error = spawn_job_worker(job)
+            .err()
+            .expect("foreign request must fail");
+        assert!(error.contains("English-only"));
+        assert!(error.contains("fr"));
+    }
 }

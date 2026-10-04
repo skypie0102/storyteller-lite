@@ -38,7 +38,6 @@ pub struct ChunkedTranscriptionConfig {
     pub ffmpeg: PathBuf,
     pub whistle_cli: PathBuf,
     pub whistle_model: PathBuf,
-    pub language: String,
     pub workers: usize,
 }
 
@@ -62,7 +61,6 @@ pub fn transcribe_audiobook_in_chunks(
     if !(1..=storyteller_core::MAX_TRANSCRIPTION_WORKERS).contains(&config.workers) {
         return Err("Transcription worker count must be between 1 and 4.".into());
     }
-    storyteller_core::validate_whistle_language(&config.language)?;
     if cancellation.is_requested() {
         return Err("Transcription was cancelled.".into());
     }
@@ -326,8 +324,7 @@ fn transcribe_one_chunk(
         &config.whistle_cli,
         &config.whistle_model,
         &wav_path,
-        &config.language,
-    )?;
+    );
     let output = match run_cancellable_command(&mut whistle, cancellation, |_, _| {}) {
         Ok(output) if output.success => output,
         Ok(output) => return Err(command_failure("Whistle transcription chunk", &output)),

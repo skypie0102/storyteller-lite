@@ -2,17 +2,17 @@ use crate::{transcript::validate_transcript, Transcript, TranscriptSegment};
 use serde::Deserialize;
 
 pub const WHISTLE_MAX_CHUNK_MS: u64 = 30_000;
-pub const WHISTLE_LANGUAGES: [&str; 7] = ["en", "de", "fr", "es", "it", "nl", "pl"];
+pub const WHISTLE_LANGUAGE: &str = "en";
 const FRAME_MS: u64 = 80;
 const MAX_PHRASE_WORDS: usize = 24;
 
 pub fn validate_whistle_language(language: &str) -> Result<(), String> {
     let language = language.trim().to_ascii_lowercase();
-    if language.is_empty() || language == "auto" || WHISTLE_LANGUAGES.contains(&language.as_str()) {
+    if language == WHISTLE_LANGUAGE {
         Ok(())
     } else {
         Err(format!(
-            "Whistle does not support language {language}. Supported languages: en, de, fr, es, it, nl, pl."
+            "This app's Whistle integration is English-only (en); requested language: {language}."
         ))
     }
 }
@@ -41,8 +41,10 @@ pub fn parse_whistle_transcript(json: &str, duration_ms: u64) -> Result<Transcri
     let output: WhistleOutput = serde_json::from_str(json)
         .map_err(|error| format!("Whistle did not return valid timestamped JSON: {error}"))?;
     let language = output.language.trim();
-    if !language.is_empty() && !WHISTLE_LANGUAGES.contains(&language) {
-        return Err(format!("Whistle returned unsupported language {language}."));
+    if !language.is_empty() && language != WHISTLE_LANGUAGE {
+        return Err(format!(
+            "Whistle returned language {language}; English (en) is required."
+        ));
     }
     if output.text.trim().is_empty() {
         if !output.words.is_empty() {
@@ -208,9 +210,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_languages_and_oversize_clips() {
-        assert!(validate_whistle_language("ja").is_err());
+    fn rejects_non_english_requests_and_output() {
+        for language in ["de", "fr", "es", "it", "nl", "pl", "ja", "auto", ""] {
+            assert!(validate_whistle_language(language).is_err());
+            if !language.is_empty() {
+                let mut value = speech();
+                value["language"] = json!(language);
+                assert!(parse_whistle_transcript(&value.to_string(), 2_000).is_err());
+            }
+        }
         assert!(validate_whistle_language("EN").is_ok());
+    }
+
+    #[test]
+    fn rejects_oversize_clips() {
         assert!(parse_whistle_transcript(&speech().to_string(), 30_001).is_err());
     }
 }

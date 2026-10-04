@@ -94,6 +94,11 @@ try {
     if ($jobs.Count -ne 2) {
         throw "Expected exactly two recovered jobs after packaged launch; found $($jobs.Count)."
     }
+    foreach ($job in $jobs) {
+        if ($job.language -ne 'en') {
+            throw 'A legacy default-language job did not migrate to English after packaged launch.'
+        }
+    }
 
     $running = @($jobs | Where-Object { $_.id -eq $runningJobId })
     if ($running.Count -ne 1) {

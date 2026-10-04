@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use storyteller_core::{fingerprint_source_file, validate_whistle_language, CancellationToken};
+use storyteller_core::{fingerprint_source_file, CancellationToken, WHISTLE_LANGUAGE};
 
 pub const WHISTLE_MODEL_REVISION: &str = "d3ea19e0fe4f99fa7dfb9afa63070b1c6eacaff1";
 pub const WHISTLE_ENGINE_REVISION: &str = "f84005f8992caf37f17b0d64a4b5b31a84ce0d2a";
@@ -104,28 +104,20 @@ pub fn configure_runtime_environment() -> RuntimeStatus {
 }
 
 /// A native, isolated invocation. No Python interpreter or Whisper runtime is used.
-pub(crate) fn whistle_command(
-    executable: &Path,
-    model: &Path,
-    audio: &Path,
-    language: &str,
-) -> Result<Command, String> {
-    validate_whistle_language(language)?;
+pub(crate) fn whistle_command(executable: &Path, model: &Path, audio: &Path) -> Command {
     let mut command = Command::new(executable);
     command
         .arg("--model")
         .arg(model)
         .arg("--audio")
         .arg(audio)
-        .arg("--audio-word-timestamps");
-    let language = language.trim().to_ascii_lowercase();
-    if !language.is_empty() && language != "auto" {
-        command.arg("--audio-language").arg(language);
-    }
+        .arg("--audio-word-timestamps")
+        .arg("--audio-language")
+        .arg(WHISTLE_LANGUAGE);
     command
         .env("NEEDLE_TELEMETRY", "0")
         .env("DO_NOT_TRACK", "1");
-    Ok(command)
+    command
 }
 
 pub fn install_missing_dependencies(
@@ -290,14 +282,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_command_requests_real_times_and_keeps_paths_literal() {
+    fn native_command_forces_english_requests_times_and_keeps_paths_literal() {
         let command = whistle_command(
             Path::new("needle.exe"),
             Path::new("C:/O'Brien/whistle.cact"),
             Path::new("audio with spaces.wav"),
-            "auto",
-        )
-        .unwrap();
+        );
         let args = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
@@ -309,11 +299,10 @@ mod tests {
                 "C:/O'Brien/whistle.cact",
                 "--audio",
                 "audio with spaces.wav",
-                "--audio-word-timestamps"
+                "--audio-word-timestamps",
+                "--audio-language",
+                "en"
             ]
-        );
-        assert!(
-            whistle_command(Path::new("needle"), Path::new("m"), Path::new("a"), "ja").is_err()
         );
     }
 

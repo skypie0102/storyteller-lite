@@ -119,8 +119,8 @@ jobs:
           User-initiated verified FFmpeg, Whistle engine, and model downloads are stored
           under %LOCALAPPDATA%\Storyteller OneClick Lite\tools and \models.
 
-          Open Settings and choose Download missing. Whistle runs locally on CPU
-          and supports English, German, French, Spanish, Italian, Dutch and Polish.
+          Open Settings and choose Download missing. Whistle runs locally on CPU.
+          This app supports English transcription only.
 
           This executable is currently unsigned, so Windows may display a SmartScreen
           warning. Verify the release ZIP checksum before running it.
@@ -202,7 +202,7 @@ jobs:
 
           ### Included
           - Queue-first seven-stage EPUB audiobook pipeline.
-          - Bounded 1–4 worker native Whistle transcription.
+          - English-only native Whistle transcription with 1–4 bounded workers.
           - Conservative alignment and durable Review Audio decisions.
           - Introduction/Credits preservation and Graphic Readout Media Overlays.
           - Independent EPUB validation plus externally validated representative EPUB fixtures.

@@ -105,5 +105,5 @@ pub use worker::{
 pub use workspace::JobWorkspace;
 
 pub use whistle::{
-    parse_whistle_transcript, validate_whistle_language, WHISTLE_LANGUAGES, WHISTLE_MAX_CHUNK_MS,
+    parse_whistle_transcript, validate_whistle_language, WHISTLE_LANGUAGE, WHISTLE_MAX_CHUNK_MS,
 };

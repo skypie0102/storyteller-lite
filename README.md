@@ -6,7 +6,7 @@ The reconstructed implementation has now been promoted to **`main`**, which is t
 
 ## Whistle rebuild
 
-The active reliability rebuild replaces Whisper with **Whistle** and moves runtime and pipeline execution into `storyteller-application`, independent of Slint. The native CPU model is 16.9 MB and supports seven languages. Read [the rebuild milestones](docs/REBUILD.md) and [the pinned runtime contract](docs/RUNTIME.md). The foundation passed full Windows validation, native speech/silence, multi-window transcription and packaged relaunch recovery. The remaining rebuild and full-book acceptance milestones are recorded in the rebuild document.
+The active reliability rebuild replaces Whisper with **Whistle** and moves runtime and pipeline execution into `storyteller-application`, independent of Slint. The app supports English transcription only, using the published 16.9 MB native CPU model. Read [the rebuild milestones](docs/REBUILD.md) and [the pinned runtime contract](docs/RUNTIME.md). The foundation passed full Windows validation, native speech/silence, multi-window transcription and packaged relaunch recovery. The remaining rebuild and full-book acceptance milestones are recorded in the rebuild document.
 
 ## Released baseline
 

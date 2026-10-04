@@ -254,9 +254,17 @@ impl JobRecoveryRecord {
         let codec = parse_codec(&self.audio_codec)?;
         let bitrate = self.audio_bitrate_kbps.map(parse_bitrate).transpose()?;
         let audio = AudioEncoding::new(codec, bitrate)?;
+        let requested_language = self
+            .language
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
+            .unwrap_or(crate::WHISTLE_LANGUAGE)
+            .to_ascii_lowercase();
+        let unsupported_language = crate::validate_whistle_language(&requested_language).is_err();
         let settings = JobSettings {
             audio,
-            language: self.language,
+            language: Some(crate::WHISTLE_LANGUAGE.into()),
             transcription_model: if legacy_whisper {
                 "whistle".into()
             } else {
@@ -274,6 +282,11 @@ impl JobRecoveryRecord {
             },
             settings,
         )?;
+        // Preserve explicit foreign requests for the worker preflight to reject.
+        // One older foreign-language job must not quarantine an otherwise valid queue.
+        if unsupported_language {
+            job.settings.language = Some(requested_language);
+        }
         job.id = id;
         job.status = JobStatus::Waiting;
         job.progress = PipelineProgress::default();
@@ -297,7 +310,7 @@ impl JobRecoveryRecord {
                 }
             }
             last_index = Some(stage.index());
-            if legacy_whisper && stage != PipelineStage::Prepare {
+            if (legacy_whisper || unsupported_language) && stage != PipelineStage::Prepare {
                 continue;
             }
             if self.previous_status == RecoveryStatus::NeedsReview && stage.index() >= review_index
@@ -421,7 +434,7 @@ mod tests {
             audio_backend: "audio:one".into(),
             ocr_backend: "ocr:one".into(),
             epub_backend: "epub:one".into(),
-            effective_language: "auto".into(),
+            effective_language: crate::WHISTLE_LANGUAGE.into(),
             effective_transcription_model: "model:one".into(),
             settings: settings.clone(),
         }
@@ -438,6 +451,40 @@ mod tests {
             "storyteller-queue-recovery-{}.json",
             Uuid::new_v4()
         ))
+    }
+
+    #[test]
+    fn mixed_language_recovery_preserves_queue_and_foreign_request() {
+        let path = recovery_path();
+        let settings = JobSettings::default();
+        let context = context(&settings);
+        let mut queue = JobQueue::default();
+        for title in ["english", "older-foreign"] {
+            let mut job = Job::new(inputs(title), settings.clone()).unwrap();
+            job.start().unwrap();
+            complete_checkpoint(&mut job, PipelineStage::Prepare, &context);
+            complete_checkpoint(&mut job, PipelineStage::Analyze, &context);
+            queue.enqueue(job);
+        }
+        write_queue_recovery(&path, &queue).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        value["jobs"][0]["language"] = serde_json::json!("auto");
+        value["jobs"][1]["language"] = serde_json::json!("de");
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let recovered = read_queue_recovery(&path).unwrap();
+        assert_eq!(recovered.recovered_jobs, 2);
+        assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
+        let english = &recovered.queue.jobs()[0];
+        assert_eq!(english.settings.language.as_deref(), Some("en"));
+        assert_eq!(english.checkpoints.len(), 2);
+        let foreign = &recovered.queue.jobs()[1];
+        assert_eq!(foreign.status, JobStatus::Waiting);
+        assert_eq!(foreign.settings.language.as_deref(), Some("de"));
+        assert_eq!(foreign.checkpoints.len(), 1);
+        assert_eq!(foreign.checkpoints[0].stage, PipelineStage::Prepare);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
