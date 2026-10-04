@@ -12,7 +12,7 @@ use storyteller_core::{
     create_audio_review_report_with_draft, encode_audiobook, extract_epub_corpus,
     materialize_reviewed_alignment, prepare_job_sources, prepared_job_sources,
     publish_validated_epub, read_audio_review_report, run_cancellable_command,
-    set_audio_review_silence_evidence, spawn_pipeline_worker_with_preflight,
+    set_audio_review_silence_evidence, spawn_pipeline_worker_with_runtime_preflight,
     write_validation_report, AudioCodec, AudioReviewEdge, AudioReviewPolicy,
     AudioReviewSilenceEvidence, HardwareProfile, Job, JobWorkspace, LiveMetrics, PipelineBackend,
     PipelineEnvironment, PipelineStage, PipelineWorkerHandle, ResourceRequest, ResourceScheduler,
@@ -110,12 +110,11 @@ impl LitePipelineBackend {
         let transcript_path = stage_dir.join("transcript.json");
         let config = ChunkedTranscriptionConfig {
             ffmpeg: runtime.ffmpeg.clone(),
-            whistle_cli: runtime.whistle_cli.clone(),
-            whistle_model: runtime.whistle_model.clone(),
+            engine: runtime.engine.clone(),
             workers,
         };
         let mut metrics = LiveMetrics {
-            backend: Some("Whistle / native CPU".into()),
+            backend: Some(runtime.engine.label().into()),
             model: Some(runtime.model_name.clone()),
             ..LiveMetrics::default()
         };
@@ -153,7 +152,7 @@ impl LitePipelineBackend {
             }
             Err(error) => return Err(StageRunError::failed(error, self.elapsed_millis())),
         };
-        validate_nonempty_file(&transcript_path, "Merged Whistle transcript")
+        validate_nonempty_file(&transcript_path, "Merged transcript")
             .map_err(|error| StageRunError::failed(error, self.elapsed_millis()))?;
         validate_nonempty_file(
             &stage_dir.join("transcription-plan.json"),
@@ -168,7 +167,7 @@ impl LitePipelineBackend {
         context
             .set_activity(
                 format!(
-                    "Transcribed {} chunks with {} Whistle worker(s)",
+                    "Transcribed {} chunks with {} worker(s)",
                     summary.chunks, summary.effective_workers
                 ),
                 self.elapsed_millis(),
@@ -735,8 +734,7 @@ impl PipelineBackend for LitePipelineBackend {
 #[derive(Debug, Clone)]
 struct AnalyzeRuntime {
     ffmpeg: PathBuf,
-    whistle_cli: PathBuf,
-    whistle_model: PathBuf,
+    engine: crate::TranscriptionEngine,
     model_name: String,
 }
 
@@ -749,17 +747,37 @@ impl AnalyzeRuntime {
                 .unwrap_or(storyteller_core::WHISTLE_LANGUAGE),
         )?;
         let runtime = crate::detect_runtime();
+        let engine = match job.settings.transcription_backend {
+            storyteller_core::TranscriptionBackend::Whistle => {
+                crate::TranscriptionEngine::Whistle {
+                    executable: runtime.whistle_cli.ok_or(
+                        "Whistle engine is missing. Open Settings and download dependencies.",
+                    )?,
+                    model: runtime.whistle_model.ok_or(
+                        "Whistle model is missing. Open Settings and download dependencies.",
+                    )?,
+                }
+            }
+            storyteller_core::TranscriptionBackend::WhisperCuda => {
+                if !runtime.whisper.hardware_ready() {
+                    return Err(runtime.whisper.gpu_text);
+                }
+                crate::TranscriptionEngine::WhisperCuda {
+                    executable: runtime.whisper.cli.ok_or("Whisper CUDA engine is missing. Select Whisper in Settings and download its tools.")?,
+                    model: runtime.whisper.model.ok_or("Whisper Turbo model is missing. Select Whisper in Settings and download its tools.")?,
+                }
+            }
+        };
         Ok(Self {
             ffmpeg: runtime
                 .ffmpeg
                 .ok_or("FFmpeg is missing. Open Settings and download dependencies.")?,
-            whistle_cli: runtime
-                .whistle_cli
-                .ok_or("Whistle engine is missing. Open Settings and download dependencies.")?,
-            whistle_model: runtime
-                .whistle_model
-                .ok_or("Whistle model is missing. Open Settings and download dependencies.")?,
-            model_name: "Whistle".into(),
+            engine,
+            model_name: match job.settings.transcription_backend {
+                storyteller_core::TranscriptionBackend::Whistle => "Whistle",
+                storyteller_core::TranscriptionBackend::WhisperCuda => "Turbo Q5",
+            }
+            .into(),
         })
     }
 }
@@ -783,13 +801,12 @@ pub fn spawn_job_worker(job: Job) -> Result<PipelineWorkerHandle, String> {
     let mut runtime = RuntimeCoordinator::new(scheduler);
     runtime.register_job(job.id)?;
     let workspace = JobWorkspace::for_job(workspace_base(), job.id);
-    let environment = pipeline_environment(&job);
 
-    spawn_pipeline_worker_with_preflight(
+    spawn_pipeline_worker_with_runtime_preflight(
         job,
         workspace,
         runtime,
-        environment,
+        |job, _| Ok(pipeline_environment(job)),
         LitePipelineBackend::new(logical_cpu_threads),
     )
 }
@@ -805,6 +822,15 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     let model_name = job.settings.transcription_model.trim();
     let effective_transcription_model = if model_name.is_empty() {
         String::new()
+    } else if job.settings.transcription_backend
+        == storyteller_core::TranscriptionBackend::WhisperCuda
+    {
+        // Analyze accepts only this content hash. Cached, sealed output can be resumed
+        // without reinstalling the model when transcription is already complete.
+        format!(
+            "whisper-model:sha256:{}",
+            crate::whisper_runtime::WHISPER_MODEL_SHA256
+        )
     } else {
         match resolve_whistle_model() {
             Ok(path) => content_identity("whistle-model", &path),
@@ -817,6 +843,18 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     };
     let ffmpeg_identity = file_identity("ffmpeg-analyze", &ffmpeg);
     let whistle_identity = content_identity("whistle-cli", &whistle_cli);
+    let transcription_backend = if job.settings.transcription_backend
+        == storyteller_core::TranscriptionBackend::Whistle
+    {
+        format!("storyteller:chunked-whistle-v2-english-25s-phrases|{ffmpeg_identity}|{whistle_identity}")
+    } else {
+        // The exact bundle and model are verified before Analyze. Never reuse Whistle output.
+        format!(
+            "storyteller:chunked-whisper-cuda-v1-english-25s-phrases|{ffmpeg_identity}|{}|{}",
+            crate::whisper_runtime::WHISPER_RELEASE,
+            crate::whisper_runtime::WHISPER_ARCHIVE_SHA256
+        )
+    };
     let ocr_backend = match tesseract {
         Some(path) => format!(
             "storyteller:image-evidence-v1|{}",
@@ -826,9 +864,7 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     };
 
     PipelineEnvironment {
-        transcription_backend: format!(
-            "storyteller:chunked-whistle-v2-english-25s-phrases|{ffmpeg_identity}|{whistle_identity}"
-        ),
+        transcription_backend,
         alignment_backend: "storyteller:monotonic-ngram-edit-v2-block-safe".into(),
         audio_backend,
         ocr_backend,

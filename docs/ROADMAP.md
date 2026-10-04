@@ -1,3 +1,5 @@
+> Current source: the R0–R4 Whistle rebuild was merged through PR #30. Optional NVIDIA Whisper Turbo work is on `feature/optional-whisper-gpu`; [REBUILD.md](REBUILD.md), [RUNTIME.md](RUNTIME.md) and [HANDOFF.md](HANDOFF.md) define the current behavior and remaining GPU/full-book acceptance. Earlier P0–P2 records below describe the historical implementation.
+
 # Storyteller Lite roadmap
 
 > **Active rebuild:** [REBUILD.md](REBUILD.md) defines the reliability rebuild and English-only Whistle replacement. The milestone tables below record the released reconstruction baseline. Whistle is the only planned transcription engine; remaining rebuild milestones must be completed and validated before a new release.

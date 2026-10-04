@@ -12,7 +12,7 @@ pub fn validate_whistle_language(language: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "This app's Whistle integration is English-only (en); requested language: {language}."
+            "Transcription is English-only (en); requested language: {language}."
         ))
     }
 }

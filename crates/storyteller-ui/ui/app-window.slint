@@ -83,6 +83,10 @@ export component AppWindow inherits Window {
     in-out property <string> codec-text: "Opus";
     in-out property <string> bitrate-text: "64K";
     in-out property <int> transcription-worker-selection: 0;
+    in-out property <int> transcription-backend-selection: 0;
+    in-out property <bool> queue-runtime-ready: true;
+    in-out property <bool> runtime-installable: true;
+    in-out property <string> gpu-status-text: "Checking GPU…";
     in property <string> worker-recommendation-text: "Checking available CPU threads and RAM…";
     in-out property <string> unmatched-audio-policy-text: "Smart";
     in-out property <bool> settings-open: false;
@@ -315,7 +319,7 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             spacing: 8px;
                             Label { text: "Queue & recent books"; font-size: 17px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
-                            if root.queue-paused : Action { text: "Resume queue"; primary: true; enabled: root.runtime-ready && !root.runtime-busy; clicked => { root.resume-queue(); } }
+                            if root.queue-paused : Action { text: "Resume queue"; primary: true; enabled: root.queue-runtime-ready && !root.runtime-busy; clicked => { root.resume-queue(); } }
                             if !root.queue-paused && !root.has-active-job && root.queue-rows.length > 0 : Action { text: "Pause queue"; clicked => { root.pause-after-book(); } }
                         }
                         if root.queue-rows.length == 0 : VerticalLayout {
@@ -472,10 +476,16 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     spacing: 18px;
                     Card {
-                        min-height: 290px;
+                        min-height: 370px;
                         VerticalLayout {
                             padding: 18px; spacing: 14px;
                             Label { text: "Processing preferences"; font-size: 18px; font-weight: 600; }
+                            HorizontalLayout {
+                                spacing: 16px;
+                                Label { text: "Transcription"; vertical-alignment: center; }
+                                ComboBox { model: ["Whistle · CPU", "Whisper Turbo · NVIDIA GPU"]; current-index: root.transcription-backend-selection; selected(value) => { root.transcription-backend-selection = self.current-index; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
                             HorizontalLayout {
                                 spacing: 16px;
                                 VerticalLayout {
@@ -496,13 +506,13 @@ export component AppWindow inherits Window {
                                 VerticalLayout {
                                     spacing: 7px;
                                     Label { text: "CPU workers"; }
-                                    ComboBox { model: ["Automatic", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"]; current-index: root.transcription-worker-selection; selected(value) => { root.transcription-worker-selection = self.current-index; } }
+                                    ComboBox { model: ["Automatic", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"]; enabled: root.transcription-backend-selection == 0; current-index: root.transcription-worker-selection; selected(value) => { root.transcription-worker-selection = self.current-index; } }
                                 }
                             }
                             Hint { text: "Opus at 64K keeps spoken audio compact. AAC offers broader reader compatibility. Copy keeps the source encoding."; }
                             Hint { text: "Smart review handles clear silence and edge narration automatically. Review all asks you about every unmatched segment."; }
-                            Hint { text: root.worker-recommendation-text; }
-                            Hint { text: "Automatic applies when you add a book. More workers may not be faster. Whistle uses CPU; GPU acceleration is unavailable in this runtime."; }
+                            Hint { text: root.transcription-backend-selection == 0 ? root.worker-recommendation-text : root.gpu-status-text; }
+                            Hint { text: root.transcription-backend-selection == 0 ? "Automatic applies when you add a book. More workers may not be faster. Whistle is the lightweight default." : "Whisper uses 1 GPU worker to keep VRAM use bounded. The selected engine is saved with each book."; }
                         }
                     }
                     Card {
@@ -513,16 +523,16 @@ export component AppWindow inherits Window {
                                 Label { text: "Local setup"; font-size: 18px; font-weight: 600; horizontal-stretch: 1; vertical-alignment: center; }
                                 Label { text: root.runtime-ready ? "Ready" : root.runtime-busy ? "Working…" : "Setup needed"; color: root.runtime-ready ? Colors.accent : Colors.warning; vertical-alignment: center; }
                             }
-                            Hint { text: "Whistle transcribes English on your CPU. Download these tools once, then process books offline."; }
+                            Hint { text: root.transcription-backend-selection == 0 ? "Whistle transcribes English on your CPU. Download these tools once, then process books offline." : "Optional Whisper Turbo transcribes English on NVIDIA GPUs. Its engine and model download total about 847 MB; allow 3 GB disk space. Download once, then work offline."; }
                             HorizontalLayout {
                                 spacing: 10px;
                                 Action { text: "Check setup"; enabled: !root.runtime-busy; clicked => { root.runtime-refresh-requested = true; } }
-                                Action { text: root.runtime-busy ? "Please wait…" : "Download missing tools"; primary: true; enabled: !root.runtime-busy && !root.runtime-ready; clicked => { root.runtime-install-requested = true; } }
+                                Action { text: root.runtime-busy ? "Please wait…" : root.transcription-backend-selection == 0 ? "Download missing tools" : "Download Whisper tools"; primary: true; enabled: !root.runtime-busy && !root.runtime-ready && root.runtime-installable && !root.has-active-job; clicked => { root.runtime-install-requested = true; } }
                                 Rectangle { horizontal-stretch: 1; }
                             }
                             DependencyRow { heading: "FFmpeg · audio conversion"; detail: root.runtime-ffmpeg-text; }
-                            DependencyRow { heading: "Whistle · native CPU engine"; detail: root.runtime-transcription-text; }
-                            DependencyRow { heading: "Whistle model · 16.9 MB · English"; detail: root.runtime-model-text; }
+                            DependencyRow { heading: root.transcription-backend-selection == 0 ? "Whistle · native CPU engine" : "Whisper · native CUDA engine"; detail: root.runtime-transcription-text; }
+                            DependencyRow { heading: root.transcription-backend-selection == 0 ? "Whistle model · 16.9 MB · English" : "Whisper Turbo Q5 model · 574 MB · English transcription"; detail: root.runtime-model-text; }
                             Hint { text: root.runtime-install-status-text != "" ? root.runtime-install-status-text : root.runtime-summary-text; }
                             Hint { text: "Downloads are verified and stored in your application data folder. Audio stays on this device."; }
                         }

@@ -19,6 +19,7 @@ const FFMPEG_SHA256: &str = "fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5
 
 #[derive(Debug, Clone, Default)]
 pub struct RuntimeStatus {
+    pub whisper: crate::WhisperRuntimeStatus,
     pub workers: crate::WorkerRecommendation,
     pub ffmpeg: Option<PathBuf>,
     pub whistle_cli: Option<PathBuf>,
@@ -28,6 +29,14 @@ pub struct RuntimeStatus {
 impl RuntimeStatus {
     pub fn ready(&self) -> bool {
         self.ffmpeg.is_some() && self.whistle_cli.is_some() && self.whistle_model.is_some()
+    }
+
+    pub fn ready_for(&self, backend: storyteller_core::TranscriptionBackend) -> bool {
+        self.ffmpeg.is_some()
+            && match backend {
+                storyteller_core::TranscriptionBackend::Whistle => self.ready(),
+                storyteller_core::TranscriptionBackend::WhisperCuda => self.whisper.ready(),
+            }
     }
 
     pub fn summary(&self) -> String {
@@ -45,6 +54,16 @@ impl RuntimeStatus {
             "Ready — Whistle on CPU".into()
         } else {
             format!("Missing: {}", missing.join(", "))
+        }
+    }
+
+    pub fn summary_for(&self, backend: storyteller_core::TranscriptionBackend) -> String {
+        match backend {
+            storyteller_core::TranscriptionBackend::Whistle => self.summary(),
+            storyteller_core::TranscriptionBackend::WhisperCuda if self.ffmpeg.is_none() => {
+                format!("Missing: FFmpeg. {}", self.whisper.summary())
+            }
+            storyteller_core::TranscriptionBackend::WhisperCuda => self.whisper.summary(),
         }
     }
 
@@ -82,6 +101,7 @@ pub fn detect_runtime() -> RuntimeStatus {
         models.push(root.join("models/whistle.cact"));
     }
     RuntimeStatus {
+        whisper: crate::whisper_runtime::detect_whisper_runtime(),
         workers: crate::worker_recommendation::detect_worker_recommendation(),
         ffmpeg,
         whistle_cli,
@@ -97,6 +117,8 @@ pub fn configure_runtime_environment() -> RuntimeStatus {
         ("STORYTELLER_FFMPEG", runtime.ffmpeg.as_ref()),
         ("STORYTELLER_WHISTLE", runtime.whistle_cli.as_ref()),
         ("STORYTELLER_WHISTLE_MODEL", runtime.whistle_model.as_ref()),
+        ("STORYTELLER_WHISPER", runtime.whisper.cli.as_ref()),
+        ("STORYTELLER_WHISPER_MODEL", runtime.whisper.model.as_ref()),
     ] {
         if let Some(path) = path {
             env::set_var(name, path);
@@ -105,7 +127,7 @@ pub fn configure_runtime_environment() -> RuntimeStatus {
     runtime
 }
 
-/// A native, isolated invocation. No Python interpreter or Whisper runtime is used.
+/// A native, isolated Whistle invocation, without a Python interpreter.
 pub(crate) fn whistle_command(executable: &Path, model: &Path, audio: &Path) -> Command {
     let mut command = Command::new(executable);
     command
@@ -126,11 +148,40 @@ pub fn install_missing_dependencies(
     runtime: &RuntimeStatus,
     mut progress: impl FnMut(String),
 ) -> Result<(), String> {
+    install_ffmpeg_if_missing(runtime, &mut progress)?;
+    let root = persistent_app_root().ok_or("Windows LOCALAPPDATA is unavailable.")?;
+    fs::create_dir_all(root.join("tools/whistle"))
+        .map_err(|error| format!("Could not create runtime folder: {error}"))?;
+    if runtime.whistle_cli.is_none() {
+        progress("Downloading and verifying the native Whistle engine…".into());
+        let url = format!("https://huggingface.co/Cactus-Compute/needle3/resolve/{WHISTLE_ENGINE_REVISION}/windows-x86_64/needle.exe");
+        download_verified(
+            &url,
+            &root.join("tools/whistle/needle.exe"),
+            WHISTLE_WINDOWS_SHA256,
+        )?;
+    }
+    if runtime.whistle_model.is_none() {
+        progress("Downloading and verifying Whistle (16.9 MB)…".into());
+        let url = format!("https://huggingface.co/Cactus-Compute/whistle/resolve/{WHISTLE_MODEL_REVISION}/whistle.cact");
+        download_verified(
+            &url,
+            &root.join("models/whistle.cact"),
+            WHISTLE_MODEL_SHA256,
+        )?;
+    }
+    Ok(())
+}
+
+pub(crate) fn install_ffmpeg_if_missing(
+    runtime: &RuntimeStatus,
+    progress: &mut impl FnMut(String),
+) -> Result<(), String> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
         return Err("Automatic dependency installation is supported on Windows x64.".into());
     }
     let root = persistent_app_root().ok_or("Windows LOCALAPPDATA is unavailable.")?;
-    fs::create_dir_all(root.join("tools/whistle"))
+    fs::create_dir_all(root.join("tools"))
         .map_err(|error| format!("Could not create runtime folder: {error}"))?;
     fs::create_dir_all(root.join("models"))
         .map_err(|error| format!("Could not create model folder: {error}"))?;
@@ -163,28 +214,10 @@ try {{
             return Err("Downloaded FFmpeg could not be started.".into());
         }
     }
-    if runtime.whistle_cli.is_none() {
-        progress("Downloading and verifying the native Whistle engine…".into());
-        let url = format!("https://huggingface.co/Cactus-Compute/needle3/resolve/{WHISTLE_ENGINE_REVISION}/windows-x86_64/needle.exe");
-        download_verified(
-            &url,
-            &root.join("tools/whistle/needle.exe"),
-            WHISTLE_WINDOWS_SHA256,
-        )?;
-    }
-    if runtime.whistle_model.is_none() {
-        progress("Downloading and verifying Whistle (16.9 MB)…".into());
-        let url = format!("https://huggingface.co/Cactus-Compute/whistle/resolve/{WHISTLE_MODEL_REVISION}/whistle.cact");
-        download_verified(
-            &url,
-            &root.join("models/whistle.cact"),
-            WHISTLE_MODEL_SHA256,
-        )?;
-    }
     Ok(())
 }
 
-fn download_verified(url: &str, destination: &Path, sha256: &str) -> Result<(), String> {
+pub(crate) fn download_verified(url: &str, destination: &Path, sha256: &str) -> Result<(), String> {
     // Download beside the destination so final publication stays on one volume.
     let temporary = destination.with_extension("download.tmp");
     let script = format!(
@@ -207,7 +240,7 @@ try {{
     run_powershell(&script)
 }
 
-fn run_powershell(script: &str) -> Result<(), String> {
+pub(crate) fn run_powershell(script: &str) -> Result<(), String> {
     let output = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output()
@@ -219,12 +252,12 @@ fn run_powershell(script: &str) -> Result<(), String> {
     Err(format!("Dependency installation failed: {}", stderr.trim()))
 }
 
-fn verified_file(path: &Path, sha256: &str) -> bool {
+pub(crate) fn verified_file(path: &Path, sha256: &str) -> bool {
     fingerprint_source_file(path, &CancellationToken::default(), "Runtime asset")
         .is_ok_and(|fingerprint| fingerprint == format!("sha256:{sha256}"))
 }
 
-fn dependency_text(path: Option<&Path>) -> String {
+pub(crate) fn dependency_text(path: Option<&Path>) -> String {
     path.map(|path| format!("Ready — {}", path.display()))
         .unwrap_or_else(|| "Missing".into())
 }
@@ -272,10 +305,10 @@ fn probe_ffmpeg(path: &Path) -> bool {
         .status()
         .is_ok_and(|status| status.success())
 }
-fn ps_string(text: &str) -> String {
+pub(crate) fn ps_string(text: &str) -> String {
     format!("'{}'", text.replace('\'', "''"))
 }
-fn ps_path(path: &Path) -> String {
+pub(crate) fn ps_path(path: &Path) -> String {
     ps_string(&path.to_string_lossy())
 }
 

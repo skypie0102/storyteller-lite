@@ -10,7 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const QUEUE_RECOVERY_VERSION: u32 = 2;
+const QUEUE_RECOVERY_VERSION: u32 = 3;
 
 #[derive(Debug)]
 pub struct QueueRecovery {
@@ -34,6 +34,8 @@ struct JobRecoveryRecord {
     audio_codec: String,
     audio_bitrate_kbps: Option<u16>,
     language: Option<String>,
+    #[serde(default)]
+    transcription_backend: crate::TranscriptionBackend,
     #[serde(alias = "whisper_model")]
     transcription_model: String,
     audio_review_policy: AudioReviewPolicy,
@@ -185,7 +187,7 @@ pub fn read_queue_recovery(path: &Path) -> Result<QueueRecovery, String> {
     })?;
     let file: QueueRecoveryFile = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Queue recovery file is invalid: {error}"))?;
-    if !matches!(file.version, 1 | QUEUE_RECOVERY_VERSION) {
+    if !matches!(file.version, 1..=QUEUE_RECOVERY_VERSION) {
         return Err(format!(
             "Queue recovery file version {} is unsupported; expected {}.",
             file.version, QUEUE_RECOVERY_VERSION
@@ -195,7 +197,7 @@ pub fn read_queue_recovery(path: &Path) -> Result<QueueRecovery, String> {
     let mut ids = HashSet::new();
     let mut queue = JobQueue::default();
     for record in file.jobs {
-        let job = record.into_job(file.version == 1)?;
+        let job = record.into_job(file.version)?;
         if !ids.insert(job.id) {
             return Err(format!(
                 "Queue recovery file contains duplicate job id {}.",
@@ -231,6 +233,7 @@ impl JobRecoveryRecord {
             audio_codec: codec_name(job.settings.audio.codec).into(),
             audio_bitrate_kbps: job.settings.audio.bitrate.map(AudioBitrate::kbps),
             language: job.settings.language.clone(),
+            transcription_backend: job.settings.transcription_backend,
             transcription_model: job.settings.transcription_model.clone(),
             audio_review_policy: job.settings.audio_review_policy,
             transcription_workers: job.settings.transcription_workers,
@@ -246,7 +249,8 @@ impl JobRecoveryRecord {
         })
     }
 
-    fn into_job(self, legacy_whisper: bool) -> Result<Job, String> {
+    fn into_job(self, version: u32) -> Result<Job, String> {
+        let legacy_whisper = version == 1;
         let id = self
             .id
             .parse()
@@ -265,6 +269,11 @@ impl JobRecoveryRecord {
         let settings = JobSettings {
             audio,
             language: Some(crate::WHISTLE_LANGUAGE.into()),
+            transcription_backend: if version < 3 {
+                crate::TranscriptionBackend::Whistle
+            } else {
+                self.transcription_backend
+            },
             transcription_model: if legacy_whisper {
                 "whistle".into()
             } else {
@@ -623,7 +632,7 @@ mod tests {
         write_queue_recovery(&path, &recovered.queue).unwrap();
         let migrated: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(migrated["version"], 2);
+        assert_eq!(migrated["version"], 3);
         assert!(migrated["jobs"][0].get("whisper_model").is_none());
         let _ = fs::remove_file(path);
     }
@@ -641,7 +650,7 @@ mod tests {
         }
         write_queue_recovery(&path, &queue).unwrap();
         let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        assert_eq!(saved["version"], 2);
+        assert_eq!(saved["version"], 3);
         let recovered = read_queue_recovery(&path).unwrap();
         assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
         assert_eq!(
@@ -652,6 +661,54 @@ mod tests {
                 .map(|job| job.settings.transcription_workers)
                 .collect::<Vec<_>>(),
             [1, 4, 8, 16]
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn whisper_running_job_recovers_with_same_backend_model_and_one_worker() {
+        let path = recovery_path();
+        let backend = crate::TranscriptionBackend::WhisperCuda;
+        let mut job = Job::new(
+            inputs("GPU book"),
+            JobSettings {
+                transcription_backend: backend,
+                transcription_model: backend.model_name().into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        job.start().unwrap();
+        let mut queue = JobQueue::default();
+        queue.enqueue(job);
+        write_queue_recovery(&path, &queue).unwrap();
+        let recovered = read_queue_recovery(&path).unwrap();
+        let job = &recovered.queue.jobs()[0];
+        assert_eq!(job.status, JobStatus::Waiting);
+        assert_eq!(recovered.queue.state(), crate::QueueState::Paused);
+        assert_eq!(job.settings.transcription_backend, backend);
+        assert_eq!(job.settings.transcription_model, backend.model_name());
+        assert_eq!(job.settings.transcription_workers, 1);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn version_two_records_without_a_backend_remain_whistle() {
+        let path = recovery_path();
+        let mut queue = JobQueue::default();
+        queue.enqueue(Job::new(inputs("CPU book"), JobSettings::default()).unwrap());
+        write_queue_recovery(&path, &queue).unwrap();
+        let mut old: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        old["version"] = serde_json::json!(2);
+        old["jobs"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("transcription_backend");
+        fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        let recovered = read_queue_recovery(&path).unwrap();
+        assert_eq!(
+            recovered.queue.jobs()[0].settings.transcription_backend,
+            crate::TranscriptionBackend::Whistle
         );
         let _ = fs::remove_file(path);
     }

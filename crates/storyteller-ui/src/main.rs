@@ -12,7 +12,7 @@ use std::{
 use storyteller_application::{ApplicationCommand, ApplicationController};
 use storyteller_core::{
     AudioBitrate, AudioCodec, AudioEncoding, AudioReviewPolicy, Job, JobId, JobInputs, JobQueue,
-    JobSettings, JobStatus, QueueMove, QueueState, StageStatus,
+    JobSettings, JobStatus, QueueMove, QueueState, StageStatus, TranscriptionBackend,
 };
 use worker_bridge::ViewBridge;
 
@@ -114,8 +114,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 return;
             };
             let result = (|| {
+                let backend = selected_transcription_backend(ui.get_transcription_backend_selection())?;
                 if !ui.get_runtime_ready() || ui.get_runtime_busy() {
                     return Err("Finish local setup in Settings before starting a book.".into());
+                }
+                if !app.borrow().snapshot().runtime.status.as_ref().is_some_and(|status| status.ready_for(backend)) {
+                    return Err("Finish setup for the selected transcription engine in Settings.".into());
                 }
                 let sources = pending.borrow();
                 let epub_path = sources.epub.clone().ok_or("Choose an EPUB first")?;
@@ -134,13 +138,15 @@ fn main() -> Result<(), slint::PlatformError> {
                     return Err(format!("An output already exists at {}. Choose another output folder or move that file before starting.", inputs.output_path.display()));
                 }
                 let settings = JobSettings {
+                    transcription_backend: backend,
+                    transcription_model: backend.model_name().into(),
                     audio: audio_encoding(
                         ui.get_codec_text().as_str(),
                         ui.get_bitrate_text().as_str(),
                     )?,
-                    transcription_workers: app.borrow().snapshot().runtime.status.as_ref()
+                    transcription_workers: if backend == TranscriptionBackend::WhisperCuda { 1 } else { app.borrow().snapshot().runtime.status.as_ref()
                         .ok_or("Wait for the local setup and system scan to finish.")?
-                        .workers.resolve_selection(ui.get_transcription_worker_selection())?,
+                        .workers.resolve_selection(ui.get_transcription_worker_selection())? },
                     audio_review_policy: parse_audio_review_policy(
                         ui.get_unmatched_audio_policy_text().as_str(),
                     )?,
@@ -413,6 +419,16 @@ fn parse_audio_review_policy(value: &str) -> Result<AudioReviewPolicy, String> {
     }
 }
 
+pub(crate) fn selected_transcription_backend(
+    selection: i32,
+) -> Result<TranscriptionBackend, String> {
+    match selection {
+        0 => Ok(TranscriptionBackend::Whistle),
+        1 => Ok(TranscriptionBackend::WhisperCuda),
+        _ => Err("Choose a supported transcription engine in Settings.".into()),
+    }
+}
+
 pub(crate) fn refresh_main_view(
     ui: &AppWindow,
     queue: &JobQueue,
@@ -515,7 +531,20 @@ fn build_queue_rows(queue: &JobQueue) -> Vec<QueueRow> {
             position: (index + 1).to_string().into(),
             title: job.inputs.title.clone().into(),
             status: "Waiting".into(),
-            detail: "".into(),
+            detail: format!(
+                "{} · {} worker{}",
+                match job.settings.transcription_backend {
+                    TranscriptionBackend::Whistle => "Whistle · CPU",
+                    TranscriptionBackend::WhisperCuda => "Whisper Turbo · NVIDIA GPU",
+                },
+                job.settings.transcription_workers,
+                if job.settings.transcription_workers == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            )
+            .into(),
             waiting: true,
             retryable: false,
             can_move_up: index > 0,

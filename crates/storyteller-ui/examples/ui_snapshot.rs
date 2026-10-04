@@ -46,6 +46,7 @@ fn apply(ui: &AppWindow, properties: &Value) {
             "runtime-transcription-text" => set_runtime_transcription_text, "runtime-model-text" => set_runtime_model_text,
             "runtime-summary-text" => set_runtime_summary_text,
             "worker-recommendation-text" => set_worker_recommendation_text,
+            "gpu-status-text" => set_gpu_status_text,
         }
         booleans! {
             "runtime-ready" => set_runtime_ready, "runtime-busy" => set_runtime_busy,
@@ -56,9 +57,14 @@ fn apply(ui: &AppWindow, properties: &Value) {
             "review-complete" => set_review_complete, "review-can-preserve-edge" => set_review_can_preserve_edge,
             "cancel-confirmation" => set_cancel_confirmation, "exclude-confirmation" => set_exclude_confirmation,
             "status-details-open" => set_status_details_open,
+            "runtime-installable" => set_runtime_installable,
+            "queue-runtime-ready" => set_queue_runtime_ready,
         }
         match name.as_str() {
             "workspace-page" => ui.set_workspace_page(value.as_i64().unwrap() as i32),
+            "transcription-backend-selection" => {
+                ui.set_transcription_backend_selection(value.as_i64().unwrap() as i32)
+            }
             "transcription-worker-selection" => {
                 ui.set_transcription_worker_selection(value.as_i64().unwrap() as i32)
             }
@@ -267,6 +273,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             interaction_smoke(width, height)?;
         }
     }
-    println!("39 compiled native Slint scene snapshots passed, including 200% scale.");
+    println!(
+        "{} compiled native Slint scene snapshots passed, including 200% scale.",
+        scenes.len() * 3
+    );
     Ok(())
 }

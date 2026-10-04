@@ -1,13 +1,13 @@
-# Reliability rebuild — English-only Whistle
+# Reliability rebuild — English transcription
 
-The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and Slint, and the seven visible stages. Whistle replaces Whisper completely. There is one supported transcription engine and no Whisper fallback.
+The rebuild keeps StoryTeller’s EPUB plus audiobook workflow, native Rust and Slint, and the seven visible stages. The validated Whistle rebuild is merged into `main` through PR #30. Whistle remains the default; the user subsequently authorized an explicit optional Whisper NVIDIA GPU backend. Both integrations force English, with no automatic backend fallback.
 
 ## Boundaries
 
 | Layer | Responsibility | Dependencies |
 |---|---|---|
 | `storyteller-core` | Job rules, queue, cancellation, resume fingerprints, normalized transcripts, conservative alignment, review decisions, EPUB construction and validation | Rust libraries; no Slint |
-| `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated Whistle processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
+| `storyteller-application` | Private queue, lifecycle commands, workers, recovery, durable review decisions, runtime discovery/acquisition, isolated native transcription processes, FFmpeg conversion, chunk orchestration and stage execution | Core; no Slint |
 | `storyteller-ui` | File selection, snapshot presentation and application command dispatch | Application and core |
 
 The application controller now owns queue transitions, processing workers and recovery. The desktop shell dispatches commands and reads borrowed snapshots; it has no mutable queue handle. Review report/evidence loading, cached navigation and audio preview now have application-owned workers. The rebuilt native interface and validated Windows scenes are described in [UI.md](UI.md).
@@ -123,3 +123,9 @@ cargo test --locked -p storyteller-core -p storyteller-application
 At the Windows checkpoint, additionally run strict workspace Clippy, all workspace tests, the native Slint build, packaged relaunch recovery, and `.github/scripts/whistle-smoke.ps1` with verified assets. The script exercises the same adapter as Analyze through `transcribe_whistle`.
 
 References: [Whistle announcement](https://cactuscompute.com/blog/whistle), [model card](https://huggingface.co/Cactus-Compute/whistle), [supported native devices](https://cactuscompute.com/blog/needle-supported-devices), [reference wrapper](https://github.com/cactus-compute/needle/blob/main/needle/agent/whistle.py).
+
+## Optional Whisper GPU follow-up
+
+Work is on `feature/optional-whisper-gpu`, based on merge `e04853cb26475a6aa94d8b5c658713473f7e3e7a`. The optional backend uses pinned whisper.cpp CUDA 11.8 Windows x64 binaries and the 574 MB Turbo Q5 model, one GPU worker, English native JSON and the shared bounded chapter/silence-aware chunk pipeline. Backend/model identity is preserved in schema-3 recovery and Analyze/Align/Review cache identity. Existing Whistle settings and schema-2 recovery remain compatible. Setup and book readiness follow the selected backend; queue resume follows the next book's saved backend.
+
+GPU availability/free VRAM checks are a conservative startup policy. Actual invocations must show CUDA backend initialization plus model weights on CUDA and must not report failed initialization or CPU fallback. Real-GPU acceptance and throughput measurements remain outstanding; the CPU-hosted native validation helper checks the ABI/JSON adapter and rejects unconfirmed GPU execution. Model residency across chunks and non-NVIDIA runtime packages are not implemented in this milestone.

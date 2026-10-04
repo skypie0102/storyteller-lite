@@ -1,6 +1,6 @@
 # Native UI rebuild
 
-StoryTeller Lite uses one native Rust + Slint window, with New book, Queue and Settings workspaces. English-only Whistle remains the transcription engine.
+StoryTeller Lite uses one native Rust + Slint window, with New book, Queue and Settings workspaces. Whistle is the default; Settings also offers optional English transcription with Whisper Turbo on NVIDIA GPUs.
 
 ## Book creation
 
@@ -10,7 +10,7 @@ The app scans local tools in the background on startup. Start book requires both
 
 Processing preferences are in Settings rather than repeated beside every book. Defaults are Opus/64K, Smart review, English and Automatic CPU workers. Startup and Check setup scan available logical CPU threads and RAM on the computer running the app, alongside runtime discovery. Settings displays the detected resources and a starting worker recommendation. Manual counts of 1–16 override it. Automatic resolves to a concrete count when a book is queued; saved and recovered books keep that count. Preferences apply to newly queued books.
 
-Whistle transcription uses the pinned CPU engine; no GPU transcription backend is available. The recommendation leaves CPU/RAM headroom and is a heuristic, not a measured fastest setting. If CPU or RAM information is unavailable, Automatic falls back to one worker. [RUNTIME.md](RUNTIME.md) records the policy and its limits.
+Whistle transcription uses the pinned CPU engine. Selecting Whisper shows separate CUDA engine/model readiness and detected free VRAM; its CPU-worker selector is disabled because GPU jobs use one worker. Downloads are explicit and unavailable when hardware setup is insufficient. Backend preferences apply only to newly queued books; each waiting row displays its saved engine/worker count, and Resume queue checks the next book's saved backend. The recommendation leaves CPU/RAM headroom and is a heuristic, not a measured fastest setting. If CPU or RAM information is unavailable, Automatic falls back to one worker. [RUNTIME.md](RUNTIME.md) records the policy and its limits.
 
 ## Processing and queue
 
@@ -40,7 +40,7 @@ Run the actual compiled Slint scenes without a desktop session:
 cargo run --locked -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.json ui-snapshots
 ```
 
-The harness uses Slint 1.17.1's software renderer to capture 39 PPM images: thirteen scenes at 820×620 and 1040×760, plus compact scenes at 200% scale. It also dispatches real pointer and keyboard events to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Fixtures have no processing/download/file-dialog callbacks.
+The harness uses Slint 1.17.1's software renderer to capture 48 PPM images: sixteen scenes at 820×620 and 1040×760, plus compact scenes at 200% scale. It also dispatches real pointer and keyboard events to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Fixtures have no processing/download/file-dialog callbacks.
 
 Windows checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed on source commit `e59482318b661621309179f918dc5056ad48c912`: formatting, strict locked workspace Clippy, all 171 workspace tests, native Slint build, all 39 scene renders, pointer/keyboard checks at both normal sizes, and packaged relaunch recovery. It also verified the Windows CPU/RAM probe, Automatic transcription and a 135-second native Whistle run with six workers across six chunks. The recommendation tests cover missing probes and low RAM; recovery preserves older 1–4 choices and new 8/16 choices. This is integration evidence, not a throughput benchmark.
 
@@ -65,3 +65,5 @@ All six updated Settings renders were inspected at compact, standard and 200% sc
 ![Processing preferences and local setup at 1040×760](ui-snapshots/settings.png)
 
 These scene and interaction checks do not establish full-book recognition accuracy, audible preview quality, reader interoperability or full release packaging; those remain R5 acceptance work.
+
+The optional Whisper fixtures add installable/missing assets, ready CUDA assets and unavailable GPU states at all three sizes. These are rendered setup states, not evidence of real GPU hardware or throughput. The existing screenshot provenance describes the merged Whistle checkpoint until new native renders are retained.

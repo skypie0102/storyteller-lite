@@ -11,6 +11,25 @@ pub const MIN_TRANSCRIPTION_WORKERS: usize = 1;
 // Application safety ceiling for manual parallelism, not a Whistle model limit.
 pub const MAX_TRANSCRIPTION_WORKERS: usize = 16;
 
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptionBackend {
+    #[default]
+    Whistle,
+    WhisperCuda,
+}
+
+impl TranscriptionBackend {
+    pub const fn model_name(self) -> &'static str {
+        match self {
+            Self::Whistle => "whistle",
+            Self::WhisperCuda => "large-v3-turbo-q5_0",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AudioCodec {
     Copy,
@@ -63,6 +82,7 @@ impl AudioEncoding {
 pub struct JobSettings {
     pub audio: AudioEncoding,
     pub language: Option<String>,
+    pub transcription_backend: TranscriptionBackend,
     pub transcription_model: String,
     /// Controls whether safe unmatched-audio cases may be resolved automatically or all are surfaced.
     pub audio_review_policy: AudioReviewPolicy,
@@ -79,6 +99,7 @@ impl Default for JobSettings {
                 bitrate: Some(AudioBitrate::Kbps64),
             },
             language: Some(crate::WHISTLE_LANGUAGE.into()),
+            transcription_backend: TranscriptionBackend::Whistle,
             transcription_model: "whistle".into(),
             audio_review_policy: AudioReviewPolicy::Smart,
             transcription_workers: MIN_TRANSCRIPTION_WORKERS,
@@ -153,8 +174,15 @@ impl Job {
         if inputs.output_path == inputs.epub_path {
             return Err("Output path must not replace the source EPUB.".into());
         }
-        if settings.transcription_model != "whistle" {
-            return Err("This rebuild uses the Whistle model.".into());
+        if settings.transcription_model != settings.transcription_backend.model_name() {
+            return Err("The transcription model does not match the selected backend.".into());
+        }
+        if settings.transcription_backend == TranscriptionBackend::WhisperCuda
+            && settings.transcription_workers != 1
+        {
+            return Err(
+                "Whisper GPU uses one worker to avoid duplicating the model in VRAM.".into(),
+            );
         }
         // Older callers and recovery records used an absent/auto language. Their
         // default now means English; an explicit foreign language is never retargeted.
@@ -363,6 +391,38 @@ mod tests {
             let job = Job::new(inputs(), settings).unwrap();
             assert_eq!(job.settings.language.as_deref(), Some("en"));
         }
+    }
+
+    #[test]
+    fn whisper_backend_requires_its_model_and_one_gpu_worker() {
+        let backend = TranscriptionBackend::WhisperCuda;
+        let settings = JobSettings {
+            transcription_backend: backend,
+            transcription_model: backend.model_name().into(),
+            ..Default::default()
+        };
+        let job = Job::new(inputs(), settings.clone()).unwrap();
+        assert_eq!(job.settings.transcription_backend, backend);
+        assert_eq!(job.settings.language.as_deref(), Some("en"));
+        for workers in [0, 2, 4, 16] {
+            assert!(Job::new(
+                inputs(),
+                JobSettings {
+                    transcription_workers: workers,
+                    ..settings.clone()
+                }
+            )
+            .unwrap_err()
+            .contains("one worker"));
+        }
+        assert!(Job::new(
+            inputs(),
+            JobSettings {
+                transcription_model: "whistle".into(),
+                ..settings
+            }
+        )
+        .is_err());
     }
 
     #[test]

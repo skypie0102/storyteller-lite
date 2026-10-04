@@ -535,5 +535,53 @@
       "status-text": "Ready",
       "worker-recommendation-text": "16 logical CPU threads available · 8.0 GiB RAM available. Starting recommendation: 8 workers."
     }
+  },
+  {
+    "name": "whisper-setup",
+    "properties": {
+      "settings-open": true,
+      "runtime-ready": false,
+      "runtime-ffmpeg-text": "Missing · Download the verified audio tools below.",
+      "runtime-transcription-text": "Missing",
+      "runtime-model-text": "Missing",
+      "runtime-summary-text": "Whisper GPU is optional — download its engine and Turbo model to use it.",
+      "status-text": "Local setup needed",
+      "worker-recommendation-text": "16 logical CPU threads available · 8.0 GiB RAM available. Starting recommendation: 8 workers.",
+      "transcription-backend-selection": 1,
+      "runtime-installable": true,
+      "gpu-status-text": "NVIDIA GeForce RTX 4070 · 8.0 GB free VRAM · 1 GPU worker"
+    }
+  },
+  {
+    "name": "whisper-ready",
+    "properties": {
+      "settings-open": true,
+      "runtime-ready": true,
+      "runtime-ffmpeg-text": "Missing · Download the verified audio tools below.",
+      "runtime-transcription-text": "Ready — C:/Users/Reader/AppData/Local/Storyteller OneClick Lite/tools/whisper-cuda/whisper-cli.exe",
+      "runtime-model-text": "Ready — C:/Users/Reader/AppData/Local/Storyteller OneClick Lite/models/ggml-large-v3-turbo-q5_0.bin",
+      "runtime-summary-text": "Ready — Whisper Turbo on NVIDIA GPU · 1 worker",
+      "status-text": "Local setup needed",
+      "worker-recommendation-text": "16 logical CPU threads available · 8.0 GiB RAM available. Starting recommendation: 8 workers.",
+      "transcription-backend-selection": 1,
+      "runtime-installable": true,
+      "gpu-status-text": "NVIDIA GeForce RTX 4070 · 8.0 GB free VRAM · 1 GPU worker"
+    }
+  },
+  {
+    "name": "whisper-no-gpu",
+    "properties": {
+      "settings-open": true,
+      "runtime-ready": false,
+      "runtime-ffmpeg-text": "Missing · Download the verified audio tools below.",
+      "runtime-transcription-text": "Missing",
+      "runtime-model-text": "Missing",
+      "runtime-summary-text": "No compatible NVIDIA GPU detected. Choose Whistle or install your NVIDIA driver, then check setup.",
+      "status-text": "Local setup needed",
+      "worker-recommendation-text": "16 logical CPU threads available · 8.0 GiB RAM available. Starting recommendation: 8 workers.",
+      "transcription-backend-selection": 1,
+      "runtime-installable": false,
+      "gpu-status-text": "No compatible NVIDIA GPU detected. Choose Whistle or install your NVIDIA driver, then check setup."
+    }
   }
 ]

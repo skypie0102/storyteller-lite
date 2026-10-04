@@ -12,12 +12,13 @@ mod review_preview;
 mod review_service;
 mod review_session;
 mod runtime_setup;
+mod whisper_runtime;
 mod worker_recommendation;
 
 pub use app_paths::{persistent_app_root, recovery_app_root};
 pub use chunked_transcription::{
     transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, ChunkedTranscriptionProgress,
-    ChunkedTranscriptionSummary,
+    ChunkedTranscriptionSummary, TranscriptionEngine,
 };
 pub use controller::{ApplicationCommand, ApplicationController, ApplicationSnapshot, RuntimeView};
 pub use pipeline_backend::{job_workspace, spawn_job_worker};
@@ -26,4 +27,5 @@ pub use review_session::{ReviewAction, ReviewCandidate, ReviewView};
 pub use runtime_setup::{
     configure_runtime_environment, detect_runtime, install_missing_dependencies, RuntimeStatus,
 };
+pub use whisper_runtime::{install_whisper_dependencies, NvidiaGpu, WhisperRuntimeStatus};
 pub use worker_recommendation::WorkerRecommendation;

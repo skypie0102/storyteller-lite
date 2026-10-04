@@ -2,7 +2,7 @@
 
 ## Active rebuild — 2026-10-04
 
-The user selected reliability and simplicity, retained Rust + Slint, and explicitly requested **Whistle instead of Whisper**. The current development branch is `rebuild/reliability-foundation`. Read [REBUILD.md](REBUILD.md) for architecture, acceptance criteria and outstanding milestones, and [RUNTIME.md](RUNTIME.md) for supported assets. Whistle is required; do not restore Whisper as a fallback or archive-import path.
+PR #30 merged the validated R0–R4 English-only Whistle rebuild into `main` at `e04853cb26475a6aa94d8b5c658713473f7e3e7a`. The user then authorized optional Whisper implementation on `feature/optional-whisper-gpu`. Keep Whistle as the lightweight default; Whisper Turbo Q5 is an explicit optional NVIDIA CUDA backend. This authorization supersedes the earlier Whistle-only rule. There is no automatic backend fallback or historical archive import. Read [REBUILD.md](REBUILD.md) and [RUNTIME.md](RUNTIME.md) for the contracts and acceptance limits.
 
 The user subsequently narrowed transcription to **English only**. Always force `--audio-language en`; do not restore the adapter language option or automatic detection. Keep the pinned shared 16.9 MB model: removing application language options does not shrink its weights. Recovery must preserve explicit foreign requests for a clear worker-preflight failure without invalidating other books, and migrate absent/auto settings to English. The adapter profile changed, so older Analyze and downstream fingerprints must not be reused.
 
@@ -252,3 +252,9 @@ These UI-only slices were validated with the relevant native gate, `cargo build 
 Preserve old behavior/evidence until replacement behavior is implemented and regression-covered.
 
 > **Replace → regression-test → delete. Never delete → hope we remembered everything.**
+
+## Optional Whisper GPU implementation
+
+Settings selects Whistle CPU or Whisper Turbo NVIDIA GPU for newly queued books. Recovery schema 3 saves the typed backend/model/worker count; schema 2 remains Whistle, and schema 1 retains the existing legacy-to-Whistle migration. GPU jobs always use one worker. The runtime is optional and pinned to whisper.cpp b5130 / v1.9.4 and large-v3-turbo-q5_0, with archive, executable/DLL and model verification. Setup scans the first PCI-ordered NVIDIA GPU and free VRAM in the background. The app requires 4 GiB free as a conservative initial policy, refuses custom CUDA visibility mapping, and reconfirms real CUDA backend initialization and CUDA model-weight allocation during each invocation. Missing/incompatible GPU initialization stops CPU fallback and leaves the saved backend unchanged.
+
+The implementation currently reloads the native model once per bounded chunk. Resident-model execution, GPU batching, multiple-GPU scheduling, AMD/Intel/Vulkan packages and a measured backend recommendation remain future work. Native CPU-hosted checks with the pinned Turbo Q5 model validate the JSON adapter and fallback rejection; they cannot establish Turbo GPU throughput, memory peak or full-book accuracy. Run the hardware helper in RUNTIME.md on a compatible GPU before claiming performance or offload acceptance. No new Whisper release or second merge is authorized by the current request.
