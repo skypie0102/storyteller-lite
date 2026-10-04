@@ -40,17 +40,17 @@ Native smoke tests establish integration correctness, not a quality or speed adv
 
 ## Validation
 
-The initial foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed on product-source commit `57e85e85a019e821d374ca63159a75fa6e648b5b`, before the English-only follow-up:
+The English-only Windows checkpoint [37186176210](https://github.com/skypie0102/storyteller-lite/actions/runs/37186176210) passed on product-source commit `df1e49faece11e28a0cb11bb0c79a5a91defea43`:
 
 - Formatting and strict workspace Clippy with all targets and the committed lockfile.
-- All 116 workspace tests, including legacy recovery migration and Whistle timing through EPUB validation.
-- Native Slint build and packaged Running/NeedsReview relaunch recovery.
+- All 121 workspace tests, including rejection of non-English requests/results, mixed-language saved-queue recovery, legacy recovery migration and Whistle timing through EPUB validation.
+- Native Slint build and packaged Running/NeedsReview relaunch recovery, including absent-language migration to English.
 - Hash-verified model, Windows native engine and FFmpeg acquisition.
-- Actual English speech with native word timestamps and empty native silence.
-- Application runtime discovery/verification, 6.44-second speech, and 55-second audio merged from three windows with two isolated workers.
+- Actual English speech with 14 native timed words and empty native silence, both explicitly requesting English.
+- Application runtime discovery/verification, English-only 6.44-second speech, and 55-second audio merged from three windows with two isolated workers.
 - Global timestamp ordering/source bounds, complete hard-capped chunk coverage, entirely silent book rejection and temporary PCM cleanup.
 
-The temporary branch-only checkpoint workflow was removed after that pass. The English-only follow-up requires a fresh native Windows checkpoint, including mixed-language recovery regression coverage and forced-English single/multi-window smoke. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
+The earlier foundation checkpoint [37183579467](https://github.com/skypie0102/storyteller-lite/actions/runs/37183579467) passed 116 tests on `57e85e85a019e821d374ca63159a75fa6e648b5b`, before English-only support. The temporary branch-only checkpoint workflow was removed after the latest pass. Subsequent evidence/cleanup edits do not change tested product source. Normal hosted validation remains opt-in under [CI_POLICY.md](CI_POLICY.md).
 
 Full-book English recognition accuracy, difficult speech boundaries and performance are still R5 acceptance work. The integration pass does not establish those outcomes.
 
