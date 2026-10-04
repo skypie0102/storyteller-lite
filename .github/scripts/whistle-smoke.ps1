@@ -82,4 +82,5 @@ $silentOutput = Join-Path $WorkDirectory 'silent-output'
 if ($LASTEXITCODE -eq 0) { throw 'An entirely silent book was incorrectly accepted.' }
 if (Test-Path -LiteralPath (Join-Path $silentOutput 'transcript.json')) { throw 'Silence produced a fabricated transcript.' }
 if (Test-Path -LiteralPath (Join-Path $silentOutput 'transcription-chunks.tmp')) { throw 'Failed analysis left temporary PCM chunks.' }
+$global:LASTEXITCODE = 0
 Write-Host 'Whistle native and application smoke passed.'

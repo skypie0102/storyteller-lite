@@ -143,7 +143,16 @@ fn whistle_word_times_survive_chunk_merge_alignment_and_epub_validation() {
     assert_eq!(build.synchronized_segments, 2);
     let validated = validate_readaloud_epub(&candidate, &cancellation).unwrap();
     assert_eq!(validated.synchronized_segments, 2);
-    assert_eq!(validated.media_duration_ms, 26_700);
+    assert_eq!(validated.media_duration_ms, 2_600);
+    let mut archive = ZipArchive::new(File::open(&candidate).unwrap()).unwrap();
+    let mut smil = String::new();
+    archive
+        .by_name("OPS/storyteller/overlays/overlay-0001.smil")
+        .unwrap()
+        .read_to_string(&mut smil)
+        .unwrap();
+    assert!(smil.contains("clipBegin=\"0:00:25.200\""));
+    assert!(smil.contains("clipEnd=\"0:00:26.700\""));
     let _ = fs::remove_dir_all(root);
 }
 

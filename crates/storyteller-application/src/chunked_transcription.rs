@@ -209,6 +209,11 @@ fn run_chunk_workers(
     let mut first_error = None::<String>;
 
     while completed < chunks.len() && first_error.is_none() {
+        if cancellation.is_requested() {
+            worker_cancellation.request();
+            first_error = Some("Transcription was cancelled.".into());
+            break;
+        }
         let event = match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(event) => event,
             Err(mpsc::RecvTimeoutError::Timeout) => {

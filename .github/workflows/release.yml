@@ -116,10 +116,11 @@ jobs:
           Run StoryTeller-Lite.exe directly. This release is portable;
           it does not install an auto-updater or write mutable runtimes beside the EXE.
 
-          User-initiated verified FFmpeg, whisper.cpp, and model downloads are stored
+          User-initiated verified FFmpeg, Whistle engine, and model downloads are stored
           under %LOCALAPPDATA%\Storyteller OneClick Lite\tools and \models.
 
-          A local whisper.cpp archive can also be imported from Settings.
+          Open Settings and choose Download missing. Whistle runs locally on CPU
+          and supports English, German, French, Spanish, Italian, Dutch and Polish.
 
           This executable is currently unsigned, so Windows may display a SmartScreen
           warning. Verify the release ZIP checksum before running it.
@@ -201,12 +202,12 @@ jobs:
 
           ### Included
           - Queue-first seven-stage EPUB audiobook pipeline.
-          - Bounded 1–4 worker whisper.cpp transcription.
+          - Bounded 1–4 worker native Whistle transcription.
           - Conservative alignment and durable Review Audio decisions.
           - Introduction/Credits preservation and Graphic Readout Media Overlays.
           - Independent EPUB validation plus externally validated representative EPUB fixtures.
           - Paused relaunch recovery with validated checkpoint reuse.
-          - Per-user, verified FFmpeg/whisper.cpp/model acquisition.
+          - Per-user, verified FFmpeg/Whistle/model acquisition.
           - Provenance-bearing portable Windows package.
 
           ### Before running

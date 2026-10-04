@@ -905,7 +905,7 @@ mod tests {
             speed_factor: Some(22.4),
             eta_seconds: Some(410),
             match_percent: Some(98.4),
-            backend: Some("CUDA".into()),
+            backend: Some("Whistle / native CPU".into()),
             model: Some("Whistle".into()),
         });
 
@@ -919,7 +919,7 @@ mod tests {
         );
         assert_eq!(
             active_metrics(&job),
-            "Backend CUDA  •  Model large-v3-turbo  •  Match 98.4%"
+            "Backend Whistle / native CPU  •  Model Whistle  •  Match 98.4%"
         );
     }
 
