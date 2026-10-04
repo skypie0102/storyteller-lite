@@ -108,6 +108,8 @@ Schema 3 saves `transcription_backend` alongside model and workers. Whisper requ
 
 The current CLI integration loads its model per chunk. Keeping a resident model, GPU batching and measured backend recommendations are future optimizations. Hosted Windows checks have no GPU: they can test native English JSON using the pinned Turbo Q5 model on CPU, fallback rejection, recovery and UI, but cannot validate Turbo GPU execution or throughput.
 
+The [Windows checkpoint](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379) passed those native checks, all 183 workspace tests and strict Clippy. Its only failure was formatting, corrected by a formatting-only change and a successful [formatting check](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790). [REBUILD.md](REBUILD.md) records the exact source commits and evidence limits.
+
 On a compatible Windows NVIDIA system, compare the same representative English audiobook with both backends, inspect transcript/alignment quality, record elapsed time and peak GPU memory, and verify that later chunks keep global timing and temporary data is removed:
 
 ```text

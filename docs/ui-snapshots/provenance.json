@@ -1,12 +1,16 @@
 {
-  "description": "Lossless PNG conversions of actual compiled Slint scene fixtures captured on Windows, with sample book and hardware data. These are state renders, not a complete-book acceptance run.",
-  "product_source_commit": "e59482318b661621309179f918dc5056ad48c912",
-  "workflow_run": 37203054403,
-  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403",
-  "artifact_id": 11303393901,
-  "artifact_zip_sha256": "142c6ea00d5245fc96763833da9f0098d838f17e5fc34e199e45e8f47001f0da",
+  "description": "Lossless PNG conversions of actual compiled Slint scene fixtures captured on Windows, with sample book and hardware data. GPU setup fixtures are state renders, not real-GPU or full-book acceptance evidence.",
+  "product_source_commit": "8fb11d4e0172541e7818c5c46fde5731f129aa5d",
+  "workflow_run": 37211560379,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379",
+  "workflow_conclusion": "failure",
+  "validation_note": "Strict locked workspace Clippy, all 183 tests, native build, all 48 scenes and interaction checks, Whistle smoke, Turbo English JSON/no-GPU rejection, and recovery passed. Only formatting failed; the subsequent change is formatting-only in one test. See docs/REBUILD.md for the separate formatting pass.",
+  "format_source_commit": "9190f50c215d0ed29579a4a244abb6fda428dbea",
+  "format_workflow_run": 37215449790,
+  "artifact_id": 11307435512,
+  "artifact_zip_sha256": "e69181719cd4678a4c49d202f9c36997032960ceebc0a2c9f1a07f69b8ab869e",
   "slint_version": "1.17.1",
-  "windows_workspace_tests": 171,
+  "windows_workspace_tests": 183,
   "pointer_keyboard_sizes": [
     [
       820,
@@ -25,7 +29,7 @@
         820,
         620
       ],
-      "sha256": "a94ae1bb7f202f030fd69dd29754ccaf17e7844a27223f2798beb9cdd607a6ac"
+      "sha256": "8772fd701f922bb067e960d6ba4690861b0b40174897e75aad46876fc880c1f5"
     },
     {
       "path": "processing.png",
@@ -34,7 +38,7 @@
         820,
         620
       ],
-      "sha256": "1f51d9112090eeaad28ad96f2d98998777e923cd03e8e9bf40df907365cf4178"
+      "sha256": "f3704cc06dd58cb927a746f88a88d2b6a6f71c4e6551233974e58673d086bc3b"
     },
     {
       "path": "audio-review.png",
@@ -43,7 +47,7 @@
         820,
         620
       ],
-      "sha256": "dcb45fcfcc605d007c6b07f3449812d9d0ea4b9250f24aabd14b23f87fca89d7"
+      "sha256": "1007924e310ef3729ce16883e2b1865115387e95b6ed172298e6ff4c1a9ccd52"
     },
     {
       "path": "settings.png",
@@ -52,7 +56,7 @@
         1040,
         760
       ],
-      "sha256": "747a24cd7ab683581755c17c3de7dbfe17067b6914ab3d4b1dcce94d7aac91de"
+      "sha256": "0f72ea5c4bf1183f323adc4be5f57575708b58d07b4f754210ad0ae6a9bf28aa"
     },
     {
       "path": "audio-review-200-percent.png",
@@ -61,7 +65,25 @@
         1640,
         1240
       ],
-      "sha256": "3f2e752eb0880af0433c7d847ea92a44a070c896d3a5cc77334892e50cdf2815"
+      "sha256": "b06c2396b8820bd4ab4808486e8d6c189a0c0b467d8910deae3039b19f665547"
+    },
+    {
+      "path": "whisper-setup.png",
+      "fixture_ppm": "whisper-setup-1040x760-1x.ppm",
+      "dimensions": [
+        1040,
+        760
+      ],
+      "sha256": "a6808ecf77577d6f3ca023e89e758a72c064731c4f8efa3a68179d006d644f5f"
+    },
+    {
+      "path": "whisper-no-gpu.png",
+      "fixture_ppm": "whisper-no-gpu-820x620-1x.ppm",
+      "dimensions": [
+        820,
+        620
+      ],
+      "sha256": "943baee8d01efe7729f187b746e2ff3760840ea1cd2c2af74087ceff042f500f"
     }
   ],
   "rendered_scenes": [
@@ -307,7 +329,7 @@
     },
     {
       "path": "settings-1040x760-1x.ppm",
-      "sha256": "98bf73bd4c2e7fe8ae07bd4b418ccfddacffe75b1bea05fa626a8aed5157787d",
+      "sha256": "e8e5cf08df85d8e275d3a9ec78a1db878610b763df292ea2c424945143b9ab00",
       "dimensions": [
         1040,
         760
@@ -315,7 +337,7 @@
     },
     {
       "path": "settings-820x620-1x.ppm",
-      "sha256": "22ff662d59e5e21395b928ebb40fa25f18454b13679e8a787ed2c2b9aea7426e",
+      "sha256": "324f8f9219638dfccc4346035480b6ab75e7735bc8dc6f13288c3f57bdb07468",
       "dimensions": [
         820,
         620
@@ -323,7 +345,7 @@
     },
     {
       "path": "settings-820x620-2x.ppm",
-      "sha256": "1686f458cd5d6cb3fda421a8ff4b2b6bfdb8bc97aea6a922444f1516b74329ca",
+      "sha256": "fae630cf4effc4213224969d6a1bbb30b5e2e8ca86e20bc72be15e3adba08707",
       "dimensions": [
         1640,
         1240
@@ -331,7 +353,7 @@
     },
     {
       "path": "settings-ready-1040x760-1x.ppm",
-      "sha256": "b96a5f4fe37b1659ac4ebe2b9d69516ae35a5d14088a7cc4be6d2a015d76a684",
+      "sha256": "9b38f9395f5bf51b92ff963be1758ec74b20079a704e308a30decf2e74a0ab1c",
       "dimensions": [
         1040,
         760
@@ -339,7 +361,7 @@
     },
     {
       "path": "settings-ready-820x620-1x.ppm",
-      "sha256": "603aacaa8fb6fe99805c506253dc61fcdcd85de666ef25f057b11e95c8b83b26",
+      "sha256": "107b673b05b39b96d3b5c25e778b9ce1c33fe785f10954ec1f5ed3ff27a6cb64",
       "dimensions": [
         820,
         620
@@ -347,7 +369,7 @@
     },
     {
       "path": "settings-ready-820x620-2x.ppm",
-      "sha256": "b843b43d25144a97d8eb46debf893cea3e55a84c2f0d19e54937ed1e19ef3e59",
+      "sha256": "12dd269cbe13acf52457b61cb86c9e3a1b87013af268a9ff3e901c909c8f46ed",
       "dimensions": [
         1640,
         1240
@@ -376,19 +398,85 @@
         1640,
         1240
       ]
+    },
+    {
+      "path": "whisper-no-gpu-1040x760-1x.ppm",
+      "sha256": "aee5048d72f3d85ad44992710d5a275b67c1ff818d99f10ab729f2f077de0bed",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-no-gpu-820x620-1x.ppm",
+      "sha256": "aead8cf7483a4d549cb6117548a7a4c2432cee35db8cf8f6ada8ed98d8518810",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-no-gpu-820x620-2x.ppm",
+      "sha256": "e073be79398589fa9e6988dfccffeeff0d1eead8dcec687c34acc03072c0585c",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "whisper-ready-1040x760-1x.ppm",
+      "sha256": "45b2f598bb64087500bc4c79c423f75945fee36aa82dbb9e77f901f86f357df2",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-ready-820x620-1x.ppm",
+      "sha256": "1ddc910a61dfe2e96339f0edd1c39b854f325cf4a0814026bca9849f1478db04",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-ready-820x620-2x.ppm",
+      "sha256": "446efc82061a65a6a075f48c0946d4726ca0f317cce0a0c6496163c4de9f9bbc",
+      "dimensions": [
+        1640,
+        1240
+      ]
+    },
+    {
+      "path": "whisper-setup-1040x760-1x.ppm",
+      "sha256": "1d2ddc050e42e3252e30d81b5a2904da86afa62b5c7dd91ab4c78347fad6dfd9",
+      "dimensions": [
+        1040,
+        760
+      ]
+    },
+    {
+      "path": "whisper-setup-820x620-1x.ppm",
+      "sha256": "1ddc910a61dfe2e96339f0edd1c39b854f325cf4a0814026bca9849f1478db04",
+      "dimensions": [
+        820,
+        620
+      ]
+    },
+    {
+      "path": "whisper-setup-820x620-2x.ppm",
+      "sha256": "446efc82061a65a6a075f48c0946d4726ca0f317cce0a0c6496163c4de9f9bbc",
+      "dimensions": [
+        1640,
+        1240
+      ]
     }
   ],
   "comparison_to_prior_checkpoint": {
-    "source_commit": "47e74e944fbdcd691c2956050ed26ae4c961f51f",
-    "workflow_run": 37199779738,
-    "byte_identical_scenes": 33,
-    "updated_scenes_inspected": [
-      "settings-1040x760-1x.ppm",
-      "settings-820x620-1x.ppm",
-      "settings-820x620-2x.ppm",
-      "settings-ready-1040x760-1x.ppm",
-      "settings-ready-820x620-1x.ppm",
-      "settings-ready-820x620-2x.ppm"
-    ]
-  }
+    "source_commit": "3a38bc3dc54af8010f23c81354cdb0eff38f9f9f",
+    "workflow_run": 37207706876,
+    "byte_identical_scenes": 48,
+    "all_prior_scenes_visually_inspected": true
+  },
+  "format_workflow_conclusion": "success"
 }

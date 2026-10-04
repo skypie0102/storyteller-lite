@@ -42,11 +42,13 @@ cargo run --locked -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.
 
 The harness uses Slint 1.17.1's software renderer to capture 48 PPM images: sixteen scenes at 820×620 and 1040×760, plus compact scenes at 200% scale. It also dispatches real pointer and keyboard events to check source selection, start guards, workspace navigation, review completion and the two-click bulk exclusion path. Fixtures have no processing/download/file-dialog callbacks.
 
-Windows checkpoint [37203054403](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed on source commit `e59482318b661621309179f918dc5056ad48c912`: formatting, strict locked workspace Clippy, all 171 workspace tests, native Slint build, all 39 scene renders, pointer/keyboard checks at both normal sizes, and packaged relaunch recovery. It also verified the Windows CPU/RAM probe, Automatic transcription and a 135-second native Whistle run with six workers across six chunks. The recommendation tests cover missing probes and low RAM; recovery preserves older 1–4 choices and new 8/16 choices. This is integration evidence, not a throughput benchmark.
+Windows checkpoint [37211560379](https://github.com/skypie0102/storyteller-lite/actions/runs/37211560379) on source commit `8fb11d4e0172541e7818c5c46fde5731f129aa5d` passed strict locked workspace Clippy, all 183 workspace tests, the native Slint build, all 48 scene renders, pointer/keyboard checks at both normal sizes, native Whistle/Turbo adapter checks and packaged relaunch recovery. Its only failure was formatting in one controller test. A formatting-only correction passed [formatting run 37215449790](https://github.com/skypie0102/storyteller-lite/actions/runs/37215449790); UI source is unchanged between these runs. [REBUILD.md](REBUILD.md) records the complete evidence and hardware limits.
+
+The merged Whistle [worker checkpoint](https://github.com/skypie0102/storyteller-lite/actions/runs/37203054403) passed 171 tests and 39 scenes. Worker recommendation tests cover missing probes and low RAM; recovery preserves older 1–4 choices and new 8/16 choices. The latest native smoke again verified Automatic and a 135-second Whistle run with six workers across six chunks. This is integration evidence, not a throughput benchmark.
 
 The earlier UI checkpoint [37199779738](https://github.com/skypie0102/storyteller-lite/actions/runs/37199779738) established the rebuilt layout and review lifecycle. Tab followed by Space activates the source picker; native Fluent buttons deliberately do not take keyboard focus from a pointer click.
 
-All six updated Settings renders were inspected at compact, standard and 200% scale. The remaining 33 scene files are byte-identical to the fully inspected earlier UI checkpoint. The screenshots below are lossless conversions of the latest actual Windows fixture renders, with sample book and hardware data. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and per-scene hashes; [the 200% review render](ui-snapshots/audio-review-200-percent.png) is also retained. The temporary branch-only checkpoint workflow was removed after the pass. No runtime dependencies or lockfile changes were needed.
+All 48 scenes were visually inspected at compact, standard and 200% scale in the prior native capture; every latest scene is byte-identical to that capture. The screenshots below are lossless conversions of actual Windows fixture renders, with sample book and hardware data. [Screenshot provenance](ui-snapshots/provenance.json) records the tested source, artifact digest, dimensions and all 48 scene hashes; [the 200% review render](ui-snapshots/audio-review-200-percent.png) is also retained. The temporary workflow was removed after the final formatting pass. No runtime dependencies or lockfile changes were needed.
 
 ### New book — compact window
 
@@ -64,6 +66,14 @@ All six updated Settings renders were inspected at compact, standard and 200% sc
 
 ![Processing preferences and local setup at 1040×760](ui-snapshots/settings.png)
 
+### Optional Whisper setup — standard window
+
+![Optional Whisper engine download and GPU readiness at 1040×760](ui-snapshots/whisper-setup.png)
+
+### Whisper without a compatible GPU — compact window
+
+![Whisper hardware requirements and unavailable download at 820×620](ui-snapshots/whisper-no-gpu.png)
+
 These scene and interaction checks do not establish full-book recognition accuracy, audible preview quality, reader interoperability or full release packaging; those remain R5 acceptance work.
 
-The optional Whisper fixtures add installable/missing assets, ready CUDA assets and unavailable GPU states at all three sizes. These are rendered setup states, not evidence of real GPU hardware or throughput. The existing screenshot provenance describes the merged Whistle checkpoint until new native renders are retained.
+The optional Whisper fixtures cover installable/missing assets, ready CUDA assets and unavailable GPU states at all three sizes. These are rendered setup states, not evidence of real GPU hardware or throughput.
