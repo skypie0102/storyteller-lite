@@ -317,15 +317,12 @@ try {{
 pub(crate) fn whisper_command(
     executable: &Path,
     model: &Path,
-    audio: &Path,
-    output_prefix: &Path,
+    inputs: &[(PathBuf, PathBuf)],
 ) -> Command {
     let mut command = Command::new(executable);
     command
         .arg("--model")
         .arg(model)
-        .arg("--file")
-        .arg(audio)
         .args([
             "--language",
             "en",
@@ -335,11 +332,16 @@ pub(crate) fn whisper_command(
             "2",
             "--output-json",
             "--suppress-nst",
-            "--output-file",
         ])
-        .arg(output_prefix)
         .env("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
         .env_remove("GGML_BACKEND_PATH");
+    // The pinned CLI loads one context before looping over input files. It pairs
+    // each input with the output prefix at the same position and resets text
+    // context between files (whisper_full_default_params.no_context = true).
+    for (audio, output_prefix) in inputs {
+        command.arg("--file").arg(audio);
+        command.arg("--output-file").arg(output_prefix);
+    }
     command
 }
 
@@ -396,8 +398,10 @@ mod tests {
         let command = whisper_command(
             Path::new("whisper-cli.exe"),
             Path::new("C:/O'Brien/model.bin"),
-            Path::new("audio with spaces.wav"),
-            Path::new("chunk result"),
+            &[
+                ("audio with spaces.wav".into(), "chunk result".into()),
+                ("second audio.wav".into(), "second result".into()),
+            ],
         );
         let args = command
             .get_args()
