@@ -1,0 +1,157 @@
+{
+  "pull_request": 34,
+  "stacked_on_pull_request": 33,
+  "source_commit": "061a4263e3b4615411ce4128ee8653cb7a01c548",
+  "source_tree": "f84a1c36986fe23cd675d72a6a817e14284bcc24",
+  "workflow_run": 37278920610,
+  "workflow_job": 111662154730,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37278920610",
+  "platform": "Windows x64 hosted CPU-only runner",
+  "conclusion": "success",
+  "gates": {
+    "formatting": "passed",
+    "strict_locked_core_application_clippy": "passed",
+    "tests": {
+      "application": 57,
+      "core_unit": 139,
+      "core_integration": 8,
+      "total": 204
+    },
+    "all_required_outcomes_passed": true,
+    "progress_regressions": [
+      "Two-hour book emits distinct native part work at 5% and 10% while whole-book percentage remains 0 and checked count remains 0.",
+      "Ownership excludes left/right context, stays monotonic and counts each input once.",
+      "Native completion cannot accept a missing or malformed JSON batch; Analyze remains below 100 until final merge/write/cleanup.",
+      "Live callbacks reach the observer before the owned child finishes; user cancellation and observer failure stop and join it.",
+      "Narrator stdout cannot stop CUDA inference, credit progress or provide offload proof.",
+      "Unknown, skipped, backward or repeated input markers cannot credit another file; malformed/regressing native percentages are ignored."
+    ]
+  },
+  "native_checkpoint": {
+    "source_commit": "64076313f362a2c11c53bcc8fc9d89e871a61f51",
+    "source_tree": "ecf528f52f5721458cd5e48b9637a12de636a906",
+    "workflow_run": 37277637190,
+    "workflow_job": 111658110315,
+    "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37277637190",
+    "conclusion": "success",
+    "formatting": "passed",
+    "strict_locked_core_application_clippy": "passed",
+    "tests": {
+      "application": 56,
+      "core_unit": 139,
+      "core_integration": 8,
+      "total": 203
+    },
+    "progress_capture": {
+      "engine": "Whisper Turbo native CPU validation",
+      "gpu_throughput_validated": false,
+      "input_count": 3,
+      "json_acceptance_is_separate": true,
+      "model_loads": 1,
+      "observed_during_process": true,
+      "progress_events": [
+        {
+          "elapsed_ms": 504,
+          "input_index": 0,
+          "percent": 0
+        },
+        {
+          "elapsed_ms": 39506,
+          "input_index": 0,
+          "percent": 100
+        },
+        {
+          "elapsed_ms": 39506,
+          "input_index": 1,
+          "percent": 0
+        },
+        {
+          "elapsed_ms": 78500,
+          "input_index": 1,
+          "percent": 100
+        },
+        {
+          "elapsed_ms": 78500,
+          "input_index": 2,
+          "percent": 0
+        },
+        {
+          "elapsed_ms": 121663,
+          "input_index": 2,
+          "percent": 82
+        },
+        {
+          "elapsed_ms": 163273,
+          "input_index": 2,
+          "percent": 100
+        }
+      ]
+    },
+    "long_input_partial_update_ms_before_completion": 41610,
+    "timings_are_live_observation_evidence_not_a_throughput_benchmark": true,
+    "paired_short_inputs": {
+      "inputs": 2,
+      "model_loads": 1,
+      "words_per_input": 14,
+      "language": "en"
+    },
+    "context_and_long_group": {
+      "inputs": 3,
+      "model_loads": 1,
+      "long_input_ms": 35000,
+      "word_times_after_thirty_seconds": true
+    },
+    "native_whistle": {
+      "automatic_workers": "passed",
+      "duration_ms": 135000,
+      "chunks": 6,
+      "effective_workers": 6,
+      "global_tail_timing": "passed",
+      "silence_rejection": "passed"
+    },
+    "word_boundary": {
+      "forced_cut_ms": 24500,
+      "whistle_target_occurrences": 1,
+      "whisper_target_occurrences": 1
+    },
+    "product_gpu_rejection": {
+      "source_ms": 335000,
+      "larger_inputs": 2,
+      "cpu_fallback_stopped": true,
+      "no_transcript_or_temporary_chunks": true
+    },
+    "source_scope": "Final source adds native-part activity data and its two-hour rounding regression. CLI arguments, native progress parser, word parsers, CUDA diagnostic rules and native validation helpers/scripts are unchanged from this native checkpoint.",
+    "artifact": {
+      "id": 11331267261,
+      "name": "native-whisper-progress",
+      "bytes": 11988546,
+      "files": 37,
+      "zip_sha256": "2286c36268a11422b1911fe66a74814d5bc2f9ec815b301c2be7008a2d9a9b7a",
+      "crc_verified": true,
+      "temporary_chunk_files_absent": true,
+      "payload_sha256": {
+        "whisper-validation/progress-evidence.json": "882cfaf58b533d29b7df6cc0578154ba318dd0063d8cb2551bfe6a312f7bb0a8",
+        "whisper-validation/native cpu 1.json": "6b271ae6017cb05042a4a038a5dc8603f1d251a570fd1615e7dfa64d656f1598",
+        "whisper-validation/native cpu 2.json": "6b271ae6017cb05042a4a038a5dc8603f1d251a570fd1615e7dfa64d656f1598",
+        "whisper-validation/boundary-native-0.json": "1095c620cb516468074e56693614d25702c0637d0a70207d4bdb31e136db183b",
+        "whisper-validation/boundary-native-1.json": "1fa786e684887bfbe10cd4b2063650365590828b2a5e81c0edb8f4f0bc9defa4",
+        "whisper-validation/native-long-input.json": "f6b69c3313f89bbdefb9699e60091b659f946d1995c3fcc124eadeafd24939e1",
+        "whisper-validation/boundary-native.stderr.txt": "ce3f7bab80ae551508915a763f571d3d61a60d40bf09c636c9186bad15fa35d8",
+        "whisper-validation/transcription-plan.json": "cb4f79bc0476b89e04e51ccd14aae346774ff9b5bccb2ccd51a6a97fcd4912bc"
+      }
+    }
+  },
+  "cleanup": {
+    "temporary_workflow_removed": true,
+    "compiled_source_unchanged_by_final_evidence_cleanup": true,
+    "standing_ci_added": false
+  },
+  "ui_scope": "Existing activity text and progress bar receive real native updates. Slint layout/themes and generated interface are unchanged; no new screenshot suite is claimed.",
+  "acceptance_open": [
+    "Actual Windows NVIDIA offload, throughput, peak VRAM and live progress latency on larger inputs",
+    "Representative multi-hour English audiobook accuracy, word-cut timing and alignment quality",
+    "New Windows developer-test/release package and reader playback acceptance"
+  ],
+  "merged": false,
+  "new_release_published": false
+}
