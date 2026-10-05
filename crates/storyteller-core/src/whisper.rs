@@ -158,7 +158,7 @@ pub fn parse_whisper_words(json: &str, duration_ms: u64) -> Result<Vec<TimedWord
             }
             let offsets = token
                 .offsets
-                .map(|offsets| {
+                .map(|offsets| -> Result<Offsets, String> {
                     if offsets.from > duration_ms
                         || offsets.to < offsets.from
                         || offsets.to > duration_ms.saturating_add(10)
