@@ -1,0 +1,328 @@
+{
+  "source_commit": "12c697890345d1d25ab3a36d897574de444f7e67",
+  "source_tree": "1d586ee63ebda265dccb12de89126cea6756e442",
+  "workflow_run": 37249921451,
+  "workflow_job": 111575311860,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37249921451",
+  "pull_request": 33,
+  "stacked_on_pull_request": 32,
+  "platform": "Windows x64 hosted CPU-only runner",
+  "conclusion": "success",
+  "gates": {
+    "formatting": "passed",
+    "strict_locked_core_application_clippy": "passed",
+    "tests": {
+      "application": 51,
+      "core_unit": 136,
+      "core_integration": 8,
+      "total": 195
+    },
+    "native_whistle": {
+      "result": "passed",
+      "automatic_workers": "passed",
+      "duration_ms": 135000,
+      "chunks": 6,
+      "effective_workers": 6,
+      "plan": {
+        "duration_ms": 135000,
+        "chunks": [
+          {
+            "index": 0,
+            "start_ms": 0,
+            "end_ms": 25432
+          },
+          {
+            "index": 1,
+            "start_ms": 25432,
+            "end_ms": 51206
+          },
+          {
+            "index": 2,
+            "start_ms": 51206,
+            "end_ms": 73700
+          },
+          {
+            "index": 3,
+            "start_ms": 73700,
+            "end_ms": 99474
+          },
+          {
+            "index": 4,
+            "start_ms": 99474,
+            "end_ms": 125248
+          },
+          {
+            "index": 5,
+            "start_ms": 125248,
+            "end_ms": 135000
+          }
+        ],
+        "inference_windows": [
+          {
+            "owned": {
+              "index": 0,
+              "start_ms": 0,
+              "end_ms": 25432
+            },
+            "start_ms": 0,
+            "end_ms": 27716
+          },
+          {
+            "owned": {
+              "index": 1,
+              "start_ms": 25432,
+              "end_ms": 51206
+            },
+            "start_ms": 23319,
+            "end_ms": 53319
+          },
+          {
+            "owned": {
+              "index": 2,
+              "start_ms": 51206,
+              "end_ms": 73700
+            },
+            "start_ms": 48706,
+            "end_ms": 76200
+          },
+          {
+            "owned": {
+              "index": 3,
+              "start_ms": 73700,
+              "end_ms": 99474
+            },
+            "start_ms": 71587,
+            "end_ms": 101587
+          },
+          {
+            "owned": {
+              "index": 4,
+              "start_ms": 99474,
+              "end_ms": 125248
+            },
+            "start_ms": 97361,
+            "end_ms": 127361
+          },
+          {
+            "owned": {
+              "index": 5,
+              "start_ms": 125248,
+              "end_ms": 135000
+            },
+            "start_ms": 122748,
+            "end_ms": 135000
+          }
+        ],
+        "backend": "whistle",
+        "policy": {
+          "target_ms": 25000,
+          "max_owned_ms": 27000,
+          "max_input_ms": 30000
+        }
+      },
+      "boundary": {
+        "engine": "Whistle native CPU",
+        "target": "lighthouse",
+        "baseline_start_ms": 320,
+        "baseline_end_ms": 800,
+        "source_word_start_ms": 24260,
+        "source_word_end_ms": 24740,
+        "cut_ms": 24500,
+        "target_occurrences": 1,
+        "transcript": "The lighthouse stands beside the quiet harbor. A small boat returns home before sunset.",
+        "inference_windows": [
+          {
+            "owned": {
+              "index": 0,
+              "start_ms": 0,
+              "end_ms": 24500
+            },
+            "start_ms": 0,
+            "end_ms": 27000
+          },
+          {
+            "owned": {
+              "index": 1,
+              "start_ms": 24500,
+              "end_ms": 31000
+            },
+            "start_ms": 22000,
+            "end_ms": 31000
+          }
+        ]
+      },
+      "silent_book_rejected": true,
+      "temporary_inputs_cleaned": true
+    },
+    "native_whisper": {
+      "result": "passed",
+      "execution": "Explicit CPU validation of the pinned CUDA bundle and Turbo Q5 model; not CUDA acceptance",
+      "short_batch_input_files": 2,
+      "short_batch_model_loads": 1,
+      "context_and_long_batch_input_files": 3,
+      "context_and_long_batch_model_loads": 1,
+      "captures": [
+        {
+          "file": "native cpu 1.json",
+          "sha256": "6b271ae6017cb05042a4a038a5dc8603f1d251a570fd1615e7dfa64d656f1598",
+          "segments": 2,
+          "language": "en"
+        },
+        {
+          "file": "native cpu 2.json",
+          "sha256": "6b271ae6017cb05042a4a038a5dc8603f1d251a570fd1615e7dfa64d656f1598",
+          "segments": 2,
+          "language": "en"
+        },
+        {
+          "file": "boundary-native-0.json",
+          "sha256": "1095c620cb516468074e56693614d25702c0637d0a70207d4bdb31e136db183b",
+          "segments": 1,
+          "language": "en"
+        },
+        {
+          "file": "boundary-native-1.json",
+          "sha256": "1fa786e684887bfbe10cd4b2063650365590828b2a5e81c0edb8f4f0bc9defa4",
+          "segments": 2,
+          "language": "en"
+        },
+        {
+          "file": "native-long-input.json",
+          "sha256": "f6b69c3313f89bbdefb9699e60091b659f946d1995c3fcc124eadeafd24939e1",
+          "segments": 5,
+          "language": "en"
+        }
+      ],
+      "boundary": {
+        "baseline_end_ms": 700,
+        "baseline_start_ms": 160,
+        "cut_ms": 24500,
+        "engine": "Whisper Turbo native CPU validation",
+        "inference_windows": [
+          {
+            "end_ms": 27000,
+            "owned": {
+              "end_ms": 24500,
+              "index": 0,
+              "start_ms": 0
+            },
+            "start_ms": 0
+          },
+          {
+            "end_ms": 31000,
+            "owned": {
+              "end_ms": 31000,
+              "index": 1,
+              "start_ms": 24500
+            },
+            "start_ms": 22000
+          }
+        ],
+        "long_input_duration_ms": 35000,
+        "long_input_last_word": {
+          "end_ms": 34460,
+          "start_ms": 34200,
+          "text": "quiet"
+        },
+        "source_word_end_ms": 24770,
+        "source_word_start_ms": 24230,
+        "target": "lighthouse",
+        "target_occurrences": 1,
+        "transcript": {
+          "language": "en",
+          "segments": [
+            {
+              "end_ms": 26360,
+              "start_ms": 24170,
+              "text": "The lighthouse stands beside the quiet harbor."
+            },
+            {
+              "end_ms": 29540,
+              "start_ms": 27260,
+              "text": "A small boat returns home before sunset."
+            }
+          ]
+        }
+      },
+      "single_long_input_ms": 35000,
+      "timed_words_after_30_seconds": true,
+      "multi_window_gpu_fallback_rejected": true,
+      "rejection_plan": {
+        "duration_ms": 335000,
+        "chunks": [
+          {
+            "index": 0,
+            "start_ms": 0,
+            "end_ms": 299223
+          },
+          {
+            "index": 1,
+            "start_ms": 299223,
+            "end_ms": 335000
+          }
+        ],
+        "inference_windows": [
+          {
+            "owned": {
+              "index": 0,
+              "start_ms": 0,
+              "end_ms": 299223
+            },
+            "start_ms": 0,
+            "end_ms": 301723
+          },
+          {
+            "owned": {
+              "index": 1,
+              "start_ms": 299223,
+              "end_ms": 335000
+            },
+            "start_ms": 296723,
+            "end_ms": 335000
+          }
+        ],
+        "backend": "whisper_cuda",
+        "policy": {
+          "target_ms": 300000,
+          "max_owned_ms": 302500,
+          "max_input_ms": 307500
+        }
+      },
+      "product_transcript_not_written": true,
+      "product_temporary_inputs_cleaned": true
+    }
+  },
+  "artifact": {
+    "id": 11320118281,
+    "name": "native-contextual-transcription",
+    "zip_size_bytes": 11988093,
+    "zip_sha256": "b86cef86857834990a0e3107814fe7c76a8a8786ca769a79f893d48acf1b955a",
+    "file_count": 36
+  },
+  "recognition_semantics": {
+    "whistle_adapter_profile": "storyteller:chunked-whistle-v3-english-context-words",
+    "whisper_adapter_profile": "storyteller:chunked-whisper-cuda-v2-english-context-words",
+    "max_context_per_side_ms": 2500,
+    "tight_match_drift_ms": 1000,
+    "wide_match_max_drift_ms": 5000,
+    "wide_match_requires": "Unique word identity and two nearby ordered neighbors whose time drift is at most 1000 ms",
+    "wide_match_timing": "Native report farthest from its input edges",
+    "whisper_padding": "Validate complete native text and order, exclude words wholly beyond real audio, clamp straddling intervals; do not invent missing times",
+    "whisper_files_per_model_context": 8,
+    "max_whisper_temporary_pcm_bytes": 78720000
+  },
+  "regression_capture_origin": {
+    "workflow_run": 37249121547,
+    "source_commit": "55024c9fdb4d42c31c0bc39716656265d1fcdbb8",
+    "native_long_json_sha256": "f4d439a92e1c2e246a7c03f7f044f581b6c97824a8d65fa820743da86853f141",
+    "retained_fixture": "crates/storyteller-core/tests/fixtures/whisper-native-long.json",
+    "fixture_sha256": "58cf21be292f13675fb0790327a3d52e128379f7d56be46128c517879365e9b3",
+    "fixture_processing": "Only parser-consumed fields retained; native text, probability and offset values unchanged"
+  },
+  "acceptance_open": [
+    "real NVIDIA offload, throughput, peak VRAM and progress latency with larger input groups",
+    "representative multi-hour audiobook recognition, cut accuracy and alignment quality",
+    "rebuilt Windows release and reader playback"
+  ],
+  "cleanup": "The evidence commit changes documentation only and removes the temporary workflow; validated compiled source and native scripts are unchanged."
+}
