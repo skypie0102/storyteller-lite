@@ -120,3 +120,18 @@ cargo run --locked -p storyteller-application --example transcribe_whistle -- AU
 ```
 
 Use distinct output directories. This helper checks the pinned full bundle/model and the same real-offload guard as the desktop; CPU test fixtures never satisfy product GPU readiness.
+
+## Contextual input follow-up
+
+The next R5 draft, `feature/contextual-audio-windows`, is stacked on the bounded-reuse draft. It separates recognition limits from application memory bounds:
+
+| Backend | Ownership target | Largest ownership after refinement | Largest inference input | Context per side |
+| --- | --- | --- | --- | --- |
+| Whistle | 25 seconds | 27 seconds | 30 seconds, the engine cap | Up to 2.5 seconds, at least 1.5 at the largest ownership |
+| Whisper Turbo | 5 minutes | 302.5 seconds | 307.5 seconds, an application bound | 2.5 seconds |
+
+Whisper's native CLI accepts longer files and performs its own internal model windows. It does not inherit Whistle's 30-second input-file limit. Up to eight larger Whisper inputs still share one CLI/model context, bounding temporary mono PCM to about 78.8 MB per group. Only one GPU worker runs, and progress counts completed ownership rather than repeated context audio.
+
+Both paths keep contiguous ownership and separately record overlapping inference windows in `transcription-plan.json`. Only native English word times are used. Whistle attention words are read directly; Whisper full JSON tokens are joined into whole words, with no segment-level timestamp guesses. Near a cut, ordered one-to-one matching compares both word identity and time, preserving intentional repetitions. Joint native timing decides ownership; unmatched text from another input's context cannot introduce a truncated edge fragment. Alignment still receives complete normalized phrases, and encoding uses the full source audio.
+
+The adapter profile changes to Whistle v3 and Whisper v2, invalidating older Analyze and dependent checkpoints. Saved backend/model selection and recovery schema remain unchanged. Validation is pending for this draft: unit cases cover repeated words, timing jitter, partial edge fragments, silence, bounded matching and larger Whisper plans; the native checkpoint will test a forced word cut for both engines, a single Whisper file longer than thirty seconds, model reuse, expanded Whistle workers and stopped GPU fallback. No real-GPU speed or full-book accuracy claim is made.

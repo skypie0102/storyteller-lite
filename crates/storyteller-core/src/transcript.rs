@@ -83,11 +83,25 @@ pub fn plan_transcription_chunks(
     chapter_boundaries_ms: &[u64],
     max_chunk_ms: u64,
 ) -> Result<Vec<TranscriptionChunk>, String> {
+    plan_transcription_chunks_with_limit(
+        duration_ms,
+        chapter_boundaries_ms,
+        max_chunk_ms,
+        crate::WHISTLE_MAX_CHUNK_MS,
+    )
+}
+
+pub(crate) fn plan_transcription_chunks_with_limit(
+    duration_ms: u64,
+    chapter_boundaries_ms: &[u64],
+    max_chunk_ms: u64,
+    max_allowed_ms: u64,
+) -> Result<Vec<TranscriptionChunk>, String> {
     if duration_ms == 0 {
         return Err("Audiobook duration must be positive before transcription chunking.".into());
     }
-    if max_chunk_ms == 0 || max_chunk_ms > crate::WHISTLE_MAX_CHUNK_MS {
-        return Err("Transcription chunks must be between 1 ms and 30 seconds.".into());
+    if max_chunk_ms == 0 || max_chunk_ms > max_allowed_ms {
+        return Err("Transcription chunk target exceeds its backend limit.".into());
     }
 
     let tolerance_ms = CHAPTER_BOUNDARY_TOLERANCE_MS.min(max_chunk_ms / 2);
@@ -126,11 +140,19 @@ pub fn plan_transcription_chunks(
         });
         start_ms = end_ms;
     }
-    validate_chunk_plan(duration_ms, &chunks)?;
+    validate_chunk_plan_with_limit(duration_ms, &chunks, max_allowed_ms)?;
     Ok(chunks)
 }
 
 pub fn validate_chunk_plan(duration_ms: u64, chunks: &[TranscriptionChunk]) -> Result<(), String> {
+    validate_chunk_plan_with_limit(duration_ms, chunks, crate::WHISTLE_MAX_CHUNK_MS)
+}
+
+pub(crate) fn validate_chunk_plan_with_limit(
+    duration_ms: u64,
+    chunks: &[TranscriptionChunk],
+    max_allowed_ms: u64,
+) -> Result<(), String> {
     if chunks.is_empty() {
         return Err("Transcription chunk plan is empty.".into());
     }
@@ -147,8 +169,8 @@ pub fn validate_chunk_plan(duration_ms: u64, chunks: &[TranscriptionChunk]) -> R
         if chunk.start_ms != previous_end || chunk.end_ms <= chunk.start_ms {
             return Err("Transcription chunks must form one continuous positive timeline.".into());
         }
-        if chunk.duration_ms() > crate::WHISTLE_MAX_CHUNK_MS {
-            return Err("Transcription chunk exceeds Whistle's hard 30-second input limit.".into());
+        if chunk.duration_ms() > max_allowed_ms {
+            return Err("Transcription ownership range exceeds its backend limit.".into());
         }
         if chunk.end_ms > duration_ms {
             return Err("Transcription chunk extends beyond the audiobook duration.".into());

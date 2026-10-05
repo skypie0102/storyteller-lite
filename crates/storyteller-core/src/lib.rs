@@ -3,6 +3,7 @@ mod audio_encode;
 mod audio_review;
 mod cancellation;
 mod command;
+mod contextual_transcript;
 #[allow(clippy::too_many_arguments)]
 mod epub_build;
 mod epub_corpus;
@@ -53,6 +54,12 @@ pub use audio_review::{
 };
 pub use cancellation::CancellationToken;
 pub use command::{run_cancellable_command, CommandOutput, CommandRunError, CommandStream};
+pub use contextual_transcript::{
+    contextual_transcription_windows, merge_contextual_word_transcripts,
+    plan_transcription_chunks_for_backend, validate_chunk_plan_for_backend, TimedWord,
+    TranscriptionChunkPolicy, TranscriptionWindow, MAX_OWNED_WHISTLE_CHUNK_MS,
+    MAX_TRANSCRIPTION_CONTEXT_MS,
+};
 pub use epub_build::{build_readaloud_epub, EpubBuildSummary};
 pub use epub_corpus::{
     extract_epub_corpus, read_epub_corpus, EpubCorpus, EpubCorpusSummary, EpubSection,
@@ -108,7 +115,8 @@ pub use worker::{
 };
 pub use workspace::JobWorkspace;
 
-pub use whisper::parse_whisper_transcript;
+pub use whisper::{parse_whisper_transcript, parse_whisper_words};
 pub use whistle::{
-    parse_whistle_transcript, validate_whistle_language, WHISTLE_LANGUAGE, WHISTLE_MAX_CHUNK_MS,
+    parse_whistle_transcript, parse_whistle_words, validate_whistle_language, WHISTLE_LANGUAGE,
+    WHISTLE_MAX_CHUNK_MS,
 };

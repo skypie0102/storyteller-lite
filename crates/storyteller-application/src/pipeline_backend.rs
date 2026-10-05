@@ -846,11 +846,11 @@ fn pipeline_environment(job: &Job) -> PipelineEnvironment {
     let transcription_backend = if job.settings.transcription_backend
         == storyteller_core::TranscriptionBackend::Whistle
     {
-        format!("storyteller:chunked-whistle-v2-english-25s-phrases|{ffmpeg_identity}|{whistle_identity}")
+        format!("storyteller:chunked-whistle-v3-english-context-words|{ffmpeg_identity}|{whistle_identity}")
     } else {
         // The exact bundle and model are verified before Analyze. Never reuse Whistle output.
         format!(
-            "storyteller:chunked-whisper-cuda-v1-english-25s-phrases|{ffmpeg_identity}|{}|{}",
+            "storyteller:chunked-whisper-cuda-v2-english-context-words|{ffmpeg_identity}|{}|{}",
             crate::whisper_runtime::WHISPER_RELEASE,
             crate::whisper_runtime::WHISPER_ARCHIVE_SHA256
         )
