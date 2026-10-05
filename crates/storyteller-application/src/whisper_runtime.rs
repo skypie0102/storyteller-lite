@@ -331,6 +331,7 @@ pub(crate) fn whisper_command(
             "--threads",
             "2",
             "--output-json-full",
+            "--print-progress",
             "--suppress-nst",
         ])
         .env("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
@@ -345,20 +346,43 @@ pub(crate) fn whisper_command(
     command
 }
 
-pub(crate) fn require_cuda_offload(log: &str) -> Result<(), String> {
-    let initialized = log.lines().any(|line| {
-        line.contains("whisper_backend_init_gpu: using CUDA") && line.contains(" backend")
+pub(crate) fn cuda_initialization_failed(line: &str) -> bool {
+    line.strip_prefix("whisper_backend_init_gpu: ")
+        .is_some_and(|diagnostic| {
+            diagnostic == "no GPU found"
+                || diagnostic
+                    .strip_prefix("failed to initialize ")
+                    .is_some_and(|backend| backend.ends_with(" backend"))
+        })
+}
+
+// Callers supply stderr alone. Spoken words cannot prove or disprove offload.
+pub(crate) fn require_cuda_offload(stderr: &str) -> Result<(), String> {
+    let device = stderr.lines().find_map(|line| {
+        let device = line
+            .strip_prefix("whisper_backend_init_gpu: using ")?
+            .strip_suffix(" backend")?;
+        let index = device.strip_prefix("CUDA")?;
+        (!index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())).then_some(device)
     });
-    let weights_on_cuda = log.lines().any(|line| {
-        line.contains("whisper_model_load:")
-            && line.contains("CUDA")
-            && line.contains("total size =")
+    let weights_on_cuda = device.is_some_and(|device| {
+        stderr.lines().any(|line| {
+            let Some(diagnostic) = line.strip_prefix("whisper_model_load:") else {
+                return false;
+            };
+            let Some(size) = diagnostic
+                .trim_start()
+                .strip_prefix(device)
+                .and_then(|rest| rest.strip_prefix(" total size ="))
+                .and_then(|rest| rest.trim().strip_suffix(" MB"))
+                .and_then(|size| size.trim().parse::<f64>().ok())
+            else {
+                return false;
+            };
+            size.is_finite() && size > 0.0
+        })
     });
-    if !initialized
-        || !weights_on_cuda
-        || log.contains("no GPU found")
-        || log.contains("failed to initialize")
-    {
+    if !weights_on_cuda || stderr.lines().any(cuda_initialization_failed) {
         return Err("Whisper could not confirm CUDA offload. Check your NVIDIA driver and free VRAM, or select Whistle for a new book. The saved backend has not been changed.".into());
     }
     Ok(())
@@ -391,7 +415,25 @@ mod tests {
         ] {
             assert!(require_cuda_offload(log).is_err());
         }
-        assert!(require_cuda_offload(&format!("{gpu}failed to initialize CUDA0 backend")).is_err());
+        assert!(require_cuda_offload(&format!(
+            "{gpu}whisper_backend_init_gpu: failed to initialize CUDA0 backend"
+        ))
+        .is_err());
+        require_cuda_offload(&format!(
+            "{gpu}The story said no GPU found and failed to initialize.\n"
+        ))
+        .unwrap();
+        for weights in [
+            "whisper_model_load: CUDA1 total size = 580.00 MB",
+            "whisper_model_load: CUDA0 total size = 0.00 MB",
+            "whisper_model_load: CUDA0 total size = NaN MB",
+            "[00:01] whisper_model_load: CUDA0 total size = 580.00 MB",
+        ] {
+            assert!(require_cuda_offload(&format!(
+                "whisper_backend_init_gpu: using CUDA0 backend\n{weights}"
+            ))
+            .is_err());
+        }
     }
     #[test]
     fn command_forces_english_and_single_device_without_disabling_logs() {
@@ -410,6 +452,7 @@ mod tests {
         assert!(args.windows(2).any(|v| v == ["--language", "en"]));
         assert!(args.windows(2).any(|v| v == ["--device", "0"]));
         assert!(args.iter().any(|v| v == "--output-json-full"));
+        assert!(args.iter().any(|v| v == "--print-progress"));
         assert!(!args
             .iter()
             .any(|v| v == "--no-gpu" || v == "--no-prints" || v == "--translate"));
