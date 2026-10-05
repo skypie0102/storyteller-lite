@@ -12,7 +12,7 @@ use storyteller_core::{
     parse_whistle_words, plan_transcription_chunks_for_backend, run_cancellable_command,
     validate_chunk_plan_for_backend, write_transcript, CancellationToken, CommandOutput,
     CommandRunError, CommandStream, TimedWord, TranscriptionBackend, TranscriptionChunk,
-    TranscriptionChunkPolicy, TranscriptionWindow, WhisperProgressTracker,
+    TranscriptionChunkPolicy, TranscriptionWindow, WhisperNativeProgress, WhisperProgressTracker,
 };
 
 const SILENCE_SEARCH_RADIUS_MS: u64 = 2_500;
@@ -35,6 +35,8 @@ pub struct ChunkedTranscriptionProgress {
     pub total_chunks: usize,
     pub percent: u8,
     pub backend: Option<String>,
+    /// Live per-input work, even when the overall integer percent is unchanged.
+    pub input_progress: Option<WhisperNativeProgress>,
 }
 
 #[derive(Debug, Clone)]
@@ -372,6 +374,7 @@ struct OwnedAudioProgress<'a> {
     decoded_audio_ms: u64,
     total_audio_ms: u64,
     completed_chunks: usize,
+    latest_native_progress: Option<WhisperNativeProgress>,
     backend: &'static str,
 }
 
@@ -387,6 +390,7 @@ impl<'a> OwnedAudioProgress<'a> {
                 .map(|window| window.owned.duration_ms())
                 .sum(),
             completed_chunks: 0,
+            latest_native_progress: None,
             backend,
         }
     }
@@ -415,6 +419,18 @@ impl<'a> OwnedAudioProgress<'a> {
             self.verified[index] = true;
             self.completed_chunks += 1;
         }
+        if !verified
+            && !self.verified[index]
+            && self.latest_native_progress.is_none_or(|previous| {
+                index > previous.input_index
+                    || (index == previous.input_index && input_percent >= previous.percent)
+            })
+        {
+            self.latest_native_progress = Some(WhisperNativeProgress {
+                input_index: index,
+                percent: input_percent,
+            });
+        }
         let percent = (self.decoded_audio_ms as u128 * 100 / self.total_audio_ms as u128) as u8;
         Ok(ChunkedTranscriptionProgress {
             completed_chunks: self.completed_chunks,
@@ -423,6 +439,11 @@ impl<'a> OwnedAudioProgress<'a> {
             // only after merge, transcript write and temporary cleanup succeed.
             percent: percent.min(99),
             backend: Some(self.backend.into()),
+            input_progress: if verified {
+                None
+            } else {
+                self.latest_native_progress
+            },
         })
     }
 }
@@ -1060,6 +1081,34 @@ mod tests {
         let checked = meter.update(2, 100, true).unwrap();
         assert_eq!(checked.percent, 99);
         assert_eq!(checked.completed_chunks, 3);
+    }
+
+    #[test]
+    fn hours_long_book_reports_live_part_work_before_overall_percent_changes() {
+        let chunks = plan_transcription_chunks_for_backend(
+            7_200_000,
+            &[],
+            TranscriptionBackend::WhisperCuda,
+        )
+        .unwrap();
+        let windows =
+            contextual_transcription_windows(7_200_000, &chunks, TranscriptionBackend::WhisperCuda)
+                .unwrap();
+        let mut meter = OwnedAudioProgress::new(&windows, "Whisper");
+        let first = meter.update(0, 5, false).unwrap();
+        let next = meter.update(0, 10, false).unwrap();
+        assert_eq!(first.percent, 0);
+        assert_eq!(next.percent, 0);
+        assert_eq!(next.completed_chunks, 0);
+        assert_ne!(first, next);
+        assert_eq!(
+            next.input_progress,
+            Some(WhisperNativeProgress {
+                input_index: 0,
+                percent: 10
+            })
+        );
+        assert!(meter.update(0, 100, true).unwrap().input_progress.is_none());
     }
 
     #[test]

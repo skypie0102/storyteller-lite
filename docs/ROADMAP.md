@@ -1,4 +1,4 @@
-> Current source: the Whistle rebuild is merged through PR #30; optional NVIDIA Whisper Turbo and dark/light appearance are merged through PR #31. Bounded model reuse is draft PR #32. Contextual word reconciliation and backend-specific input sizes are stacked draft PR #33. [REBUILD.md](REBUILD.md), [RUNTIME.md](RUNTIME.md) and [HANDOFF.md](HANDOFF.md) define current behavior and remaining GPU/full-book acceptance. Earlier P0–P2 records below describe the historical implementation.
+> Current source: the Whistle rebuild is merged through PR #30; optional NVIDIA Whisper Turbo and dark/light appearance are merged through PR #31. Bounded model reuse is draft PR #32. Contextual word reconciliation and backend-specific input sizes are stacked draft PR #33. Live Whisper progress and per-part activity are stacked draft PR #34. [REBUILD.md](REBUILD.md), [RUNTIME.md](RUNTIME.md) and [HANDOFF.md](HANDOFF.md) define current behavior and remaining GPU/full-book acceptance. Earlier P0–P2 records below describe the historical implementation.
 
 # Storyteller Lite roadmap
 

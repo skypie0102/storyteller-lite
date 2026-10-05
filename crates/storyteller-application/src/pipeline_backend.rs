@@ -142,6 +142,30 @@ impl LitePipelineBackend {
                     metrics.backend = Some(backend);
                 }
                 context.set_metrics(metrics.clone(), 0);
+                let activity = if let Some(input) = progress.input_progress {
+                    if input.percent < 100 {
+                        format!(
+                            "Transcribing audio · part {} of {} ({}%)",
+                            input.input_index + 1,
+                            progress.total_chunks,
+                            input.percent
+                        )
+                    } else {
+                        format!(
+                            "Checking transcription results · part {} of {}",
+                            input.input_index + 1,
+                            progress.total_chunks
+                        )
+                    }
+                } else if progress.completed_chunks == progress.total_chunks {
+                    "Finalizing transcript".into()
+                } else {
+                    format!(
+                        "Transcribing audio · {} of {} parts checked",
+                        progress.completed_chunks, progress.total_chunks
+                    )
+                };
+                context.set_activity(activity, 0)?;
                 context.set_stage_percent(progress.percent, 0)
             },
         );

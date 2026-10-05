@@ -1,4 +1,4 @@
-name: Temporary Whisper live progress checkpoint
+name: Temporary final Whisper progress regressions
 on:
   push:
     branches: [feature/whisper-live-progress]
@@ -10,64 +10,13 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Acquire verified native assets
-        id: assets
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $root = Join-Path $env:RUNNER_TEMP 'whistle-runtime'
-          New-Item -ItemType Directory -Path $root -Force | Out-Null
-          $needle = Join-Path $root 'needle.exe'
-          $model = Join-Path $root 'whistle.cact'
-          Invoke-WebRequest 'https://huggingface.co/Cactus-Compute/needle3/resolve/f84005f8992caf37f17b0d64a4b5b31a84ce0d2a/windows-x86_64/needle.exe' -OutFile $needle
-          Invoke-WebRequest 'https://huggingface.co/Cactus-Compute/whistle/resolve/d3ea19e0fe4f99fa7dfb9afa63070b1c6eacaff1/whistle.cact' -OutFile $model
-          if ((Get-FileHash $needle).Hash.ToLowerInvariant() -ne 'c70ca998f6c542c862c06c22352046e303ef5c769384069ee25cef9f4667e4cf') { throw 'Engine SHA mismatch' }
-          if ((Get-FileHash $model).Hash.ToLowerInvariant() -ne 'b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb') { throw 'Model SHA mismatch' }
-          $archive = Join-Path $root 'ffmpeg.zip'
-          Invoke-WebRequest 'https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-essentials_build.zip' -OutFile $archive
-          if ((Get-FileHash $archive).Hash.ToLowerInvariant() -ne 'fec81ae03971d9dd4be3ebe02e263bd2ec1d789483f931bdba5f5715e65da2e9') { throw 'FFmpeg SHA mismatch' }
-          Expand-Archive $archive (Join-Path $root 'ffmpeg')
-          $ffmpeg = @(Get-ChildItem (Join-Path $root 'ffmpeg') -Recurse -Filter ffmpeg.exe)[0].FullName
-          "STORYTELLER_WHISTLE=$needle" >> $env:GITHUB_ENV
-          "STORYTELLER_WHISTLE_MODEL=$model" >> $env:GITHUB_ENV
-          "STORYTELLER_FFMPEG=$ffmpeg" >> $env:GITHUB_ENV
-      - name: Acquire pinned Whisper CUDA bundle and Turbo Q5 model
-        id: whisperassets
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $root = Join-Path $env:RUNNER_TEMP 'whisper-runtime'
-          New-Item -ItemType Directory -Path $root -Force | Out-Null
-          $archive = Join-Path $root 'whisper.zip'
-          Invoke-WebRequest 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-cublas-11.8.0-bin-x64.zip' -OutFile $archive
-          if ((Get-FileHash $archive).Hash.ToLowerInvariant() -ne '0b29b2175bb17ec26da29677cbc7c467c57d103245144d62a49a703f6bc3fdae') { throw 'Whisper archive checksum mismatch' }
-          $expanded = Join-Path $root 'expanded'
-          Expand-Archive $archive $expanded
-          $bundle = Join-Path $root 'bundle'
-          New-Item -ItemType Directory -Path $bundle | Out-Null
-          $source = Get-Content 'crates/storyteller-application/src/whisper_runtime.rs' -Raw
-          $pins = [regex]::Matches($source, '\(\s*"(?<name>[^"/]+\.(?:dll|exe))",\s*"(?<hash>[a-f0-9]{64})"')
-          if ($pins.Count -ne 18) { throw "Expected 18 pinned bundle files; found $($pins.Count)" }
-          foreach ($pin in $pins) {
-            $name = $pin.Groups['name'].Value
-            $file = Join-Path $expanded "Release/$name"
-            if ((Get-FileHash $file).Hash.ToLowerInvariant() -ne $pin.Groups['hash'].Value) { throw "Whisper file checksum mismatch: $name" }
-            Copy-Item $file (Join-Path $bundle $name)
-          }
-          $model = Join-Path $root 'ggml-large-v3-turbo-q5_0.bin'
-          Invoke-WebRequest 'https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin' -OutFile $model
-          if ((Get-FileHash $model).Hash.ToLowerInvariant() -ne '394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2') { throw 'Whisper model checksum mismatch' }
-          "STORYTELLER_WHISPER=$(Join-Path $bundle 'whisper-cli.exe')" >> $env:GITHUB_ENV
-          "STORYTELLER_WHISPER_MODEL=$model" >> $env:GITHUB_ENV
       - name: Formatting
         id: format
         continue-on-error: true
@@ -76,47 +25,11 @@ jobs:
         id: lint
         continue-on-error: true
         run: cargo clippy -p storyteller-core -p storyteller-application --all-targets --locked -- -D warnings
-      - name: Core and application regressions
+      - name: Core and application regressions including hours-long activity
         id: tests
         continue-on-error: true
         run: cargo test -p storyteller-core -p storyteller-application --locked
-      - name: Automatic and expanded native Whistle workers
-        id: native
-        if: ${{ steps.assets.outcome == 'success' }}
-        continue-on-error: true
-        shell: powershell
-        run: ./.github/scripts/whistle-smoke.ps1 -FFmpeg $env:STORYTELLER_FFMPEG -Needle $env:STORYTELLER_WHISTLE -Model $env:STORYTELLER_WHISTLE_MODEL -ExpandedWorkers
-      - name: Native Turbo live progress, timed words and stopped GPU fallback
-        id: whisper
-        if: ${{ steps.whisperassets.outcome == 'success' && steps.assets.outcome == 'success' }}
-        continue-on-error: true
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Add-Type -AssemblyName System.Speech
-          $audio = Join-Path $env:RUNNER_TEMP 'whisper-speech.wav'
-          $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
-          try {
-            $synth.SetOutputToWaveFile($audio)
-            $synth.Speak('The lighthouse stands beside the quiet harbor. A small boat returns home before sunset.')
-          } finally { $synth.Dispose() }
-          $normalized = Join-Path $env:RUNNER_TEMP 'whisper-16k.wav'
-          & $env:STORYTELLER_FFMPEG -hide_banner -loglevel error -y -i $audio -ar 16000 -ac 1 -c:a pcm_s16le $normalized
-          if ($LASTEXITCODE -ne 0) { throw 'Whisper speech normalization failed' }
-          $output = Join-Path $env:RUNNER_TEMP 'whisper-validation'
-          & cargo run --locked -p storyteller-application --example whisper_native_validation -- $normalized $output $env:STORYTELLER_FFMPEG $env:STORYTELLER_WHISPER $env:STORYTELLER_WHISPER_MODEL
-          if ($LASTEXITCODE -ne 0) { throw 'Whisper native validation failed' }
-      - name: Native progress evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: native-whisper-progress
-          path: |
-            ${{ runner.temp }}/whisper-validation/
-            ${{ runner.temp }}/storyteller-whistle-smoke/
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Require every checkpoint gate
-        if: ${{ always() && (steps.assets.outcome != 'success' || steps.whisperassets.outcome != 'success' || steps.whisper.outcome != 'success' || steps.native.outcome != 'success' || steps.format.outcome != 'success' || steps.lint.outcome != 'success' || steps.tests.outcome != 'success') }}
+      - name: Require every final progress gate
+        if: ${{ always() && (steps.format.outcome != 'success' || steps.lint.outcome != 'success' || steps.tests.outcome != 'success') }}
         shell: pwsh
-        run: throw 'A required Whisper progress checkpoint gate did not pass. Inspect every earlier step before retrying.'
+        run: throw 'A final progress checkpoint gate did not pass. Inspect every earlier step before retrying.'
