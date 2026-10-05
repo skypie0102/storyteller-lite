@@ -330,7 +330,7 @@ pub(crate) fn whisper_command(
             "0",
             "--threads",
             "2",
-            "--output-json",
+            "--output-json-full",
             "--suppress-nst",
         ])
         .env("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
@@ -409,6 +409,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(args.windows(2).any(|v| v == ["--language", "en"]));
         assert!(args.windows(2).any(|v| v == ["--device", "0"]));
+        assert!(args.iter().any(|v| v == "--output-json-full"));
         assert!(!args
             .iter()
             .any(|v| v == "--no-gpu" || v == "--no-prints" || v == "--translate"));

@@ -8,16 +8,17 @@ use std::{
     time::Duration,
 };
 use storyteller_core::{
-    merge_chunk_transcripts, parse_whisper_transcript, parse_whistle_transcript,
-    plan_transcription_chunks, run_cancellable_command, validate_chunk_plan, write_transcript,
-    CancellationToken, CommandOutput, CommandRunError, Transcript, TranscriptionChunk,
-    DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
+    contextual_transcription_windows, merge_contextual_word_transcripts, parse_whisper_words,
+    parse_whistle_words, plan_transcription_chunks_for_backend, run_cancellable_command,
+    validate_chunk_plan_for_backend, write_transcript, CancellationToken, CommandOutput,
+    CommandRunError, TimedWord, TranscriptionBackend, TranscriptionChunk, TranscriptionChunkPolicy,
+    TranscriptionWindow,
 };
 
 const SILENCE_SEARCH_RADIUS_MS: u64 = 2_500;
 const SILENCE_MIN_DURATION_SECONDS: f64 = 0.35;
 const SILENCE_NOISE_DB: i32 = -40;
-// Eight <=30-second mono PCM files use at most 7.7 MB of temporary audio.
+// Eight <=307.5-second mono PCM files use at most 78.8 MB of temporary audio.
 // Inference remains sequential in one CLI/GPU context, not eight GPU workers.
 const WHISPER_CHUNKS_PER_INVOCATION: usize = 8;
 
@@ -50,6 +51,12 @@ pub enum TranscriptionEngine {
 }
 
 impl TranscriptionEngine {
+    fn backend(&self) -> TranscriptionBackend {
+        match self {
+            Self::Whistle { .. } => TranscriptionBackend::Whistle,
+            Self::WhisperCuda { .. } => TranscriptionBackend::WhisperCuda,
+        }
+    }
     pub fn label(&self) -> &'static str {
         match self {
             Self::Whistle { .. } => "Whistle / native CPU",
@@ -61,8 +68,8 @@ impl TranscriptionEngine {
 #[derive(Debug)]
 enum WorkerEvent {
     Completed {
-        chunk: TranscriptionChunk,
-        transcript: Transcript,
+        window: TranscriptionWindow,
+        words: Vec<TimedWord>,
     },
     Failed(String),
 }
@@ -89,10 +96,11 @@ pub fn transcribe_audiobook_in_chunks(
     }
 
     let metadata = probe_audio_metadata(source, &config.ffmpeg, cancellation)?;
-    let mut chunks = plan_transcription_chunks(
+    let backend = config.engine.backend();
+    let mut chunks = plan_transcription_chunks_for_backend(
         metadata.duration_ms,
         &metadata.chapter_boundaries_ms,
-        DEFAULT_MAX_TRANSCRIPTION_CHUNK_MS,
+        backend,
     )?;
     refine_synthetic_boundaries(
         source,
@@ -100,13 +108,17 @@ pub fn transcribe_audiobook_in_chunks(
         metadata.duration_ms,
         &metadata.chapter_boundaries_ms,
         &mut chunks,
+        backend,
         cancellation,
     )?;
-    validate_chunk_plan(metadata.duration_ms, &chunks)?;
+    validate_chunk_plan_for_backend(metadata.duration_ms, &chunks, backend)?;
+    let windows = contextual_transcription_windows(metadata.duration_ms, &chunks, backend)?;
     write_chunk_plan(
         &stage_dir.join("transcription-plan.json"),
         metadata.duration_ms,
         &chunks,
+        &windows,
+        backend,
     )?;
 
     let effective_workers = config.workers.min(chunks.len()).max(1);
@@ -129,14 +141,14 @@ pub fn transcribe_audiobook_in_chunks(
     let result = run_chunk_workers(
         source,
         &temporary_dir,
-        &chunks,
+        &windows,
         config,
         effective_workers,
         cancellation,
         observer,
     )
     .and_then(|parts| {
-        let merged = merge_chunk_transcripts(metadata.duration_ms, &parts)?;
+        let merged = merge_contextual_word_transcripts(metadata.duration_ms, &parts, backend)?;
         write_transcript(transcript_path, &merged)
     });
 
@@ -163,13 +175,13 @@ pub fn transcribe_audiobook_in_chunks(
 fn run_chunk_workers(
     source: &Path,
     temporary_dir: &Path,
-    chunks: &[TranscriptionChunk],
+    windows: &[TranscriptionWindow],
     config: &ChunkedTranscriptionConfig,
     effective_workers: usize,
     cancellation: &CancellationToken,
     observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
-) -> Result<Vec<(TranscriptionChunk, Transcript)>, String> {
-    let queue = Arc::new(Mutex::new(VecDeque::from(chunks.to_vec())));
+) -> Result<Vec<(TranscriptionWindow, Vec<TimedWord>)>, String> {
+    let queue = Arc::new(Mutex::new(VecDeque::from(windows.to_vec())));
     let worker_cancellation = CancellationToken::default();
     let (sender, receiver) = mpsc::channel::<WorkerEvent>();
     let mut handles = Vec::with_capacity(effective_workers);
@@ -185,7 +197,7 @@ fn run_chunk_workers(
             if worker_cancellation.is_requested() {
                 return;
             }
-            let chunks = match queue.lock() {
+            let windows = match queue.lock() {
                 Ok(mut queue) => {
                     let limit = match config.engine {
                         TranscriptionEngine::Whistle { .. } => 1,
@@ -202,20 +214,20 @@ fn run_chunk_workers(
                     return;
                 }
             };
-            if chunks.is_empty() {
+            if windows.is_empty() {
                 return;
             }
             match transcribe_chunk_batch(
                 &source,
                 &temporary_dir,
-                &chunks,
+                &windows,
                 &config,
                 &worker_cancellation,
             ) {
                 Ok(parts) => {
-                    for (chunk, transcript) in parts {
+                    for (window, words) in parts {
                         if sender
-                            .send(WorkerEvent::Completed { chunk, transcript })
+                            .send(WorkerEvent::Completed { window, words })
                             .is_err()
                         {
                             return;
@@ -232,13 +244,16 @@ fn run_chunk_workers(
     }
     drop(sender);
 
-    let total_audio_ms = chunks.iter().map(|chunk| chunk.duration_ms()).sum::<u64>();
+    let total_audio_ms = windows
+        .iter()
+        .map(|window| window.owned.duration_ms())
+        .sum::<u64>();
     let mut completed_audio_ms = 0u64;
     let mut completed = 0usize;
-    let mut parts = vec![None::<(TranscriptionChunk, Transcript)>; chunks.len()];
+    let mut parts = vec![None::<(TranscriptionWindow, Vec<TimedWord>)>; windows.len()];
     let mut first_error = None::<String>;
 
-    while completed < chunks.len() && first_error.is_none() {
+    while completed < windows.len() && first_error.is_none() {
         if cancellation.is_requested() {
             worker_cancellation.request();
             first_error = Some("Transcription was cancelled.".into());
@@ -259,14 +274,14 @@ fn run_chunk_workers(
             }
         };
         match event {
-            WorkerEvent::Completed { chunk, transcript } => {
-                completed_audio_ms += chunk.duration_ms();
-                parts[chunk.index] = Some((chunk, transcript));
+            WorkerEvent::Completed { window, words } => {
+                completed_audio_ms += window.owned.duration_ms();
+                parts[window.owned.index] = Some((window, words));
                 completed += 1;
                 let overall = (completed_audio_ms as u128 * 100 / total_audio_ms as u128) as u8;
                 if let Err(error) = observer(ChunkedTranscriptionProgress {
                     completed_chunks: completed,
-                    total_chunks: chunks.len(),
+                    total_chunks: windows.len(),
                     percent: overall.min(100),
                     backend: Some(config.engine.label().into()),
                 }) {
@@ -353,27 +368,33 @@ fn convert_chunk_audio(
 fn transcribe_chunk_batch(
     source: &Path,
     temporary_dir: &Path,
-    chunks: &[TranscriptionChunk],
+    windows: &[TranscriptionWindow],
     config: &ChunkedTranscriptionConfig,
     cancellation: &CancellationToken,
-) -> Result<Vec<(TranscriptionChunk, Transcript)>, String> {
+) -> Result<Vec<(TranscriptionWindow, Vec<TimedWord>)>, String> {
     let whisper = matches!(config.engine, TranscriptionEngine::WhisperCuda { .. });
     let limit = if whisper {
         WHISPER_CHUNKS_PER_INVOCATION
     } else {
         1
     };
-    if chunks.is_empty() || chunks.len() > limit {
+    if windows.is_empty() || windows.len() > limit {
         return Err("Invalid transcription batch size.".into());
     }
-    let mut inputs = Vec::with_capacity(chunks.len());
-    for &chunk in chunks {
+    let mut inputs = Vec::with_capacity(windows.len());
+    for &window in windows {
         if cancellation.is_requested() {
             return Err("Transcription was cancelled.".into());
         }
-        let wav = temporary_dir.join(format!("chunk-{:05}.wav", chunk.index));
-        convert_chunk_audio(source, &wav, chunk, &config.ffmpeg, cancellation)?;
-        let prefix = temporary_dir.join(format!("whisper-{:05}", chunk.index));
+        let wav = temporary_dir.join(format!("chunk-{:05}.wav", window.owned.index));
+        convert_chunk_audio(
+            source,
+            &wav,
+            window.input_chunk(),
+            &config.ffmpeg,
+            cancellation,
+        )?;
+        let prefix = temporary_dir.join(format!("whisper-{:05}", window.owned.index));
         inputs.push((wav, prefix));
     }
     if cancellation.is_requested() {
@@ -390,10 +411,10 @@ fn transcribe_chunk_batch(
     let output =
         run_transcription_command(&mut command, config.engine.label(), whisper, cancellation)?;
     let result = if whisper {
-        read_whisper_batch(chunks, &inputs, &output)
+        read_whisper_batch(windows, &inputs, &output)
     } else {
-        parse_whistle_transcript(&output.stdout, chunks[0].duration_ms())
-            .map(|transcript| vec![(chunks[0], transcript)])
+        parse_whistle_words(&output.stdout, windows[0].duration_ms())
+            .map(|words| vec![(windows[0], words)])
     };
     for (wav, prefix) in inputs {
         let _ = fs::remove_file(wav);
@@ -429,29 +450,28 @@ fn run_transcription_command(
 }
 
 fn read_whisper_batch(
-    chunks: &[TranscriptionChunk],
+    windows: &[TranscriptionWindow],
     inputs: &[(PathBuf, PathBuf)],
     output: &CommandOutput,
-) -> Result<Vec<(TranscriptionChunk, Transcript)>, String> {
-    if chunks.is_empty() || chunks.len() != inputs.len() {
+) -> Result<Vec<(TranscriptionWindow, Vec<TimedWord>)>, String> {
+    if windows.is_empty() || windows.len() != inputs.len() {
         return Err("Whisper batch inputs and outputs do not match.".into());
     }
     crate::whisper_runtime::require_cuda_offload(&format!("{}\n{}", output.stdout, output.stderr))?;
     // The CLI can exit successfully after skipping an unreadable input or
     // failing to open an output. Require every paired JSON before completing
     // any chunk from this batch, rather than trusting the process exit code.
-    chunks
+    windows
         .iter()
         .zip(inputs)
-        .map(|(&chunk, (_, prefix))| {
+        .map(|(&window, (_, prefix))| {
             let json = fs::read_to_string(prefix.with_extension("json")).map_err(|error| {
                 format!(
                     "Could not read Whisper JSON for chunk {}: {error}",
-                    chunk.index + 1
+                    window.owned.index + 1
                 )
             })?;
-            parse_whisper_transcript(&json, chunk.duration_ms())
-                .map(|transcript| (chunk, transcript))
+            parse_whisper_words(&json, window.duration_ms()).map(|words| (window, words))
         })
         .collect()
 }
@@ -510,8 +530,10 @@ fn refine_synthetic_boundaries(
     duration_ms: u64,
     chapter_boundaries_ms: &[u64],
     chunks: &mut [TranscriptionChunk],
+    backend: TranscriptionBackend,
     cancellation: &CancellationToken,
 ) -> Result<(), String> {
+    let max_owned_ms = TranscriptionChunkPolicy::for_backend(backend).max_owned_ms;
     let chapters = chapter_boundaries_ms
         .iter()
         .copied()
@@ -532,8 +554,8 @@ fn refine_synthetic_boundaries(
             let next = boundaries[index + 1];
             if refined > previous
                 && refined < next
-                && refined - previous <= storyteller_core::WHISTLE_MAX_CHUNK_MS
-                && next - refined <= storyteller_core::WHISTLE_MAX_CHUNK_MS
+                && refined - previous <= max_owned_ms
+                && next - refined <= max_owned_ms
             {
                 boundaries[index] = refined;
             }
@@ -546,7 +568,7 @@ fn refine_synthetic_boundaries(
         chunk.end_ms = boundaries[index];
         start_ms = chunk.end_ms;
     }
-    validate_chunk_plan(duration_ms, chunks)
+    validate_chunk_plan_for_backend(duration_ms, chunks, backend)
 }
 
 fn find_nearby_silence_cut(
@@ -717,16 +739,24 @@ fn parse_silence_intervals(text: &str) -> Vec<(u64, u64)> {
 struct ChunkPlanFile<'a> {
     duration_ms: u64,
     chunks: &'a [TranscriptionChunk],
+    inference_windows: &'a [TranscriptionWindow],
+    backend: TranscriptionBackend,
+    policy: TranscriptionChunkPolicy,
 }
 
 fn write_chunk_plan(
     path: &Path,
     duration_ms: u64,
     chunks: &[TranscriptionChunk],
+    inference_windows: &[TranscriptionWindow],
+    backend: TranscriptionBackend,
 ) -> Result<(), String> {
     let json = serde_json::to_vec_pretty(&ChunkPlanFile {
         duration_ms,
         chunks,
+        inference_windows,
+        backend,
+        policy: TranscriptionChunkPolicy::for_backend(backend),
     })
     .map_err(|error| format!("Could not serialize transcription chunk plan: {error}"))?;
     fs::write(path, json).map_err(|error| {
@@ -788,7 +818,7 @@ mod tests {
 
     struct BatchFixture {
         root: PathBuf,
-        chunks: Vec<TranscriptionChunk>,
+        windows: Vec<TranscriptionWindow>,
         inputs: Vec<(PathBuf, PathBuf)>,
         output: CommandOutput,
     }
@@ -809,6 +839,12 @@ mod tests {
                     end_ms: (index as u64 + 1) * 20_000,
                 })
                 .collect::<Vec<_>>();
+            let windows = contextual_transcription_windows(
+                60_000,
+                &chunks,
+                TranscriptionBackend::WhisperCuda,
+            )
+            .unwrap();
             let inputs = chunks
                 .iter()
                 .map(|chunk| {
@@ -820,16 +856,20 @@ mod tests {
                 .collect::<Vec<_>>();
             for (index, (_, prefix)) in inputs.iter().enumerate() {
                 let segments = match index {
-                    0 => r#"[{"offsets":{"from":100,"to":900},"text":"Lighthouse."}]"#,
+                    0 => {
+                        r#"[{"offsets":{"from":100,"to":900},"text":"Lighthouse.","tokens":[{"text":"Lighthouse.","offsets":{"from":100,"to":900},"p":0.9}]}]"#
+                    }
                     1 => "[]",
-                    _ => r#"[{"offsets":{"from":100,"to":900},"text":"Harbor."}]"#,
+                    _ => {
+                        r#"[{"offsets":{"from":2600,"to":3400},"text":"Harbor.","tokens":[{"text":"Harbor.","offsets":{"from":2600,"to":3400},"p":0.9}]}]"#
+                    }
                 };
                 fs::write(prefix.with_extension("json"), format!(
                     r#"{{"params":{{"language":"en","translate":false}},"result":{{"language":"en"}},"transcription":{segments}}}"#
                 )).unwrap();
             }
             Self {
-                root, chunks, inputs,
+                root, windows, inputs,
                 output: CommandOutput {
                     success: true,
                     exit_code: Some(0),
@@ -849,10 +889,12 @@ mod tests {
     #[test]
     fn batch_retains_each_files_local_timing_and_silent_middle_chunk() {
         let fixture = BatchFixture::new();
-        let parts = read_whisper_batch(&fixture.chunks, &fixture.inputs, &fixture.output).unwrap();
+        let parts = read_whisper_batch(&fixture.windows, &fixture.inputs, &fixture.output).unwrap();
         assert_eq!(parts.len(), 3);
-        assert!(parts[1].1.segments.is_empty());
-        let merged = merge_chunk_transcripts(60_000, &parts).unwrap();
+        assert!(parts[1].1.is_empty());
+        let merged =
+            merge_contextual_word_transcripts(60_000, &parts, TranscriptionBackend::WhisperCuda)
+                .unwrap();
         assert_eq!(merged.segments.len(), 2);
         assert_eq!(merged.segments[0].text, "Lighthouse.");
         assert_eq!(merged.segments[1].text, "Harbor.");
@@ -865,10 +907,10 @@ mod tests {
         let fixture = BatchFixture::new();
         fs::remove_file(fixture.inputs[1].1.with_extension("json")).unwrap();
         let error =
-            read_whisper_batch(&fixture.chunks, &fixture.inputs, &fixture.output).unwrap_err();
+            read_whisper_batch(&fixture.windows, &fixture.inputs, &fixture.output).unwrap_err();
         assert!(error.contains("chunk 2"));
         fs::write(fixture.inputs[1].1.with_extension("json"), "{}").unwrap();
-        assert!(read_whisper_batch(&fixture.chunks, &fixture.inputs, &fixture.output).is_err());
+        assert!(read_whisper_batch(&fixture.windows, &fixture.inputs, &fixture.output).is_err());
     }
 
     #[test]

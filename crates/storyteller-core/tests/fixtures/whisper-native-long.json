@@ -1,0 +1,728 @@
+{
+  "params": {
+    "language": "en",
+    "translate": false
+  },
+  "result": {
+    "language": "en"
+  },
+  "transcription": [
+    {
+      "offsets": {
+        "from": 0,
+        "to": 7040
+      },
+      "text": " the lighthouse stands beside the quiet harbor a small boat returns home before sunset the lighthouse",
+      "tokens": [
+        {
+          "text": "[_BEG_]",
+          "offsets": {
+            "from": 0,
+            "to": 0
+          },
+          "p": 0.926218
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 130,
+            "to": 230
+          },
+          "p": 0.027083
+        },
+        {
+          "text": " lighthouse",
+          "offsets": {
+            "from": 240,
+            "to": 1020
+          },
+          "p": 0.977173
+        },
+        {
+          "text": " stands",
+          "offsets": {
+            "from": 1020,
+            "to": 1480
+          },
+          "p": 0.998193
+        },
+        {
+          "text": " beside",
+          "offsets": {
+            "from": 1500,
+            "to": 1970
+          },
+          "p": 0.995725
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 1970,
+            "to": 2210
+          },
+          "p": 0.998883
+        },
+        {
+          "text": " quiet",
+          "offsets": {
+            "from": 2210,
+            "to": 2360
+          },
+          "p": 0.99329
+        },
+        {
+          "text": " harbor",
+          "offsets": {
+            "from": 3120,
+            "to": 3120
+          },
+          "p": 0.863571
+        },
+        {
+          "text": " a",
+          "offsets": {
+            "from": 3190,
+            "to": 3190
+          },
+          "p": 0.455884
+        },
+        {
+          "text": " small",
+          "offsets": {
+            "from": 3270,
+            "to": 3550
+          },
+          "p": 0.9955
+        },
+        {
+          "text": " boat",
+          "offsets": {
+            "from": 3550,
+            "to": 3820
+          },
+          "p": 0.997168
+        },
+        {
+          "text": " returns",
+          "offsets": {
+            "from": 3830,
+            "to": 4320
+          },
+          "p": 0.99759
+        },
+        {
+          "text": " home",
+          "offsets": {
+            "from": 4330,
+            "to": 4630
+          },
+          "p": 0.997588
+        },
+        {
+          "text": " before",
+          "offsets": {
+            "from": 4640,
+            "to": 5040
+          },
+          "p": 0.988316
+        },
+        {
+          "text": " sunset",
+          "offsets": {
+            "from": 5040,
+            "to": 5570
+          },
+          "p": 0.97107
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 5580,
+            "to": 5600
+          },
+          "p": 0.656244
+        },
+        {
+          "text": " lighthouse",
+          "offsets": {
+            "from": 6580,
+            "to": 7040
+          },
+          "p": 0.870958
+        },
+        {
+          "text": "[_TT_352]",
+          "offsets": {
+            "from": 7040,
+            "to": 7040
+          },
+          "p": 0.41539
+        }
+      ]
+    },
+    {
+      "offsets": {
+        "from": 7040,
+        "to": 13840
+      },
+      "text": " stands beside the quiet harbor a small boat returns home before sunset the lighthouse stands",
+      "tokens": [
+        {
+          "text": " stands",
+          "offsets": {
+            "from": 7170,
+            "to": 7530
+          },
+          "p": 0.994548
+        },
+        {
+          "text": " beside",
+          "offsets": {
+            "from": 7540,
+            "to": 8040
+          },
+          "p": 0.997487
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 8040,
+            "to": 8290
+          },
+          "p": 0.999905
+        },
+        {
+          "text": " quiet",
+          "offsets": {
+            "from": 8290,
+            "to": 8680
+          },
+          "p": 0.998068
+        },
+        {
+          "text": " harbor",
+          "offsets": {
+            "from": 8740,
+            "to": 9200
+          },
+          "p": 0.987426
+        },
+        {
+          "text": " a",
+          "offsets": {
+            "from": 9210,
+            "to": 9280
+          },
+          "p": 0.997364
+        },
+        {
+          "text": " small",
+          "offsets": {
+            "from": 9290,
+            "to": 9400
+          },
+          "p": 0.999636
+        },
+        {
+          "text": " boat",
+          "offsets": {
+            "from": 9710,
+            "to": 10040
+          },
+          "p": 0.99943
+        },
+        {
+          "text": " returns",
+          "offsets": {
+            "from": 10310,
+            "to": 10620
+          },
+          "p": 0.998772
+        },
+        {
+          "text": " home",
+          "offsets": {
+            "from": 10620,
+            "to": 10940
+          },
+          "p": 0.99972
+        },
+        {
+          "text": " before",
+          "offsets": {
+            "from": 10940,
+            "to": 11450
+          },
+          "p": 0.99992
+        },
+        {
+          "text": " sunset",
+          "offsets": {
+            "from": 11450,
+            "to": 12000
+          },
+          "p": 0.998652
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 12000,
+            "to": 12350
+          },
+          "p": 0.903354
+        },
+        {
+          "text": " lighthouse",
+          "offsets": {
+            "from": 12350,
+            "to": 12630
+          },
+          "p": 0.99471
+        },
+        {
+          "text": " stands",
+          "offsets": {
+            "from": 13610,
+            "to": 13840
+          },
+          "p": 0.764419
+        },
+        {
+          "text": "[_TT_692]",
+          "offsets": {
+            "from": 13840,
+            "to": 13840
+          },
+          "p": 0.733422
+        }
+      ]
+    },
+    {
+      "offsets": {
+        "from": 13840,
+        "to": 20880
+      },
+      "text": " beside the quiet harbor a small boat returns home before sunset the lighthouse stands beside the",
+      "tokens": [
+        {
+          "text": " beside",
+          "offsets": {
+            "from": 13970,
+            "to": 14360
+          },
+          "p": 0.987782
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 14360,
+            "to": 14560
+          },
+          "p": 0.999926
+        },
+        {
+          "text": " quiet",
+          "offsets": {
+            "from": 14620,
+            "to": 15060
+          },
+          "p": 0.998727
+        },
+        {
+          "text": " harbor",
+          "offsets": {
+            "from": 15060,
+            "to": 15580
+          },
+          "p": 0.993242
+        },
+        {
+          "text": " a",
+          "offsets": {
+            "from": 15580,
+            "to": 15650
+          },
+          "p": 0.998647
+        },
+        {
+          "text": " small",
+          "offsets": {
+            "from": 15660,
+            "to": 16090
+          },
+          "p": 0.999723
+        },
+        {
+          "text": " boat",
+          "offsets": {
+            "from": 16090,
+            "to": 16200
+          },
+          "p": 0.999647
+        },
+        {
+          "text": " returns",
+          "offsets": {
+            "from": 17060,
+            "to": 17060
+          },
+          "p": 0.998767
+        },
+        {
+          "text": " home",
+          "offsets": {
+            "from": 17110,
+            "to": 17410
+          },
+          "p": 0.999802
+        },
+        {
+          "text": " before",
+          "offsets": {
+            "from": 17410,
+            "to": 17930
+          },
+          "p": 0.999926
+        },
+        {
+          "text": " sunset",
+          "offsets": {
+            "from": 17930,
+            "to": 18450
+          },
+          "p": 0.999352
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 18450,
+            "to": 18670
+          },
+          "p": 0.995281
+        },
+        {
+          "text": " lighthouse",
+          "offsets": {
+            "from": 18760,
+            "to": 19410
+          },
+          "p": 0.998055
+        },
+        {
+          "text": " stands",
+          "offsets": {
+            "from": 20110,
+            "to": 20110
+          },
+          "p": 0.998464
+        },
+        {
+          "text": " beside",
+          "offsets": {
+            "from": 20410,
+            "to": 20710
+          },
+          "p": 0.996145
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 20720,
+            "to": 20880
+          },
+          "p": 0.79854
+        },
+        {
+          "text": "[_TT_1044]",
+          "offsets": {
+            "from": 20880,
+            "to": 20880
+          },
+          "p": 0.873469
+        }
+      ]
+    },
+    {
+      "offsets": {
+        "from": 20880,
+        "to": 28080
+      },
+      "text": " quiet harbor a small boat returns home before sunset the lighthouse stands beside the quiet harbor",
+      "tokens": [
+        {
+          "text": " quiet",
+          "offsets": {
+            "from": 21010,
+            "to": 21310
+          },
+          "p": 0.649695
+        },
+        {
+          "text": " harbor",
+          "offsets": {
+            "from": 21320,
+            "to": 21840
+          },
+          "p": 0.996945
+        },
+        {
+          "text": " a",
+          "offsets": {
+            "from": 21840,
+            "to": 21910
+          },
+          "p": 0.998782
+        },
+        {
+          "text": " small",
+          "offsets": {
+            "from": 21980,
+            "to": 22350
+          },
+          "p": 0.999825
+        },
+        {
+          "text": " boat",
+          "offsets": {
+            "from": 22360,
+            "to": 22700
+          },
+          "p": 0.999512
+        },
+        {
+          "text": " returns",
+          "offsets": {
+            "from": 22710,
+            "to": 23230
+          },
+          "p": 0.999047
+        },
+        {
+          "text": " home",
+          "offsets": {
+            "from": 23670,
+            "to": 23670
+          },
+          "p": 0.999805
+        },
+        {
+          "text": " before",
+          "offsets": {
+            "from": 24140,
+            "to": 24190
+          },
+          "p": 0.999922
+        },
+        {
+          "text": " sunset",
+          "offsets": {
+            "from": 24190,
+            "to": 24700
+          },
+          "p": 0.999169
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 24700,
+            "to": 24970
+          },
+          "p": 0.999213
+        },
+        {
+          "text": " lighthouse",
+          "offsets": {
+            "from": 24970,
+            "to": 25850
+          },
+          "p": 0.999516
+        },
+        {
+          "text": " stands",
+          "offsets": {
+            "from": 25850,
+            "to": 26370
+          },
+          "p": 0.999418
+        },
+        {
+          "text": " beside",
+          "offsets": {
+            "from": 26370,
+            "to": 26470
+          },
+          "p": 0.99855
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 26890,
+            "to": 27150
+          },
+          "p": 0.999819
+        },
+        {
+          "text": " quiet",
+          "offsets": {
+            "from": 27440,
+            "to": 27680
+          },
+          "p": 0.998999
+        },
+        {
+          "text": " harbor",
+          "offsets": {
+            "from": 27680,
+            "to": 28040
+          },
+          "p": 0.791341
+        },
+        {
+          "text": "[_TT_1404]",
+          "offsets": {
+            "from": 28080,
+            "to": 28080
+          },
+          "p": 0.771056
+        }
+      ]
+    },
+    {
+      "offsets": {
+        "from": 28880,
+        "to": 35360
+      },
+      "text": " a small boat returns home before sunset the lighthouse stands beside the quiet harbor",
+      "tokens": [
+        {
+          "text": "[_BEG_]",
+          "offsets": {
+            "from": 28880,
+            "to": 28880
+          },
+          "p": 0.998005
+        },
+        {
+          "text": " a",
+          "offsets": {
+            "from": 28950,
+            "to": 28950
+          },
+          "p": 0.99867
+        },
+        {
+          "text": " small",
+          "offsets": {
+            "from": 29010,
+            "to": 29310
+          },
+          "p": 0.999701
+        },
+        {
+          "text": " boat",
+          "offsets": {
+            "from": 29320,
+            "to": 29600
+          },
+          "p": 0.999632
+        },
+        {
+          "text": " returns",
+          "offsets": {
+            "from": 29660,
+            "to": 30140
+          },
+          "p": 0.999316
+        },
+        {
+          "text": " home",
+          "offsets": {
+            "from": 30140,
+            "to": 30430
+          },
+          "p": 0.999701
+        },
+        {
+          "text": " before",
+          "offsets": {
+            "from": 30440,
+            "to": 30860
+          },
+          "p": 0.999868
+        },
+        {
+          "text": " sunset",
+          "offsets": {
+            "from": 30890,
+            "to": 31240
+          },
+          "p": 0.998896
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 31660,
+            "to": 31660
+          },
+          "p": 0.94104
+        },
+        {
+          "text": " lighthouse",
+          "offsets": {
+            "from": 32150,
+            "to": 32660
+          },
+          "p": 0.990036
+        },
+        {
+          "text": " stands",
+          "offsets": {
+            "from": 32690,
+            "to": 33290
+          },
+          "p": 0.999062
+        },
+        {
+          "text": " beside",
+          "offsets": {
+            "from": 33290,
+            "to": 33900
+          },
+          "p": 0.996776
+        },
+        {
+          "text": " the",
+          "offsets": {
+            "from": 33900,
+            "to": 34200
+          },
+          "p": 0.99954
+        },
+        {
+          "text": " quiet",
+          "offsets": {
+            "from": 34200,
+            "to": 34460
+          },
+          "p": 0.996789
+        },
+        {
+          "text": " harbor",
+          "offsets": {
+            "from": 35360,
+            "to": 35360
+          },
+          "p": 0.99772
+        },
+        {
+          "text": "[_TT_324]",
+          "offsets": {
+            "from": 35360,
+            "to": 35360
+          },
+          "p": 0.12092
+        }
+      ]
+    }
+  ]
+}
