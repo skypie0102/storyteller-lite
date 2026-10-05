@@ -26,12 +26,21 @@ fn main() -> Result<(), String> {
         );
     }
     fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-    let prefix = output.join("native-cpu");
-    let native = Command::new(&args[3])
+    let second = output.join("second input with spaces.wav");
+    fs::copy(&source, &second).map_err(|error| error.to_string())?;
+    let prefixes = [output.join("native cpu 1"), output.join("native cpu 2")];
+    let mut command = Command::new(&args[3]);
+    command
         .arg("--model")
         .arg(&args[4])
         .arg("--file")
         .arg(&source)
+        .arg("--output-file")
+        .arg(&prefixes[0])
+        .arg("--file")
+        .arg(&second)
+        .arg("--output-file")
+        .arg(&prefixes[1])
         .args([
             "--language",
             "en",
@@ -40,33 +49,70 @@ fn main() -> Result<(), String> {
             "--suppress-nst",
             "--no-gpu",
             "--output-json",
-            "--output-file",
-        ])
-        .arg(&prefix)
-        .output()
-        .map_err(|error| error.to_string())?;
+        ]);
+    let native = command.output().map_err(|error| error.to_string())?;
     if !native.status.success() {
         return Err(format!(
             "Native CPU validation failed: {}",
             String::from_utf8_lossy(&native.stderr)
         ));
     }
-    let json =
-        fs::read_to_string(prefix.with_extension("json")).map_err(|error| error.to_string())?;
-    let transcript = parse_whisper_transcript(&json, 30_000)?;
-    if transcript.segments.is_empty() {
-        return Err("Native test fixture returned no timed English speech.".into());
+    fs::write(output.join("native-cpu.stderr.txt"), &native.stderr)
+        .map_err(|error| error.to_string())?;
+    fs::write(output.join("native-cpu.stdout.txt"), &native.stdout)
+        .map_err(|error| error.to_string())?;
+    let log = String::from_utf8_lossy(&native.stderr);
+    let model_loads = log
+        .lines()
+        .filter(|line| line.contains(": loading model from '"))
+        .count();
+    if model_loads != 1 {
+        return Err(format!(
+            "Expected one native model load for both inputs; found {model_loads}."
+        ));
     }
-    println!(
-        "Native Whisper English JSON validated: {} segments; {}",
-        transcript.segments.len(),
-        transcript
-            .segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
+    for prefix in prefixes {
+        let json =
+            fs::read_to_string(prefix.with_extension("json")).map_err(|error| error.to_string())?;
+        let transcript = parse_whisper_transcript(&json, 30_000)?;
+        if transcript.segments.is_empty() {
+            return Err("Native test fixture returned no timed English speech.".into());
+        }
+        println!(
+            "Native Whisper English JSON validated: {} segments; {}",
+            transcript.segments.len(),
+            transcript
+                .segments
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
+    println!("Native Whisper model reused: two inputs, one load, separate English JSON outputs.");
+    let rejected_source = output.join("gpu rejection multi-window.wav");
+    let conversion = Command::new(&args[2])
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-stream_loop",
+            "-1",
+            "-i",
+        ])
+        .arg(&source)
+        .args(["-t", "35", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"])
+        .arg(&rejected_source)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if !conversion.status.success() {
+        return Err(format!(
+            "Could not generate multi-window rejection fixture: {}",
+            String::from_utf8_lossy(&conversion.stderr)
+        ));
+    }
     let config = ChunkedTranscriptionConfig {
         ffmpeg: PathBuf::from(&args[2]),
         engine: TranscriptionEngine::WhisperCuda {
@@ -76,7 +122,7 @@ fn main() -> Result<(), String> {
         workers: 1,
     };
     let error = transcribe_audiobook_in_chunks(
-        &source,
+        &rejected_source,
         &output,
         &output.join("transcript.json"),
         &config,
@@ -89,6 +135,17 @@ fn main() -> Result<(), String> {
     }
     if output.join("transcript.json").exists() || output.join("transcription-chunks.tmp").exists() {
         return Err("Rejected GPU inference left transcript or temporary PCM output.".into());
+    }
+    let plan: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(output.join("transcription-plan.json"))
+            .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    if plan["chunks"]
+        .as_array()
+        .is_none_or(|chunks| chunks.len() < 2)
+    {
+        return Err("GPU rejection check did not exercise multiple chunk inputs.".into());
     }
     println!("GPU fallback rejected and temporary files cleaned: {error}");
     Ok(())

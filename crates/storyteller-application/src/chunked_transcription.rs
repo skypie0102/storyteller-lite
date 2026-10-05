@@ -17,6 +17,9 @@ use storyteller_core::{
 const SILENCE_SEARCH_RADIUS_MS: u64 = 2_500;
 const SILENCE_MIN_DURATION_SECONDS: f64 = 0.35;
 const SILENCE_NOISE_DB: i32 = -40;
+// Eight <=30-second mono PCM files use at most 7.7 MB of temporary audio.
+// Inference remains sequential in one CLI/GPU context, not eight GPU workers.
+const WHISPER_CHUNKS_PER_INVOCATION: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChunkedTranscriptionSummary {
@@ -182,8 +185,15 @@ fn run_chunk_workers(
             if worker_cancellation.is_requested() {
                 return;
             }
-            let chunk = match queue.lock() {
-                Ok(mut queue) => queue.pop_front(),
+            let chunks = match queue.lock() {
+                Ok(mut queue) => {
+                    let limit = match config.engine {
+                        TranscriptionEngine::Whistle { .. } => 1,
+                        TranscriptionEngine::WhisperCuda { .. } => WHISPER_CHUNKS_PER_INVOCATION,
+                    };
+                    let count = queue.len().min(limit);
+                    queue.drain(..count).collect::<Vec<_>>()
+                }
                 Err(_) => {
                     worker_cancellation.request();
                     let _ = sender.send(WorkerEvent::Failed(
@@ -192,22 +202,24 @@ fn run_chunk_workers(
                     return;
                 }
             };
-            let Some(chunk) = chunk else {
+            if chunks.is_empty() {
                 return;
-            };
-            match transcribe_one_chunk(
+            }
+            match transcribe_chunk_batch(
                 &source,
                 &temporary_dir,
-                chunk,
+                &chunks,
                 &config,
                 &worker_cancellation,
             ) {
-                Ok(transcript) => {
-                    if sender
-                        .send(WorkerEvent::Completed { chunk, transcript })
-                        .is_err()
-                    {
-                        return;
+                Ok(parts) => {
+                    for (chunk, transcript) in parts {
+                        if sender
+                            .send(WorkerEvent::Completed { chunk, transcript })
+                            .is_err()
+                        {
+                            return;
+                        }
                     }
                 }
                 Err(error) => {
@@ -292,18 +304,16 @@ fn run_chunk_workers(
         .collect()
 }
 
-fn transcribe_one_chunk(
+fn convert_chunk_audio(
     source: &Path,
-    temporary_dir: &Path,
+    wav_path: &Path,
     chunk: TranscriptionChunk,
-    config: &ChunkedTranscriptionConfig,
+    ffmpeg_path: &Path,
     cancellation: &CancellationToken,
-) -> Result<Transcript, String> {
-    let wav_path = temporary_dir.join(format!("chunk-{:05}.wav", chunk.index));
-
+) -> Result<(), String> {
     let start_seconds = chunk.start_ms as f64 / 1000.0;
     let duration_seconds = chunk.duration_ms() as f64 / 1000.0;
-    let mut ffmpeg = Command::new(&config.ffmpeg);
+    let mut ffmpeg = Command::new(ffmpeg_path);
     ffmpeg
         .arg("-hide_banner")
         .arg("-nostdin")
@@ -325,7 +335,7 @@ fn transcribe_one_chunk(
         .arg("-c:a")
         .arg("pcm_s16le")
         .args(["-threads", "1"])
-        .arg(&wav_path);
+        .arg(wav_path);
     match run_cancellable_command(&mut ffmpeg, cancellation, |_, _| {}) {
         Ok(output) if output.success => {}
         Ok(output) => {
@@ -337,23 +347,71 @@ fn transcribe_one_chunk(
         Err(CommandRunError::Cancelled) => return Err("Transcription was cancelled.".into()),
         Err(error) => return Err(format!("Could not convert transcription chunk: {error}")),
     }
-    validate_nonempty_file(&wav_path, "Converted transcription chunk")?;
+    validate_nonempty_file(wav_path, "Converted transcription chunk")
+}
 
+fn transcribe_chunk_batch(
+    source: &Path,
+    temporary_dir: &Path,
+    chunks: &[TranscriptionChunk],
+    config: &ChunkedTranscriptionConfig,
+    cancellation: &CancellationToken,
+) -> Result<Vec<(TranscriptionChunk, Transcript)>, String> {
+    let whisper = matches!(config.engine, TranscriptionEngine::WhisperCuda { .. });
+    let limit = if whisper {
+        WHISPER_CHUNKS_PER_INVOCATION
+    } else {
+        1
+    };
+    if chunks.is_empty() || chunks.len() > limit {
+        return Err("Invalid transcription batch size.".into());
+    }
+    let mut inputs = Vec::with_capacity(chunks.len());
+    for &chunk in chunks {
+        if cancellation.is_requested() {
+            return Err("Transcription was cancelled.".into());
+        }
+        let wav = temporary_dir.join(format!("chunk-{:05}.wav", chunk.index));
+        convert_chunk_audio(source, &wav, chunk, &config.ffmpeg, cancellation)?;
+        let prefix = temporary_dir.join(format!("whisper-{:05}", chunk.index));
+        inputs.push((wav, prefix));
+    }
     if cancellation.is_requested() {
         return Err("Transcription was cancelled.".into());
     }
-    let output_prefix = temporary_dir.join(format!("whisper-{:05}", chunk.index));
     let mut command = match &config.engine {
         TranscriptionEngine::Whistle { executable, model } => {
-            crate::runtime_setup::whistle_command(executable, model, &wav_path)
+            crate::runtime_setup::whistle_command(executable, model, &inputs[0].0)
         }
         TranscriptionEngine::WhisperCuda { executable, model } => {
-            crate::whisper_runtime::whisper_command(executable, model, &wav_path, &output_prefix)
+            crate::whisper_runtime::whisper_command(executable, model, &inputs)
         }
     };
+    let output =
+        run_transcription_command(&mut command, config.engine.label(), whisper, cancellation)?;
+    let result = if whisper {
+        read_whisper_batch(chunks, &inputs, &output)
+    } else {
+        parse_whistle_transcript(&output.stdout, chunks[0].duration_ms())
+            .map(|transcript| vec![(chunks[0], transcript)])
+    };
+    for (wav, prefix) in inputs {
+        let _ = fs::remove_file(wav);
+        if whisper {
+            let _ = fs::remove_file(prefix.with_extension("json"));
+        }
+    }
+    result
+}
+
+fn run_transcription_command(
+    command: &mut Command,
+    label: &str,
+    whisper: bool,
+    cancellation: &CancellationToken,
+) -> Result<CommandOutput, String> {
     let mut gpu_failed = false;
-    let whisper = matches!(config.engine, TranscriptionEngine::WhisperCuda { .. });
-    let result = run_cancellable_command(&mut command, cancellation, |_, line| {
+    let result = run_cancellable_command(command, cancellation, |_, line| {
         if whisper && (line.contains("no GPU found") || line.contains("failed to initialize")) {
             gpu_failed = true;
             cancellation.request();
@@ -362,28 +420,40 @@ fn transcribe_one_chunk(
     if gpu_failed {
         return Err("Whisper GPU initialization failed; CPU fallback was stopped. Check your NVIDIA driver and free VRAM, or select Whistle for a new book.".into());
     }
-    let output = match result {
-        Ok(output) if output.success => output,
-        Ok(output) => return Err(command_failure(config.engine.label(), &output)),
-        Err(CommandRunError::Cancelled) => return Err("Transcription was cancelled.".into()),
-        Err(error) => return Err(format!("Could not transcribe audio chunk: {error}")),
-    };
-    let transcript = match &config.engine {
-        TranscriptionEngine::Whistle { .. } => {
-            parse_whistle_transcript(&output.stdout, chunk.duration_ms())?
-        }
-        TranscriptionEngine::WhisperCuda { .. } => {
-            crate::whisper_runtime::require_cuda_offload(&format!(
-                "{}\n{}",
-                output.stdout, output.stderr
-            ))?;
-            let json = fs::read_to_string(output_prefix.with_extension("json"))
-                .map_err(|error| format!("Could not read Whisper JSON: {error}"))?;
-            parse_whisper_transcript(&json, chunk.duration_ms())?
-        }
-    };
-    let _ = fs::remove_file(&wav_path);
-    Ok(transcript)
+    match result {
+        Ok(output) if output.success => Ok(output),
+        Ok(output) => Err(command_failure(label, &output)),
+        Err(CommandRunError::Cancelled) => Err("Transcription was cancelled.".into()),
+        Err(error) => Err(format!("Could not transcribe audio: {error}")),
+    }
+}
+
+fn read_whisper_batch(
+    chunks: &[TranscriptionChunk],
+    inputs: &[(PathBuf, PathBuf)],
+    output: &CommandOutput,
+) -> Result<Vec<(TranscriptionChunk, Transcript)>, String> {
+    if chunks.is_empty() || chunks.len() != inputs.len() {
+        return Err("Whisper batch inputs and outputs do not match.".into());
+    }
+    crate::whisper_runtime::require_cuda_offload(&format!("{}\n{}", output.stdout, output.stderr))?;
+    // The CLI can exit successfully after skipping an unreadable input or
+    // failing to open an output. Require every paired JSON before completing
+    // any chunk from this batch, rather than trusting the process exit code.
+    chunks
+        .iter()
+        .zip(inputs)
+        .map(|(&chunk, (_, prefix))| {
+            let json = fs::read_to_string(prefix.with_extension("json")).map_err(|error| {
+                format!(
+                    "Could not read Whisper JSON for chunk {}: {error}",
+                    chunk.index + 1
+                )
+            })?;
+            parse_whisper_transcript(&json, chunk.duration_ms())
+                .map(|transcript| (chunk, transcript))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -710,6 +780,122 @@ fn diagnostic_tail(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        env,
+        sync::atomic::{AtomicU64, Ordering},
+        time::Instant,
+    };
+
+    struct BatchFixture {
+        root: PathBuf,
+        chunks: Vec<TranscriptionChunk>,
+        inputs: Vec<(PathBuf, PathBuf)>,
+        output: CommandOutput,
+    }
+
+    impl BatchFixture {
+        fn new() -> Self {
+            static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+            let root = env::temp_dir().join(format!(
+                "storyteller-whisper-batch-{}-{}",
+                std::process::id(),
+                NEXT_ID.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let chunks = (0..3)
+                .map(|index| TranscriptionChunk {
+                    index,
+                    start_ms: index as u64 * 20_000,
+                    end_ms: (index as u64 + 1) * 20_000,
+                })
+                .collect::<Vec<_>>();
+            let inputs = chunks
+                .iter()
+                .map(|chunk| {
+                    (
+                        root.join(format!("chunk {}.wav", chunk.index)),
+                        root.join(format!("result {}", chunk.index)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            for (index, (_, prefix)) in inputs.iter().enumerate() {
+                let segments = match index {
+                    0 => r#"[{"offsets":{"from":100,"to":900},"text":"Lighthouse."}]"#,
+                    1 => "[]",
+                    _ => r#"[{"offsets":{"from":100,"to":900},"text":"Harbor."}]"#,
+                };
+                fs::write(prefix.with_extension("json"), format!(
+                    r#"{{"params":{{"language":"en","translate":false}},"result":{{"language":"en"}},"transcription":{segments}}}"#
+                )).unwrap();
+            }
+            Self {
+                root, chunks, inputs,
+                output: CommandOutput {
+                    success: true,
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: "whisper_backend_init_gpu: using CUDA0 backend\nwhisper_model_load: CUDA0 total size = 580.00 MB\n".into(),
+                },
+            }
+        }
+    }
+
+    impl Drop for BatchFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn batch_retains_each_files_local_timing_and_silent_middle_chunk() {
+        let fixture = BatchFixture::new();
+        let parts = read_whisper_batch(&fixture.chunks, &fixture.inputs, &fixture.output).unwrap();
+        assert_eq!(parts.len(), 3);
+        assert!(parts[1].1.segments.is_empty());
+        let merged = merge_chunk_transcripts(60_000, &parts).unwrap();
+        assert_eq!(merged.segments.len(), 2);
+        assert_eq!(merged.segments[0].text, "Lighthouse.");
+        assert_eq!(merged.segments[1].text, "Harbor.");
+        assert_eq!(merged.segments[1].start_ms, 40_100);
+        assert_eq!(merged.segments[1].end_ms, 40_900);
+    }
+
+    #[test]
+    fn successful_process_cannot_hide_missing_or_malformed_batch_outputs() {
+        let fixture = BatchFixture::new();
+        fs::remove_file(fixture.inputs[1].1.with_extension("json")).unwrap();
+        let error =
+            read_whisper_batch(&fixture.chunks, &fixture.inputs, &fixture.output).unwrap_err();
+        assert!(error.contains("chunk 2"));
+        fs::write(fixture.inputs[1].1.with_extension("json"), "{}").unwrap();
+        assert!(read_whisper_batch(&fixture.chunks, &fixture.inputs, &fixture.output).is_err());
+    }
+
+    #[test]
+    fn gpu_fallback_stops_the_owned_process_before_it_can_complete_a_batch() {
+        let mut command = Command::new(env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "chunked_transcription::tests::gpu_fallback_child_fixture",
+                "--nocapture",
+            ])
+            .env("STORYTELLER_TEST_TRANSCRIPTION_CHILD", "no-gpu");
+        let started = Instant::now();
+        let error =
+            run_transcription_command(&mut command, "Whisper", true, &CancellationToken::default())
+                .unwrap_err();
+        assert!(error.contains("CPU fallback was stopped"));
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn gpu_fallback_child_fixture() {
+        if env::var("STORYTELLER_TEST_TRANSCRIPTION_CHILD").as_deref() == Ok("no-gpu") {
+            eprintln!("whisper_backend_init_gpu: no GPU found");
+            thread::sleep(Duration::from_secs(30));
+        }
+    }
 
     #[test]
     fn gpu_worker_limit_is_checked_before_audio_or_processes_are_opened() {
