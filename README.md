@@ -4,6 +4,10 @@ Rust + Slint successor to Storyteller OneClick.
 
 The reconstructed implementation has now been promoted to **`main`**, which is the canonical product branch. The historical `recovery/rust-slint` branch is retained only as reconstruction history. See `docs/HANDOFF.md` for current implementation truth, `docs/ROADMAP.md` for scope/status, and `docs/RECOVERY.md` for provenance.
 
+## Beta testing
+
+The Windows x64 prerelease target is **v0.2.0-beta.1**, prepared from `feature/whisper-live-progress` with the complete PR #32–34 stack. It adds longer Whisper inputs, shared model loads, contextual word reconciliation and live per-part progress to the rebuild. [Release notes and testing steps](docs/releases/v0.2.0-beta.1.md) explain setup and the remaining NVIDIA/full-book acceptance work. The release branch publishes it as a prerelease only after the full Windows package gate passes. The stable v0.1.0 and main are unchanged.
+
 ## Current rebuild
 
 PR #30 merged the validated rebuild into `main` at `e04853cb26475a6aa94d8b5c658713473f7e3e7a`. **Whistle** is the lightweight default, with runtime, lifecycle and pipeline execution in `storyteller-application`, independent of Slint. [PR #31](https://github.com/skypie0102/storyteller-lite/pull/31) merged optional Whisper Turbo NVIDIA GPU support and dark/light appearance into `main` at `afb28e5d619a7be2712df51a99797cf02f3dffef`. Both integrations support English only; Whistle uses the published 16.9 MB native CPU model. [The rebuild milestones](docs/REBUILD.md) record validation and remaining acceptance work; [the runtime contract](docs/RUNTIME.md) defines pinned assets.
@@ -56,6 +60,6 @@ See `docs/CI_POLICY.md`, `docs/HANDOFF.md`, and `docs/RUNTIME.md` for the curren
 
 ## Release process
 
-The public distribution path is a portable Windows x64 ZIP. The current published release is `v0.1.0`. A branch named `release/vMAJOR.MINOR.PATCH` triggers the release workflow, which requires the branch version to match both Cargo packages, reruns formatting/Clippy/tests, builds with `--locked --release`, verifies package provenance and hashes, runs the packaged relaunch-recovery smoke, and publishes a GitHub Release only after those checks pass.
+The public distribution path is a portable Windows x64 ZIP. The current published release is `v0.1.0`. An explicitly authorized branch named `release/vMAJOR.MINOR.PATCH` triggers the release workflow. Optional `-alpha.N`, `-beta.N` and `-rc.N` suffixes publish GitHub prereleases and explicitly keep the existing Latest release. The branch version must match all three workspace packages. The gate runs formatting, strict locked workspace Clippy/tests, the locked release build, native Dark/Light scene and input checks, package provenance/hash verification and packaged relaunch recovery before publication. Version-specific notes come from `docs/releases/<tag>.md` when present.
 
 The current executable is unsigned and there is no installer or auto-update channel yet.

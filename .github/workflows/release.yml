@@ -1,6 +1,6 @@
 name: Publish Windows release
 
-# A release branch such as release/v0.1.0 is an explicit publication request.
+# A release branch such as release/v0.2.0-beta.1 is an explicit publication request.
 # Publication happens only after the exact branch commit passes the full Windows gate.
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
   release:
     name: Validate, package, and publish Windows x64 release
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Check out exact release commit
         uses: actions/checkout@v7
@@ -37,20 +37,22 @@ jobs:
         shell: pwsh
         run: |
           $branch = "${{ github.ref_name }}"
-          if ($branch -notmatch '^release/(v[0-9]+\.[0-9]+\.[0-9]+)$') {
-            throw "Release branch must be named release/vMAJOR.MINOR.PATCH."
+          if ($branch -notmatch '^release/(v[0-9]+\.[0-9]+\.[0-9]+(?:-(?:alpha|beta|rc)\.[1-9][0-9]*)?)$') {
+            throw "Release branch must be release/vMAJOR.MINOR.PATCH, optionally followed by -alpha.N, -beta.N or -rc.N."
           }
           $tag = $Matches[1]
           $version = $tag.Substring(1)
+          $prerelease = $version.Contains('-')
 
           $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
           $app = $metadata.packages | Where-Object { $_.name -eq "storyteller-ui" } | Select-Object -First 1
           $core = $metadata.packages | Where-Object { $_.name -eq "storyteller-core" } | Select-Object -First 1
-          if ($null -eq $app -or $null -eq $core) {
+          $application = $metadata.packages | Where-Object { $_.name -eq "storyteller-application" } | Select-Object -First 1
+          if ($null -eq $app -or $null -eq $core -or $null -eq $application) {
             throw "Required StoryTeller packages were not found in Cargo metadata."
           }
-          if ($app.version -ne $version -or $core.version -ne $version) {
-            throw "Release tag version $version does not match Cargo package versions (ui=$($app.version), core=$($core.version))."
+          if ($app.version -ne $version -or $core.version -ne $version -or $application.version -ne $version) {
+            throw "Release tag version $version does not match Cargo package versions (ui=$($app.version), core=$($core.version), application=$($application.version))."
           }
 
           $existingTag = git ls-remote --tags origin "refs/tags/$tag"
@@ -63,6 +65,7 @@ jobs:
 
           "STORYTELLER_RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "STORYTELLER_RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "STORYTELLER_RELEASE_PRERELEASE=$($prerelease.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "STORYTELLER_RELEASE_ARCHIVE=StoryTeller-Lite-$tag-windows-x64.zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "STORYTELLER_RELEASE_CHECKSUM=StoryTeller-Lite-$tag-windows-x64.zip.sha256" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -70,13 +73,23 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Rust lint
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Rust tests
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
 
       - name: Build locked release executable
         run: cargo build --locked --release -p storyteller-ui
+
+      - name: Check native UI scenes and keyboard/pointer behavior
+        shell: pwsh
+        run: |
+          & cargo run --locked --release -p storyteller-ui --example ui_snapshot -- tools/ui/fixtures.json ui-snapshots
+          if ($LASTEXITCODE -ne 0) { throw "Native UI validation failed." }
+          $sceneCount = @((Get-Content tools/ui/fixtures.json -Raw | ConvertFrom-Json)).Count
+          $captures = @(Get-ChildItem ui-snapshots -Filter '*.ppm' -File)
+          if ($captures.Count -ne ($sceneCount * 6)) { throw "Native UI capture coverage is incomplete." }
+          Write-Host "Validated $($captures.Count) native Dark/Light captures, input behavior and saved appearance."
 
       - name: Assemble portable release package
         shell: pwsh
@@ -104,6 +117,7 @@ jobs:
             package = "storyteller-ui"
             version = $app.version
             release = $env:STORYTELLER_RELEASE_TAG
+            prerelease = ($env:STORYTELLER_RELEASE_PRERELEASE -eq 'true')
             commit = $env:GITHUB_SHA
             target = $rustcHost
             executable = "StoryTeller-Lite.exe"
@@ -121,6 +135,14 @@ jobs:
 
           Open Settings and choose Download missing. Whistle runs locally on CPU.
           This app supports English transcription only.
+
+          To use an NVIDIA GPU, explicitly choose Whisper Turbo in Settings and
+          Download Whisper tools. Setup checks the GPU and free VRAM. Its optional
+          engine/model download is about 847 MB; allow 3 GB free disk space.
+          Whisper runs one GPU worker and rejects CPU fallback.
+
+          Dark is the default; Settings > Appearance > Theme also offers Light.
+          For beta test steps and known limits, read the GitHub release notes.
 
           This executable is currently unsigned, so Windows may display a SmartScreen
           warning. Verify the release ZIP checksum before running it.
@@ -141,6 +163,7 @@ jobs:
           if ($manifest.package -ne "storyteller-ui") { throw "BUILD.json package is unexpected." }
           if ($manifest.version -ne $env:STORYTELLER_RELEASE_VERSION) { throw "BUILD.json version is unexpected." }
           if ($manifest.release -ne $env:STORYTELLER_RELEASE_TAG) { throw "BUILD.json release tag is unexpected." }
+          if ($manifest.prerelease -ne ($env:STORYTELLER_RELEASE_PRERELEASE -eq 'true')) { throw "BUILD.json prerelease status is unexpected." }
           if ($manifest.commit -ne $env:GITHUB_SHA) { throw "BUILD.json commit does not match the release commit." }
           if ($manifest.target -ne $rustcHost) { throw "BUILD.json target does not match the Rust host." }
           if ($manifest.executable -ne "StoryTeller-Lite.exe") { throw "BUILD.json executable is unexpected." }
@@ -195,6 +218,11 @@ jobs:
       - name: Write release notes
         shell: pwsh
         run: |
+          $specificNotes = Join-Path 'docs/releases' "$env:STORYTELLER_RELEASE_TAG.md"
+          if (Test-Path -LiteralPath $specificNotes -PathType Leaf) {
+            Copy-Item -LiteralPath $specificNotes -Destination RELEASE_NOTES.md
+            return
+          }
           @"
           ## StoryTeller Lite $env:STORYTELLER_RELEASE_TAG
 
@@ -203,6 +231,9 @@ jobs:
           ### Included
           - Queue-first seven-stage EPUB audiobook pipeline.
           - English-only native Whistle transcription with automatic CPU/RAM recommendations and 1–16 bounded workers.
+          - Optional Whisper Turbo Q5 NVIDIA CUDA transcription, longer bounded inputs, model reuse and live per-part progress.
+          - Overlapping audio context and native word reconciliation at input boundaries.
+          - Rebuilt New book, Queue and Settings UI; Dark by default with a saved Light option.
           - Conservative alignment and durable Review Audio decisions.
           - Introduction/Credits preservation and Graphic Readout Media Overlays.
           - Independent EPUB validation plus externally validated representative EPUB fixtures.
@@ -231,6 +262,9 @@ jobs:
             "--title", "StoryTeller Lite $env:STORYTELLER_RELEASE_TAG",
             "--notes-file", "RELEASE_NOTES.md"
           )
+          if ($env:STORYTELLER_RELEASE_PRERELEASE -eq 'true') {
+            $args += @("--prerelease", "--latest=false")
+          }
           & gh @args
           if ($LASTEXITCODE -ne 0) {
             throw "GitHub Release publication failed."

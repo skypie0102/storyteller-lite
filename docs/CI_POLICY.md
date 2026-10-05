@@ -55,3 +55,7 @@ Use the expensive hosted check sparingly, for example after:
 - preparing a release or merge checkpoint.
 
 Do not use full Windows validation for documentation-only changes, comments, formatting-only changes already checked locally, or every intermediate commit.
+
+## Explicit release branches
+
+The publication exception is `.github/workflows/release.yml`, triggered only by an explicitly authorized `release/v*` branch. Stable versions and `-alpha.N`/`-beta.N`/`-rc.N` prereleases must agree with all three Cargo packages. Publication follows strict locked workspace lint/tests, a locked native release build, Dark/Light fixture/input checks, package provenance and checksums, and packaged paused recovery. Prereleases use `--prerelease --latest=false`; source changes cannot silently turn a beta into Latest. Existing tags are never overwritten. This does not add standing CI to ordinary pushes or pull requests.

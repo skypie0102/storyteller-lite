@@ -1,5 +1,9 @@
 # Agent handoff — Storyteller OneClick Lite recovery
 
+## Authorized beta packaging — 2026-10-05
+
+The user explicitly requested a GitHub prerelease for final hardware testing. `release/v0.2.0-beta.1` is based on `02e976899915b6e9a0dcd51a87da22803609b984`, the complete validated PR #32–34 stack. This authorization supersedes the earlier release hold for this beta only; it does not authorize merging the draft stack or publishing a stable release. Package versions and the lockfile identify `0.2.0-beta.1`. The release workflow gates publication on strict locked workspace checks, the native release build, all Dark/Light fixture/input checks, package provenance/hashes and packaged paused recovery, and uses `--prerelease --latest=false`. See [beta release notes](releases/v0.2.0-beta.1.md) for the user test plan. Real NVIDIA, full-book and reader acceptance remain open; stable v0.1.0 remains historical.
+
 ## Active rebuild — 2026-10-05
 
 PR #30 merged the validated R0–R4 English-only Whistle rebuild into `main` at `e04853cb26475a6aa94d8b5c658713473f7e3e7a`. The user then authorized optional Whisper implementation on `feature/optional-whisper-gpu`. Keep Whistle as the lightweight default; Whisper Turbo Q5 is an explicit optional NVIDIA CUDA backend. This authorization supersedes the earlier Whistle-only rule. There is no automatic backend fallback or historical archive import. Read [REBUILD.md](REBUILD.md) and [RUNTIME.md](RUNTIME.md) for the contracts and acceptance limits.
