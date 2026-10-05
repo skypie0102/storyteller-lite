@@ -3,14 +3,15 @@ use std::{
     env, fs,
     path::{Path, PathBuf},
     process::Command,
+    time::Instant,
 };
 use storyteller_application::{
     detect_runtime, transcribe_audiobook_in_chunks, ChunkedTranscriptionConfig, TranscriptionEngine,
 };
 use storyteller_core::{
     contextual_transcription_windows, merge_contextual_word_transcripts, parse_whisper_transcript,
-    parse_whisper_words, plan_transcription_chunks, write_transcript, CancellationToken, TimedWord,
-    TranscriptionBackend,
+    parse_whisper_words, plan_transcription_chunks, run_cancellable_command, write_transcript,
+    CancellationToken, TimedWord, TranscriptionBackend, WhisperProgressTracker,
 };
 
 fn main() -> Result<(), String> {
@@ -250,8 +251,10 @@ fn validate_boundary(
         "--suppress-nst",
         "--no-gpu",
         "--output-json-full",
+        "--print-progress",
     ]);
     let mut prefixes = Vec::new();
+    let mut progress_inputs = Vec::new();
     for window in &windows {
         let wav = output.join(format!("boundary-input-{}.wav", window.owned.index));
         checked_output(
@@ -279,6 +282,7 @@ fn validate_boundary(
             .arg(&wav)
             .arg("--output-file")
             .arg(&prefix);
+        progress_inputs.push((wav, prefix.clone()));
         prefixes.push(prefix);
     }
     let long = output.join("native-long-input.wav");
@@ -305,12 +309,36 @@ fn validate_boundary(
         .arg(&long)
         .arg("--output-file")
         .arg(&long_prefix);
-    let native = checked_output(&mut command, "Native Whisper boundary inference")?;
+    progress_inputs.push((long, long_prefix.clone()));
+    let mut tracker = WhisperProgressTracker::new(&progress_inputs);
+    let started = Instant::now();
+    let mut progress_events = Vec::new();
+    let native = run_cancellable_command(
+        &mut command,
+        &CancellationToken::default(),
+        |stream, line| {
+            if let Some(event) = tracker.observe(stream, line) {
+                progress_events.push(serde_json::json!({
+                    "input_index": event.input_index,
+                    "percent": event.percent,
+                    "elapsed_ms": started.elapsed().as_millis() as u64,
+                }));
+            }
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    if !native.success {
+        return Err(format!(
+            "Native Whisper boundary inference failed: {}",
+            native.stderr
+        ));
+    }
     fs::write(output.join("boundary-native.stderr.txt"), &native.stderr)
         .map_err(|e| e.to_string())?;
     fs::write(output.join("boundary-native.stdout.txt"), &native.stdout)
         .map_err(|e| e.to_string())?;
-    if String::from_utf8_lossy(&native.stderr)
+    if native
+        .stderr
         .lines()
         .filter(|line| line.contains(": loading model from '"))
         .count()
@@ -318,6 +346,46 @@ fn validate_boundary(
     {
         return Err("Whisper boundary inputs did not reuse one native model context.".into());
     }
+    for index in 0..progress_inputs.len() {
+        let percentages = progress_events
+            .iter()
+            .filter(|event| event["input_index"] == index)
+            .map(|event| event["percent"].as_u64().unwrap())
+            .collect::<Vec<_>>();
+        if percentages.first() != Some(&0)
+            || percentages.last() != Some(&100)
+            || percentages.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err(format!(
+                "Native Whisper progress did not track input {index}: {percentages:?}"
+            ));
+        }
+    }
+    if !progress_events.iter().any(|event| {
+        event["input_index"] == 2
+            && event["percent"]
+                .as_u64()
+                .is_some_and(|percent| percent > 0 && percent < 100)
+    }) {
+        return Err(
+            "Native Whisper did not report live decoder progress inside its long input.".into(),
+        );
+    }
+    fs::write(
+        output.join("progress-evidence.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "engine": "Whisper Turbo native CPU validation",
+            "observed_during_process": true,
+            "input_count": progress_inputs.len(),
+            "model_loads": 1,
+            "progress_events": progress_events,
+            "json_acceptance_is_separate": true,
+            "gpu_throughput_validated": false,
+        }))
+        .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    println!("Native Whisper live stderr progress validated: three input resets, decoder updates before long-input completion.");
     let mut parts = Vec::new();
     for (&window, prefix) in windows.iter().zip(&prefixes) {
         let json = fs::read_to_string(prefix.with_extension("json")).map_err(|e| e.to_string())?;

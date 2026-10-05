@@ -11,8 +11,8 @@ use storyteller_core::{
     contextual_transcription_windows, merge_contextual_word_transcripts, parse_whisper_words,
     parse_whistle_words, plan_transcription_chunks_for_backend, run_cancellable_command,
     validate_chunk_plan_for_backend, write_transcript, CancellationToken, CommandOutput,
-    CommandRunError, TimedWord, TranscriptionBackend, TranscriptionChunk, TranscriptionChunkPolicy,
-    TranscriptionWindow,
+    CommandRunError, CommandStream, TimedWord, TranscriptionBackend, TranscriptionChunk,
+    TranscriptionChunkPolicy, TranscriptionWindow, WhisperProgressTracker,
 };
 
 const SILENCE_SEARCH_RADIUS_MS: u64 = 2_500;
@@ -67,6 +67,10 @@ impl TranscriptionEngine {
 
 #[derive(Debug)]
 enum WorkerEvent {
+    NativeProgress {
+        input_index: usize,
+        percent: u8,
+    },
     Completed {
         window: TranscriptionWindow,
         words: Vec<TimedWord>,
@@ -223,6 +227,17 @@ fn run_chunk_workers(
                 &windows,
                 &config,
                 &worker_cancellation,
+                &mut |input_index, percent| {
+                    if sender
+                        .send(WorkerEvent::NativeProgress {
+                            input_index,
+                            percent,
+                        })
+                        .is_err()
+                    {
+                        worker_cancellation.request();
+                    }
+                },
             ) {
                 Ok(parts) => {
                     for (window, words) in parts {
@@ -244,14 +259,39 @@ fn run_chunk_workers(
     }
     drop(sender);
 
-    let total_audio_ms = windows
-        .iter()
-        .map(|window| window.owned.duration_ms())
-        .sum::<u64>();
-    let mut completed_audio_ms = 0u64;
+    let mut result = collect_worker_results(
+        windows,
+        &receiver,
+        config.engine.label(),
+        cancellation,
+        &worker_cancellation,
+        observer,
+    );
+    // Always stop and join owned processes before the caller removes PCM.
+    for handle in handles {
+        if handle.join().is_err() && result.is_ok() {
+            result = Err("A transcription worker thread panicked.".into());
+        }
+    }
+    if cancellation.is_requested() {
+        return Err("Transcription was cancelled.".into());
+    }
+    result
+}
+
+fn collect_worker_results(
+    windows: &[TranscriptionWindow],
+    receiver: &mpsc::Receiver<WorkerEvent>,
+    backend: &'static str,
+    cancellation: &CancellationToken,
+    worker_cancellation: &CancellationToken,
+    observer: &mut dyn FnMut(ChunkedTranscriptionProgress) -> Result<(), String>,
+) -> Result<Vec<(TranscriptionWindow, Vec<TimedWord>)>, String> {
+    let mut meter = OwnedAudioProgress::new(windows, backend);
     let mut completed = 0usize;
     let mut parts = vec![None::<(TranscriptionWindow, Vec<TimedWord>)>; windows.len()];
     let mut first_error = None::<String>;
+    let mut last_progress = None;
 
     while completed < windows.len() && first_error.is_none() {
         if cancellation.is_requested() {
@@ -268,39 +308,45 @@ fn run_chunk_workers(
                 continue;
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
+                worker_cancellation.request();
                 first_error =
                     Some("Transcription workers stopped before all chunks completed.".into());
                 break;
             }
         };
-        match event {
+        let progress = match event {
+            WorkerEvent::NativeProgress {
+                input_index,
+                percent,
+            } => meter.update(input_index, percent, false),
             WorkerEvent::Completed { window, words } => {
-                completed_audio_ms += window.owned.duration_ms();
-                parts[window.owned.index] = Some((window, words));
-                completed += 1;
-                let overall = (completed_audio_ms as u128 * 100 / total_audio_ms as u128) as u8;
-                if let Err(error) = observer(ChunkedTranscriptionProgress {
-                    completed_chunks: completed,
-                    total_chunks: windows.len(),
-                    percent: overall.min(100),
-                    backend: Some(config.engine.label().into()),
-                }) {
+                let index = window.owned.index;
+                if windows.get(index) != Some(&window) || parts[index].is_some() {
+                    Err("Transcription worker returned an unknown or repeated input.".into())
+                } else {
+                    parts[index] = Some((window, words));
+                    completed += 1;
+                    meter.update(index, 100, true)
+                }
+            }
+            WorkerEvent::Failed(error) => Err(error),
+        };
+        match progress {
+            Ok(progress) if last_progress.as_ref() != Some(&progress) => {
+                last_progress = Some(progress.clone());
+                if let Err(error) = observer(progress) {
                     worker_cancellation.request();
                     first_error = Some(error);
                 }
             }
-            WorkerEvent::Failed(error) => {
+            Ok(_) => {}
+            Err(error) => {
                 worker_cancellation.request();
                 first_error = Some(error);
             }
         }
     }
 
-    for handle in handles {
-        if handle.join().is_err() && first_error.is_none() {
-            first_error = Some("A transcription worker thread panicked.".into());
-        }
-    }
     if cancellation.is_requested() {
         return Err("Transcription was cancelled.".into());
     }
@@ -317,6 +363,68 @@ fn run_chunk_workers(
             })
         })
         .collect()
+}
+
+struct OwnedAudioProgress<'a> {
+    windows: &'a [TranscriptionWindow],
+    decoded_ms: Vec<u64>,
+    verified: Vec<bool>,
+    decoded_audio_ms: u64,
+    total_audio_ms: u64,
+    completed_chunks: usize,
+    backend: &'static str,
+}
+
+impl<'a> OwnedAudioProgress<'a> {
+    fn new(windows: &'a [TranscriptionWindow], backend: &'static str) -> Self {
+        Self {
+            windows,
+            decoded_ms: vec![0; windows.len()],
+            verified: vec![false; windows.len()],
+            decoded_audio_ms: 0,
+            total_audio_ms: windows
+                .iter()
+                .map(|window| window.owned.duration_ms())
+                .sum(),
+            completed_chunks: 0,
+            backend,
+        }
+    }
+
+    fn update(
+        &mut self,
+        index: usize,
+        input_percent: u8,
+        verified: bool,
+    ) -> Result<ChunkedTranscriptionProgress, String> {
+        let window = self
+            .windows
+            .get(index)
+            .ok_or("Unknown transcription progress input.")?;
+        if input_percent > 100 || self.total_audio_ms == 0 {
+            return Err("Invalid transcription progress measurement.".into());
+        }
+        let decoded_input_ms = (window.duration_ms() as u128 * input_percent as u128 / 100) as u64;
+        let owned_ms = decoded_input_ms
+            .saturating_sub(window.owned.start_ms - window.start_ms)
+            .min(window.owned.duration_ms());
+        let previous = self.decoded_ms[index];
+        self.decoded_ms[index] = previous.max(owned_ms);
+        self.decoded_audio_ms += self.decoded_ms[index] - previous;
+        if verified && !self.verified[index] {
+            self.verified[index] = true;
+            self.completed_chunks += 1;
+        }
+        let percent = (self.decoded_audio_ms as u128 * 100 / self.total_audio_ms as u128) as u8;
+        Ok(ChunkedTranscriptionProgress {
+            completed_chunks: self.completed_chunks,
+            total_chunks: self.windows.len(),
+            // Native decoder progress is provisional. Analyze reaches 100
+            // only after merge, transcript write and temporary cleanup succeed.
+            percent: percent.min(99),
+            backend: Some(self.backend.into()),
+        })
+    }
 }
 
 fn convert_chunk_audio(
@@ -371,6 +479,7 @@ fn transcribe_chunk_batch(
     windows: &[TranscriptionWindow],
     config: &ChunkedTranscriptionConfig,
     cancellation: &CancellationToken,
+    on_progress: &mut dyn FnMut(usize, u8),
 ) -> Result<Vec<(TranscriptionWindow, Vec<TimedWord>)>, String> {
     let whisper = matches!(config.engine, TranscriptionEngine::WhisperCuda { .. });
     let limit = if whisper {
@@ -408,8 +517,20 @@ fn transcribe_chunk_batch(
             crate::whisper_runtime::whisper_command(executable, model, &inputs)
         }
     };
-    let output =
-        run_transcription_command(&mut command, config.engine.label(), whisper, cancellation)?;
+    let mut progress = WhisperProgressTracker::new(&inputs);
+    let output = run_transcription_command(
+        &mut command,
+        config.engine.label(),
+        whisper,
+        cancellation,
+        &mut |stream, line| {
+            if whisper {
+                if let Some(event) = progress.observe(stream, line) {
+                    on_progress(windows[event.input_index].owned.index, event.percent);
+                }
+            }
+        },
+    )?;
     let result = if whisper {
         read_whisper_batch(windows, &inputs, &output)
     } else {
@@ -430,12 +551,19 @@ fn run_transcription_command(
     label: &str,
     whisper: bool,
     cancellation: &CancellationToken,
+    on_line: &mut dyn FnMut(CommandStream, &str),
 ) -> Result<CommandOutput, String> {
     let mut gpu_failed = false;
-    let result = run_cancellable_command(command, cancellation, |_, line| {
-        if whisper && (line.contains("no GPU found") || line.contains("failed to initialize")) {
+    let result = run_cancellable_command(command, cancellation, |stream, line| {
+        if whisper
+            && stream == CommandStream::Stderr
+            && crate::whisper_runtime::cuda_initialization_failed(line)
+        {
             gpu_failed = true;
             cancellation.request();
+        }
+        if !gpu_failed {
+            on_line(stream, line);
         }
     });
     if gpu_failed {
@@ -457,7 +585,7 @@ fn read_whisper_batch(
     if windows.is_empty() || windows.len() != inputs.len() {
         return Err("Whisper batch inputs and outputs do not match.".into());
     }
-    crate::whisper_runtime::require_cuda_offload(&format!("{}\n{}", output.stdout, output.stderr))?;
+    crate::whisper_runtime::require_cuda_offload(&output.stderr)?;
     // The CLI can exit successfully after skipping an unreadable input or
     // failing to open an output. Require every paired JSON before completing
     // any chunk from this batch, rather than trusting the process exit code.
@@ -914,6 +1042,180 @@ mod tests {
     }
 
     #[test]
+    fn owned_audio_progress_excludes_context_and_never_accepts_decoder_work() {
+        let fixture = BatchFixture::new();
+        let mut meter = OwnedAudioProgress::new(&fixture.windows, "Whisper");
+        assert_eq!(meter.update(0, 50, false).unwrap().percent, 18);
+        let middle = meter.update(1, 50, false).unwrap();
+        assert_eq!(middle.percent, 35);
+        assert_eq!(middle.completed_chunks, 0);
+        assert_eq!(meter.update(0, 10, false).unwrap(), middle);
+        assert_eq!(meter.update(0, 100, true).unwrap().percent, 50);
+        assert_eq!(meter.update(1, 100, false).unwrap().percent, 66);
+        let decoded = meter.update(2, 100, false).unwrap();
+        assert_eq!(decoded.percent, 99);
+        assert_eq!(decoded.completed_chunks, 1);
+        assert_eq!(meter.update(1, 100, true).unwrap().completed_chunks, 2);
+        assert_eq!(meter.update(1, 100, true).unwrap().completed_chunks, 2);
+        let checked = meter.update(2, 100, true).unwrap();
+        assert_eq!(checked.percent, 99);
+        assert_eq!(checked.completed_chunks, 3);
+    }
+
+    #[test]
+    fn provisional_progress_cannot_accept_a_batch_with_a_missing_json() {
+        let fixture = BatchFixture::new();
+        fs::remove_file(fixture.inputs[1].1.with_extension("json")).unwrap();
+        let (sender, receiver) = mpsc::channel();
+        for index in 0..3 {
+            sender
+                .send(WorkerEvent::NativeProgress {
+                    input_index: index,
+                    percent: 100,
+                })
+                .unwrap();
+        }
+        let error =
+            read_whisper_batch(&fixture.windows, &fixture.inputs, &fixture.output).unwrap_err();
+        sender.send(WorkerEvent::Failed(error)).unwrap();
+        let mut observed = Vec::new();
+        let cancellation = CancellationToken::default();
+        let worker_cancellation = CancellationToken::default();
+        let error = collect_worker_results(
+            &fixture.windows,
+            &receiver,
+            "Whisper",
+            &cancellation,
+            &worker_cancellation,
+            &mut |progress| {
+                observed.push(progress);
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("chunk 2"));
+        assert!(worker_cancellation.is_requested());
+        assert_eq!(observed.last().unwrap().percent, 99);
+        assert!(observed
+            .iter()
+            .all(|p| p.completed_chunks == 0 && p.percent < 100));
+    }
+
+    #[test]
+    fn narrator_stdout_cannot_supply_cuda_proof() {
+        let mut fixture = BatchFixture::new();
+        fixture.output.stdout = fixture.output.stderr.clone();
+        fixture.output.stderr = "whisper_backend_init_gpu: using CPU backend".into();
+        assert!(read_whisper_batch(&fixture.windows, &fixture.inputs, &fixture.output).is_err());
+    }
+
+    #[test]
+    fn live_progress_and_observer_failure_cancel_a_running_owned_process() {
+        for cancel_on_progress in [true, false] {
+            let fixture = BatchFixture::new();
+            let finish_path = fixture.root.join("child-finished.txt");
+            let mut command = Command::new(env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "chunked_transcription::tests::progress_child_fixture",
+                    "--nocapture",
+                ])
+                .env("STORYTELLER_TEST_TRANSCRIPTION_CHILD", "progress")
+                .env("STORYTELLER_TEST_PROGRESS_AUDIO", &fixture.inputs[0].0)
+                .env("STORYTELLER_TEST_PROGRESS_FINISH", &finish_path);
+            let cancellation = CancellationToken::default();
+            let worker_cancellation = CancellationToken::default();
+            let worker_token = worker_cancellation.clone();
+            let inputs = fixture.inputs.clone();
+            let (sender, receiver) = mpsc::channel();
+            let started = Instant::now();
+            let worker = thread::spawn(move || {
+                let mut tracker = WhisperProgressTracker::new(&inputs);
+                let result = run_transcription_command(
+                    &mut command,
+                    "Whisper",
+                    true,
+                    &worker_token,
+                    &mut |stream, line| {
+                        if let Some(event) = tracker.observe(stream, line) {
+                            sender
+                                .send(WorkerEvent::NativeProgress {
+                                    input_index: event.input_index,
+                                    percent: event.percent,
+                                })
+                                .unwrap();
+                        }
+                    },
+                );
+                if let Err(error) = &result {
+                    sender.send(WorkerEvent::Failed(error.clone())).unwrap();
+                }
+                result
+            });
+            let mut saw_live_progress = false;
+            let error = collect_worker_results(
+                &fixture.windows,
+                &receiver,
+                "Whisper",
+                &cancellation,
+                &worker_cancellation,
+                &mut |progress| {
+                    if progress.percent > 0 {
+                        saw_live_progress = true;
+                        assert_eq!(progress.percent, 18);
+                        assert_eq!(progress.completed_chunks, 0);
+                        assert!(!finish_path.exists());
+                        if cancel_on_progress {
+                            cancellation.request();
+                        } else {
+                            return Err("Progress observer stopped.".into());
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+            assert!(worker.join().unwrap().unwrap_err().contains("cancelled"));
+            assert!(saw_live_progress);
+            assert!(!finish_path.exists());
+            assert!(started.elapsed() < Duration::from_secs(5));
+            assert_eq!(
+                error,
+                if cancel_on_progress {
+                    "Transcription was cancelled."
+                } else {
+                    "Progress observer stopped."
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn progress_child_fixture() {
+        if env::var("STORYTELLER_TEST_TRANSCRIPTION_CHILD").as_deref() == Ok("progress") {
+            // Narrator stdout must neither stop the GPU job nor advance work.
+            println!("whisper_backend_init_gpu: no GPU found");
+            println!("The narrator failed to initialize the radio.");
+            println!("whisper_print_progress_callback: progress = 100%");
+            eprintln!("whisper_backend_init_gpu: using CUDA0 backend");
+            eprintln!("whisper_model_load: CUDA0 total size = 580.00 MB");
+            let audio = PathBuf::from(env::var_os("STORYTELLER_TEST_PROGRESS_AUDIO").unwrap());
+            eprintln!(
+                "main: processing '{}' (360000 samples, 22.5 sec)",
+                audio.display()
+            );
+            eprintln!("whisper_print_progress_callback: progress =  50%");
+            thread::sleep(Duration::from_secs(30));
+            fs::write(
+                env::var_os("STORYTELLER_TEST_PROGRESS_FINISH").unwrap(),
+                "finished",
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
     fn gpu_fallback_stops_the_owned_process_before_it_can_complete_a_batch() {
         let mut command = Command::new(env::current_exe().unwrap());
         command
@@ -924,9 +1226,14 @@ mod tests {
             ])
             .env("STORYTELLER_TEST_TRANSCRIPTION_CHILD", "no-gpu");
         let started = Instant::now();
-        let error =
-            run_transcription_command(&mut command, "Whisper", true, &CancellationToken::default())
-                .unwrap_err();
+        let error = run_transcription_command(
+            &mut command,
+            "Whisper",
+            true,
+            &CancellationToken::default(),
+            &mut |_, _| {},
+        )
+        .unwrap_err();
         assert!(error.contains("CPU fallback was stopped"));
         assert!(started.elapsed() < Duration::from_secs(3));
     }

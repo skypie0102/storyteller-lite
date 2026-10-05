@@ -32,6 +32,7 @@ mod source_prepare;
 mod stage_artifacts;
 mod transcript;
 mod whisper;
+mod whisper_progress;
 mod whistle;
 mod worker;
 mod workspace;
@@ -116,6 +117,7 @@ pub use worker::{
 pub use workspace::JobWorkspace;
 
 pub use whisper::{parse_whisper_transcript, parse_whisper_words};
+pub use whisper_progress::{WhisperNativeProgress, WhisperProgressTracker};
 pub use whistle::{
     parse_whistle_transcript, parse_whistle_words, validate_whistle_language, WHISTLE_LANGUAGE,
     WHISTLE_MAX_CHUNK_MS,
