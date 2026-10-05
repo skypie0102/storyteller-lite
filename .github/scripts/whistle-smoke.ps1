@@ -105,8 +105,8 @@ $target = $null
 $targetKey = ''
 foreach ($word in $result.words) {
     $key = ([regex]::Replace($word.word, '[^\p{L}\p{N}]', '')).ToLowerInvariant()
-    $matches = @($result.words | Where-Object { ([regex]::Replace($_.word, '[^\p{L}\p{N}]', '')).ToLowerInvariant() -eq $key })
-    if ($key.Length -ge 8 -and $matches.Count -eq 1 -and $word.end -gt $word.start -and $word.end -lt 3) {
+    $matchingWords = @($result.words | Where-Object { ([regex]::Replace($_.word, '[^\p{L}\p{N}]', '')).ToLowerInvariant() -eq $key })
+    if ($key.Length -ge 8 -and $matchingWords.Count -eq 1 -and $word.end -gt $word.start -and $word.end -lt 3) {
         $target = $word
         $targetKey = $key
         break

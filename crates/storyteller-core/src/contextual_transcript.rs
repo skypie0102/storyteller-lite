@@ -228,13 +228,47 @@ fn reconcile_pair(
         .iter()
         .map(|&i| text_identity(&candidates[i].word.text))
         .collect::<Vec<_>>();
+    let unique =
+        |keys: &[String], index: usize| keys.iter().filter(|key| **key == keys[index]).count() == 1;
     let width = right.len() + 1;
     let mut scores = vec![Score::default(); (left.len() + 1) * width];
     let drift = |i: usize, j: usize| {
         midpoint(&candidates[left[i]].word).abs_diff(midpoint(&candidates[right[j]].word))
     };
     let matches = |i: usize, j: usize| {
-        !left_keys[i].is_empty() && left_keys[i] == right_keys[j] && drift(i, j) <= MATCH_DRIFT_MS
+        if left_keys[i].is_empty() || left_keys[i] != right_keys[j] {
+            return false;
+        }
+        if drift(i, j) <= MATCH_DRIFT_MS {
+            return true;
+        }
+        if drift(i, j) > 2 * MAX_TRANSCRIPTION_CONTEXT_MS
+            || !unique(&left_keys, i)
+            || !unique(&right_keys, j)
+        {
+            return false;
+        }
+        // Native attention can misplace an initial word after silence by seconds.
+        // Extend the time tolerance only for a unique identity supported by two
+        // nearby ordered neighbors with reliable timing. Repeats keep the tight
+        // one-to-one time rule; isolated equal words are never a wide match.
+        (-4isize..=4)
+            .filter(|&offset| offset != 0)
+            .filter(|&offset| {
+                let Some(a) = i.checked_add_signed(offset) else {
+                    return false;
+                };
+                let Some(b) = j.checked_add_signed(offset) else {
+                    return false;
+                };
+                a < left.len()
+                    && b < right.len()
+                    && !left_keys[a].is_empty()
+                    && left_keys[a] == right_keys[b]
+                    && drift(a, b) <= MATCH_DRIFT_MS
+            })
+            .count()
+            >= 2
     };
     for i in (0..left.len()).rev() {
         for j in (0..right.len()).rev() {
@@ -362,6 +396,31 @@ pub fn merge_contextual_word_transcripts(
             end_ms: average(true),
             text: String::new(),
         };
+        let spread = group
+            .iter()
+            .map(|&i| midpoint(&candidates[i].word))
+            .max()
+            .unwrap()
+            - group
+                .iter()
+                .map(|&i| midpoint(&candidates[i].word))
+                .min()
+                .unwrap();
+        if spread > MATCH_DRIFT_MS {
+            // For a supported wide match, prefer the native report farthest
+            // from its input edges rather than averaging a bad edge timestamp.
+            let &best = group
+                .iter()
+                .max_by_key(|&&i| {
+                    let candidate = &candidates[i];
+                    let input = parts[candidate.window].0;
+                    (candidate.word.start_ms - input.start_ms)
+                        .min(input.end_ms - candidate.word.end_ms)
+                })
+                .expect("nonempty native word group");
+            fused.start_ms = candidates[best].word.start_ms;
+            fused.end_ms = candidates[best].word.end_ms;
+        }
         let point = midpoint(&fused).min(duration_ms - 1);
         let owner = chunks.partition_point(|chunk| point >= chunk.end_ms);
         // Only the owning input supplies text. Unmatched fragments from another
@@ -485,6 +544,56 @@ mod tests {
         assert_eq!(merged.segments[0].start_ms, 24_875);
         assert_eq!(merged.segments[0].end_ms, 25_175);
     }
+    #[test]
+    fn uncertain_edge_timing_requires_neighbor_anchors_and_uses_an_interior_report() {
+        let backend = TranscriptionBackend::WhisperCuda;
+        let chunks = [
+            TranscriptionChunk {
+                index: 0,
+                start_ms: 0,
+                end_ms: 24_500,
+            },
+            TranscriptionChunk {
+                index: 1,
+                start_ms: 24_500,
+                end_ms: 31_000,
+            },
+        ];
+        let w = contextual_transcription_windows(31_000, &chunks, backend).unwrap();
+        let parts = [
+            (
+                w[0],
+                vec![
+                    word(24_170, 24_240, "The"),
+                    word(24_240, 24_790, "lighthouse"),
+                    word(24_850, 25_100, "stands"),
+                    word(25_170, 25_490, "beside"),
+                    word(25_500, 25_590, "the"),
+                    word(25_600, 25_940, "quiet"),
+                    word(25_940, 26_360, "harbor."),
+                ],
+            ),
+            (
+                w[1],
+                vec![
+                    word(0, 330, "The"),
+                    word(330, 1440, "lighthouse"),
+                    word(2110, 2110, "stands"),
+                    word(2200, 2780, "beside"),
+                    word(2780, 3100, "the"),
+                    word(3170, 3640, "quiet"),
+                    word(3680, 4360, "harbor."),
+                ],
+            ),
+        ];
+        let merged = merge_contextual_word_transcripts(31_000, &parts, backend).unwrap();
+        assert_eq!(
+            text(&merged),
+            "The lighthouse stands beside the quiet harbor."
+        );
+        assert_eq!(merged.segments[0].start_ms, 24_170);
+    }
+
     #[test]
     fn intentional_repetition_is_matched_one_to_one_in_time() {
         let w = windows();
