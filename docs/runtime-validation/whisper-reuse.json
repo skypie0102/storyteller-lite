@@ -1,0 +1,56 @@
+{
+  "source_commit": "f4719bd273bbe24cfbf820bdf7c825036596527d",
+  "workflow_run": 37231217153,
+  "workflow_url": "https://github.com/skypie0102/storyteller-lite/actions/runs/37231217153",
+  "platform": "Windows x64 hosted CPU-only runner",
+  "conclusion": "success",
+  "gates": {
+    "formatting": "passed",
+    "strict_locked_core_application_clippy": "passed",
+    "tests": {
+      "application": 51,
+      "core_unit": 122,
+      "core_integration": 8,
+      "total": 181
+    },
+    "native_whistle": {
+      "duration_seconds": 135,
+      "effective_workers": 6,
+      "chunks": 6,
+      "result": "passed"
+    },
+    "native_turbo": {
+      "input_files": 2,
+      "model_loads": 1,
+      "captures": [
+        {
+          "file": "native cpu 1.json",
+          "sha256": "28b25740eb4847eb7e728533a0be4fabfb6ec53cc730f4161a4d308e77f6ca69",
+          "segments": 2,
+          "text": "The lighthouse stands beside the quiet harbor. A small boat returns home before sunset."
+        },
+        {
+          "file": "native cpu 2.json",
+          "sha256": "28b25740eb4847eb7e728533a0be4fabfb6ec53cc730f4161a4d308e77f6ca69",
+          "segments": 2,
+          "text": "The lighthouse stands beside the quiet harbor. A small boat returns home before sunset."
+        }
+      ],
+      "multi_window_gpu_fallback_rejected": true,
+      "rejection_source_duration_ms": 35000,
+      "rejection_source_chunks": 2,
+      "temporary_pcm_json_cleaned": true
+    }
+  },
+  "artifact": {
+    "id": 11313972145,
+    "name": "native-whisper-reuse",
+    "zip_size_bytes": 900989,
+    "zip_sha256": "81a5286f309336abc49918c69890f15fb1ea072f861efe380d516cf11cb3a729"
+  },
+  "acceptance_open": [
+    "real NVIDIA offload, throughput and peak VRAM",
+    "representative multi-hour audiobook accuracy and boundary cuts",
+    "rebuilt Windows release and reader playback"
+  ]
+}
